@@ -1,0 +1,42 @@
+{
+  "name": "phone-agent-control",
+  "version": "2.3.0",
+  "description": "Open-source macOS software for Google Gemini & Antigravity IDE — control local IDE workspaces from Telegram with per-run startup password, per-IDE Gemini model/level selection, chat transcripts, photo prompts, Git branching, and Jenkins CI/CD deployments",
+  "type": "module",
+  "license": "MIT",
+  "author": "DOMONK Factory (https://domonk.com)",
+  "homepage": "https://github.com/madmicrowave/phone-agent-control#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/madmicrowave/phone-agent-control.git"
+  },
+  "bugs": {
+    "url": "https://github.com/madmicrowave/phone-agent-control/issues"
+  },
+  "os": [
+    "darwin"
+  ],
+  "keywords": [
+    "macos",
+    "google-gemini",
+    "gemini",
+    "antigravity",
+    "telegram-bot",
+    "ai-coding-agent",
+    "git",
+    "jenkins",
+    "domonk"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/bot.mjs",
+    "setup": "node src/setup.mjs",
+    "add-ide": "node src/setup.mjs add-ide",
+    "update-jenkins": "node src/setup.mjs update-jenkins",
+    "test-jenkins": "node src/setup.mjs test-jenkins",
+    "stop": "node src/service.mjs stop",
+    "test": "node --test test/*.test.mjs"
+  }
+}
