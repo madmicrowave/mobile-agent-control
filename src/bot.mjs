@@ -28,7 +28,7 @@ export const PROJECT_ROOT = path.resolve(__dirname, '..');
 export const BOT_COMMANDS = [
   { command: 'start', description: 'Authenticate session & select IDE' },
   { command: 'ides', description: 'Switch active IDE workspace' },
-  { command: 'model', description: 'Change Gemini model & level for active IDE' },
+  { command: 'model', description: 'Change AI model & level for active IDE' },
   { command: 'history', description: 'Show latest X messages (setup count)' },
   { command: 'newchat', description: 'Start a fresh chat in active IDE' },
   { command: 'settings', description: 'Change AI model & level per IDE' },
@@ -259,7 +259,7 @@ export async function executeConsoleCommand(
       (cfg.workspaces || [])
         .map(
           (w, idx) =>
-            `    ${idx + 1}) ${w.name} — ${w.path} [${w.model || 'gemini-3.8-flash-high'}:${w.modelLevel || 'high'}]`
+            `    ${idx + 1}) ${w.label || w.id} (${w.id}) — ${w.path} [${w.model || 'gemini-3.8-flash-high'}:${w.modelLevel || 'high'}]`
         )
         .join('\n') || '    (none configured)';
     const jenkinsOk = Boolean(cfg.jenkins?.username && cfg.jenkins?.apiToken);
@@ -280,7 +280,7 @@ export async function executeConsoleCommand(
     log('    update-jenkins  Update Jenkins URL, username & API token, and test connection');
     log('    test-jenkins    Test Jenkins connection right now');
     log('    setup           Run full setup wizard');
-    log('    status          Show configured IDEs, Gemini models & Jenkins status');
+    log('    status          Show configured IDEs, AI models & Jenkins status');
     log('');
     return { handled: true, command: 'help' };
   }
@@ -535,7 +535,7 @@ async function main() {
       (cfg.workspaces || [])
         .map(
           (w) =>
-            `${w.name}${w.model ? ` [${w.model}${w.modelLevel ? `:${w.modelLevel}` : ''}]` : ''}`
+            `${w.label || w.id}${w.model ? ` [${w.model}${w.modelLevel ? `:${w.modelLevel}` : ''}]` : ''}`
         )
         .join(', ') || '(none yet)';
     const jenkinsOk = Boolean(cfg.jenkins?.username && cfg.jenkins?.apiToken);

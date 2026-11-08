@@ -49,7 +49,8 @@ function parseModelSelection(
 ) {
   const raw = String(answer || '').trim();
   if (!raw) return fallbackModel;
-  if (['default', 'auto', 'none', '-'].includes(raw.toLowerCase())) {
+  const lower = raw.toLowerCase();
+  if (['default', 'auto', 'none', '-'].includes(lower)) {
     return 'gemini-3.8-flash';
   }
   if (/^\d+$/.test(raw)) {
@@ -58,14 +59,24 @@ function parseModelSelection(
       return families[idx].family;
     }
   }
-  return raw;
+  const suffixMatch = lower.match(/^(.*)-(low|medium|high)$/);
+  const baseCandidate = suffixMatch ? suffixMatch[1] : lower;
+  const matched = families.find(
+    (fam) =>
+      fam.shortCode === lower ||
+      fam.family === lower ||
+      fam.family === baseCandidate ||
+      fam.aliases.includes(lower) ||
+      fam.aliases.includes(baseCandidate)
+  );
+  return matched ? matched.family : fallbackModel;
 }
 
 function parseModelLevelSelection(answer, fallbackLevel = 'high') {
   const raw = String(answer || '').trim().toLowerCase();
-  if (!raw) return fallbackLevel;
+  if (!raw) return VALID_MODEL_LEVELS.includes(fallbackLevel) ? fallbackLevel : 'high';
   if (['default', 'auto', 'none', '-'].includes(raw)) {
-    return '';
+    return 'high';
   }
   if (/^\d+$/.test(raw)) {
     const idx = Number(raw) - 1;
@@ -76,7 +87,7 @@ function parseModelLevelSelection(answer, fallbackLevel = 'high') {
   if (VALID_MODEL_LEVELS.includes(raw)) {
     return raw;
   }
-  return fallbackLevel;
+  return VALID_MODEL_LEVELS.includes(fallbackLevel) ? fallbackLevel : 'high';
 }
 
 async function detectCurrentGitBranch(repoPath) {
@@ -326,17 +337,18 @@ export async function runWorkspacesWizard({
   });
 
   async function askWorkspaceGeminiModelAndLevel(existingWs = null) {
-    log('\n  Gemini Models:');
+    log('\n  AI Models:');
     geminiFamilies.forEach((fam, idx) => {
       log(`    ${idx + 1}) ${fam.family.padEnd(20)} — ${fam.label}`);
     });
     const fallbackModel = existingWs?.model || cfg.defaultModel || 'gemini-3.8-flash';
     const rawModelAns = await ask(
-      `  Gemini model (1-${geminiFamilies.length}, or custom Gemini model ID) [${fallbackModel}]: `
+      `  AI model (1-${geminiFamilies.length}) [${fallbackModel}]: `
     );
     const selectedModelInput = parseModelSelection(rawModelAns, fallbackModel, geminiFamilies);
 
-    const fallbackLevel = existingWs?.modelLevel || cfg.defaultModelLevel || 'high';
+    const rawExistingLvl = String(existingWs?.modelLevel || cfg.defaultModelLevel || 'high').toLowerCase();
+    const fallbackLevel = VALID_MODEL_LEVELS.includes(rawExistingLvl) ? rawExistingLvl : 'high';
     const rawLevelAns = await ask(
       `  Model level (${VALID_MODEL_LEVELS.join(' / ')}) [${fallbackLevel}]: `
     );
@@ -358,7 +370,7 @@ export async function runWorkspacesWizard({
   log(
     mode === 'add-ide'
       ? '  Register / Add Available IDE Workspace (Console)'
-      : '  7. Workspaces Setup (Register Available IDEs, Gemini Model & Jenkins Jobs)'
+      : '  7. Workspaces Setup (Register Available IDEs, AI Model & Jenkins Jobs)'
   );
   log('------------------------------------------------------------');
 
@@ -373,7 +385,7 @@ export async function runWorkspacesWizard({
           modelLevel: ws.modelLevel || cfg.defaultModelLevel || 'high'
         });
         log(
-          `  ${i + 1}) ${ws.name} — ${ws.path} [Gemini: ${resolvedModel.displayLabel}] (${(ws.repos || []).length} repos, ${deployCount} deployable)`
+          `  ${i + 1}) ${ws.label || ws.id} (${ws.id}) — ${ws.path} [Model: ${resolvedModel.displayLabel}] (${(ws.repos || []).length} repos, ${deployCount} deployable)`
         );
       });
     } else {
@@ -403,7 +415,7 @@ export async function runWorkspacesWizard({
     }
     if (cfg.workspaces.length > 0) {
       log('  • Enter a workspace number (e.g. "1") to re-scan & edit it');
-      log('  • Enter "model <number>" (or "models") to change Gemini model & level');
+      log('  • Enter "model <number>" (or "models") to change AI model & level');
       log('  • Enter "remove <number>" (or "clear") to unregister workspace(s)');
     }
     log('  • Press Enter on an empty line when finished');
@@ -420,11 +432,12 @@ export async function runWorkspacesWizard({
 
     if (rawSelection.toLowerCase() === 'models') {
       for (const ws of cfg.workspaces) {
-        log(`\n--- Gemini Model Setup for "${ws.name}" ---`);
+        const wsLabel = ws.label || ws.id;
+        log(`\n--- AI Model Setup for "${wsLabel}" ---`);
         const { wsModel, wsModelLevel, resolvedAgent } = await askWorkspaceGeminiModelAndLevel(ws);
         ws.model = wsModel;
         ws.modelLevel = wsModelLevel;
-        log(`  Updated "${ws.name}" -> ${resolvedAgent.displayLabel}`);
+        log(`  Updated "${wsLabel}" -> ${resolvedAgent.displayLabel}`);
       }
       await activeStore.saveConfig();
       continue;
@@ -435,12 +448,13 @@ export async function runWorkspacesWizard({
       const idx = Number(quickModelMatch[1]) - 1;
       if (idx >= 0 && idx < cfg.workspaces.length) {
         const ws = cfg.workspaces[idx];
-        log(`\n--- Gemini Model Setup for "${ws.name}" ---`);
+        const wsLabel = ws.label || ws.id;
+        log(`\n--- AI Model Setup for "${wsLabel}" ---`);
         const { wsModel, wsModelLevel, resolvedAgent } = await askWorkspaceGeminiModelAndLevel(ws);
         ws.model = wsModel;
         ws.modelLevel = wsModelLevel;
         await activeStore.saveConfig();
-        log(`Updated "${ws.name}" -> ${resolvedAgent.displayLabel}.`);
+        log(`Updated "${wsLabel}" -> ${resolvedAgent.displayLabel}.`);
       } else {
         warn('Invalid workspace number.');
       }
@@ -466,7 +480,7 @@ export async function runWorkspacesWizard({
       if (idx >= 0 && idx < cfg.workspaces.length) {
         const [removed] = cfg.workspaces.splice(idx, 1);
         await activeStore.saveConfig();
-        log(`Removed workspace "${removed.name}".`);
+        log(`Removed workspace "${removed.label || removed.id}".`);
       } else {
         warn('Invalid workspace number.');
       }
@@ -514,15 +528,26 @@ export async function runWorkspacesWizard({
       continue;
     }
 
-    const defaultName = existingWs?.name || path.basename(targetPath);
-    const wsNameAns = (await ask(`Workspace short name [${defaultName}]: `)).trim();
-    const wsName = wsNameAns || defaultName;
+    const defaultId = existingWs?.id || slugifyWorkspaceId(path.basename(targetPath)).slice(0, 20);
+    const wsIdAns = (await ask(`Workspace ID [${defaultId}]: `)).trim();
+    let wsId =
+      existingWs?.id && !wsIdAns
+        ? existingWs.id
+        : slugifyWorkspaceId(wsIdAns || defaultId).slice(0, 24);
 
-    const defaultLabel = existingWs?.label || wsName;
+    if (!existingWs || wsId !== existingWs.id) {
+      let n = 1;
+      const baseSlug = wsId;
+      while (cfg.workspaces.some((w) => w !== existingWs && w.id === wsId)) {
+        wsId = `${baseSlug.slice(0, 20)}-${n++}`;
+      }
+    }
+
+    const defaultLabel = existingWs?.label || path.basename(targetPath);
     const wsLabelAns = (await ask(`Workspace display label [${defaultLabel}]: `)).trim();
     const wsLabel = wsLabelAns || defaultLabel;
 
-    // ── Gemini Model & Model Level Selection ─────────────────────────────────
+    // ── AI Model & Model Level Selection ─────────────────────────────────────
     const { wsModel, wsModelLevel, resolvedAgent } =
       await askWorkspaceGeminiModelAndLevel(existingWs);
 
@@ -662,18 +687,8 @@ export async function runWorkspacesWizard({
 
     const combinedJenkinsJobs = [...new Set([...repoJobSet, ...extraWsJobs])];
 
-    let wsId = existingWs?.id || slugifyWorkspaceId(wsName).slice(0, 20);
-    if (!existingWs) {
-      let n = 1;
-      const baseSlug = wsId;
-      while (cfg.workspaces.some((w) => w.id === wsId)) {
-        wsId = `${baseSlug.slice(0, 17)}-${n++}`;
-      }
-    }
-
     const workspaceRecord = {
       id: wsId,
-      name: wsName,
       label: wsLabel,
       path: targetPath,
       extraDirs: wsExtraDirs,
@@ -684,7 +699,9 @@ export async function runWorkspacesWizard({
       repos: configuredRepos
     };
 
-    const existingIdx = cfg.workspaces.findIndex((w) => w.id === wsId);
+    const existingIdx = existingWs
+      ? cfg.workspaces.indexOf(existingWs)
+      : cfg.workspaces.findIndex((w) => w.id === wsId);
     if (existingIdx !== -1) {
       cfg.workspaces[existingIdx] = workspaceRecord;
     } else {
@@ -693,7 +710,7 @@ export async function runWorkspacesWizard({
 
     await activeStore.saveConfig();
     log(
-      `\nSaved workspace "${wsName}" [Gemini: ${resolvedAgent.displayLabel}] (${configuredRepos.length} repo(s), ${combinedJenkinsJobs.length} Jenkins job(s)).`
+      `\nSaved workspace "${wsLabel}" (${wsId}) [Model: ${resolvedAgent.displayLabel}] (${configuredRepos.length} repo(s), ${combinedJenkinsJobs.length} Jenkins job(s)).`
     );
   }
 

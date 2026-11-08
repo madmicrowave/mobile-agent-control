@@ -12,7 +12,12 @@ import {
   normalizeJenkinsJobPath,
   rewriteToBaseOrigin
 } from '../src/jenkins-client.mjs';
-import { buildAgyArgs, resolveEffectiveModelAndLevel } from '../src/agy-runner.mjs';
+import {
+  VALID_MODEL_LEVELS,
+  GEMINI_MODEL_FAMILIES,
+  buildAgyArgs,
+  resolveEffectiveModelAndLevel
+} from '../src/agy-runner.mjs';
 import {
   cleanUserPromptText,
   readTranscriptMessages,
@@ -389,7 +394,10 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     );
   });
 
-  it('builds agy CLI arguments with attached photos, --add-dir, AI model, and model effort level', () => {
+  it('builds agy CLI arguments with attached photos, --add-dir, AI models (Gemini & Claude Opus 5.5), and 3 model levels (low/medium/high)', () => {
+    assert.deepEqual(VALID_MODEL_LEVELS, ['low', 'medium', 'high']);
+    assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'claude-opus-5-5'));
+
     const resolved = resolveEffectiveModelAndLevel({ model: 'gemeni 3.8', modelLevel: 'high' });
     assert.equal(resolved.modelId, 'gemini-3.8-flash-high');
     assert.equal(resolved.effort, 'high');
@@ -401,12 +409,21 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.equal(switchedTier.modelId, 'gemini-3.8-flash-low');
     assert.equal(switchedTier.effort, 'low');
 
-    const maxEffort = resolveEffectiveModelAndLevel({
+    const opusResolved = resolveEffectiveModelAndLevel({
+      model: 'cloud opus 5.5',
+      modelLevel: 'medium'
+    });
+    assert.equal(opusResolved.modelId, 'claude-opus-5-5-medium');
+    assert.equal(opusResolved.effort, 'medium');
+    assert.equal(opusResolved.displayLabel, 'Claude Opus 5.5 (medium)');
+
+    // Legacy xhigh/max normalizes cleanly to high
+    const legacyMax = resolveEffectiveModelAndLevel({
       model: 'gemini-3.8-flash',
       modelLevel: 'max'
     });
-    assert.equal(maxEffort.modelId, 'gemini-3.8-flash-high');
-    assert.equal(maxEffort.effort, 'max');
+    assert.equal(legacyMax.modelId, 'gemini-3.8-flash-high');
+    assert.equal(legacyMax.effort, 'high');
 
     const args = buildAgyArgs({
       prompt: 'Update header',
@@ -604,7 +621,9 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
 
       assert.equal(store.config.workspaces.length, 1);
       const ws = store.config.workspaces[0];
-      assert.equal(ws.name, 'stack');
+      assert.equal(ws.id, 'stack');
+      assert.equal(ws.label, 'My Stack');
+      assert.equal(ws.name, undefined);
       assert.equal(ws.model, 'gemini-3.8-flash-high');
       assert.equal(ws.modelLevel, 'high');
       assert.equal(ws.liveUrl, 'https://app.example.com');
@@ -821,13 +840,27 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(mockTg.sentMessages.some((m) => /Session unlocked!/.test(m.text)));
   });
 
-  it('uses fixed setup defaultHistoryCount (no X=5/X=10 buttons) and supports Same Chat & New Chat', async () => {
-    mockTg.clearSent();
+  it('shows workspace labels (without name field), makes ✅ Same Chat default when typing immediately, and supports New Chat & Latest Messages', async () => {
+    // Verify `name` property is stripped from config.json workspaces in favor of `id` + `label`
+    for (const wsCfg of configStore.config.workspaces) {
+      assert.equal(wsCfg.name, undefined);
+      assert.ok(wsCfg.id);
+      assert.ok(wsCfg.label);
+    }
 
-    // Settings menu must show AI Model Settings only (no X=5 / X=10 / X=20 history buttons)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('/ides'));
+    const ideMenuBtns = mockTg.lastSent().reply_markup.inline_keyboard.flat().map((b) => b.text);
+    assert.ok(ideMenuBtns.some((t) => t.includes('Payments Platform')));
+    assert.ok(ideMenuBtns.some((t) => t.includes('Web Portal')));
+    assert.ok(!ideMenuBtns.some((t) => /\bpayments\b/.test(t)));
+
+    // Settings menu must show AI Model Settings with workspace labels (no X=5 / X=10 buttons)
+    mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/settings'));
     const settingsMsg = mockTg.lastSent();
     assert.match(settingsMsg.text, /AI Model Settings/);
+    assert.match(settingsMsg.text, /Payments Platform/);
     assert.doesNotMatch(settingsMsg.text, /X=5|X=10/);
     const settingsCbs = settingsMsg.reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
     assert.ok(!settingsCbs.some((c) => c.startsWith('cfg:x:')));
@@ -837,32 +870,47 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     const selectMsg = mockTg.lastSent();
-    assert.match(selectMsg.text, /IDE Selected: payments/);
+    assert.match(selectMsg.text, /IDE Selected: Payments Platform/);
+    assert.doesNotMatch(selectMsg.text, /Show Latest/i);
     const flatButtons = selectMsg.reply_markup.inline_keyboard.flat();
-    assert.ok(flatButtons.some((b) => b.callback_data === 'chat:same:payments'));
-    assert.ok(!flatButtons.some((b) => /Last 5|Last 10|Last 20/.test(b.text)));
+    const sameChatBtn = flatButtons.find((b) => b.callback_data === 'chat:same:payments');
+    assert.ok(sameChatBtn);
+    assert.equal(sameChatBtn.text, '✅ Same Chat');
+    assert.ok(!flatButtons.some((b) => /Show Latest|Last 5|Last 10|Last 20/i.test(b.text)));
     assert.ok(flatButtons.some((b) => b.callback_data === 'chat:new:payments'));
     assert.ok(flatButtons.some((b) => b.callback_data === 'ide:cfg:payments'));
 
+    // Without clicking ✅ Same Chat, typing a prompt immediately must auto-continue Same Chat!
+    nextAgentBehavior = async () => ({
+      conversationId: 'conv-core-existing',
+      response: 'Continued existing desktop chat seamlessly.'
+    });
     mockTg.clearSent();
-    await controller.handleUpdate(makeCallback('chat:same:payments'));
-    assert.equal(mockTg.sentMessages.length, 2);
-    assert.match(mockTg.sentMessages[0].text, /Latest 2 of 4 message\(s\) in payments/);
-    assert.equal(mockTg.sentMessages[0].reply_markup, null);
-    assert.match(mockTg.sentMessages[0].text, /Earlier desktop question 2/);
-    assert.match(mockTg.sentMessages[0].text, /Earlier desktop answer 2/);
-    assert.doesNotMatch(mockTg.sentMessages[0].text, /Earlier desktop question 1/);
-    assert.match(mockTg.sentMessages[1].text, /Continuing Same Chat in payments/);
+    await controller.handleUpdate(makeUserMsg('Continue what we discussed earlier'));
+    await controller.waitForBackgroundTasks();
+    assert.equal(lastAgentCallArgs.conversationId, 'conv-core-existing');
 
-    // Passing `/history 10` must still strictly obey setup config `defaultHistoryCount = 2`
+    // Passing `/history 10` strictly obeys setup config `defaultHistoryCount = 2`
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/history 10'));
-    assert.match(mockTg.lastSent().text, /Latest 2 of 4 message\(s\) in payments/);
+    assert.match(mockTg.lastSent().text, /Latest 2 of 4 message\(s\) in Payments Platform/);
+    assert.match(mockTg.lastSent().text, /Earlier desktop question 2/);
+    assert.match(mockTg.lastSent().text, /Earlier desktop answer 2/);
+    assert.doesNotMatch(mockTg.lastSent().text, /Earlier desktop question 1/);
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('chat:new:payments'));
-    assert.match(mockTg.lastSent().text, /New Chat Ready in payments/);
+    assert.match(mockTg.lastSent().text, /New Chat Ready in Payments Platform/);
     assert.equal(configStore.getWorkspaceState('payments').conversationId, null);
+
+    // Tapping ✅ Same Chat switches back to continuing Same Chat without dumping history
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('chat:same:payments'));
+    assert.equal(mockTg.sentMessages.length, 1);
+    assert.match(mockTg.lastSent().text, /Continuing Same Chat in Payments Platform/);
+
+    // Reset back to New Chat for the next test
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
   });
 
   it('handles photo + text prompt, lists changed files, and discards cleanly on Commit -> No', async () => {
@@ -907,7 +955,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(stat.size > 0);
 
     const commitAsk = mockTg.lastSent();
-    assert.match(commitAsk.text, /Changes made in payments/);
+    assert.match(commitAsk.text, /Changes made in Payments Platform/);
     assert.match(commitAsk.text, /src\/app\.js/);
     assert.match(commitAsk.text, /src\/photo-widget\.js/);
     assert.doesNotMatch(commitAsk.text, /manual-wip\.txt/);
@@ -919,7 +967,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('cmt:no:payments', commitAsk.message_id));
-    assert.match(mockTg.lastSent().text, /Last action:.*Discarded uncommitted changes in .*payments/s);
+    assert.match(
+      mockTg.lastSent().text,
+      /Last action:.*Discarded uncommitted changes in .*Payments Platform/s
+    );
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
 
     assert.equal(
@@ -994,7 +1045,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ok:yes:payments'));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
-    assert.match(mockTg.lastSent().text, /Last action:.*Confirmed changes in .*payments/s);
+    assert.match(
+      mockTg.lastSent().text,
+      /Last action:.*Confirmed changes in .*Payments Platform/s
+    );
 
     await runGit(coreRepo.cloneDir, ['checkout', 'master']);
   });
@@ -1192,38 +1246,51 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:extra'));
     assert.equal(configStore.getUserSession(USER_ID).selectedWorkspaceId, 'extra');
-    assert.ok(mockTg.sentMessages.some((m) => /Switched to IDE: extra/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Switched to IDE: Extra Service/.test(m.text)));
     assert.match(mockTg.lastSent().text, /Commit &amp; push these changes\?/);
 
     await controller.handleUpdate(makeCallback('cmt:no:extra'));
     assert.equal(configStore.getWorkspaceState('extra').phase, 'IDLE');
   });
 
-  it('configures & changes Gemini model and level independently per IDE, hot-reloads config.json, and forwards model/modelLevel', async () => {
+  it('configures & changes AI model (including Claude Opus 5.5) and 3 levels (low/medium/high) per IDE without custom model option', async () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));
 
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/model'));
     const cfgMsg = mockTg.lastSent();
-    assert.match(cfgMsg.text, /Gemini Model:/);
+    assert.match(cfgMsg.text, /AI Model:/);
     assert.match(cfgMsg.text, /Model Level:/);
+
+    const flatModelBtns = cfgMsg.reply_markup.inline_keyboard.flat();
+    const cbs = flatModelBtns.map((b) => b.callback_data);
+    // Must include Gemini 3.8 Flash, Gemini 4 Argon, and Claude Opus 5.5
+    assert.ok(cbs.includes('mdl:f:payments:g38'));
+    assert.ok(cbs.includes('mdl:f:payments:g4'));
+    assert.ok(cbs.includes('mdl:f:payments:co55'));
+    // Must have ONLY 3 levels (low, medium, high) — NO xhigh or max, and NO Custom Model button!
+    assert.ok(cbs.includes('mdl:l:payments:low'));
+    assert.ok(cbs.includes('mdl:l:payments:medium'));
+    assert.ok(cbs.includes('mdl:l:payments:high'));
+    assert.ok(!cbs.some((c) => c.endsWith(':xhigh') || c.endsWith(':max')));
+    assert.ok(!cbs.some((c) => c.startsWith('mdl:custom:')));
 
     // Configure `payments` IDE -> Gemini 3.8 Flash (high)
     await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));
     await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
 
-    // Configure `portal` IDE independently -> Gemini 4 Argon (medium) via Settings -> IDE card
+    // Configure `portal` IDE independently -> Claude Opus 5.5 (medium) via Settings -> IDE card
     await controller.handleUpdate(makeCallback('ide:cfg:portal'));
     const portalCfgMsg = mockTg.lastSent();
-    await controller.handleUpdate(makeCallback('mdl:f:portal:g4', portalCfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:f:portal:co55', portalCfgMsg.message_id));
     await controller.handleUpdate(makeCallback('mdl:l:portal:medium', portalCfgMsg.message_id));
 
     const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
     const portalWs = configStore.config.workspaces.find((w) => w.id === 'portal');
     assert.equal(paymentsWs.model, 'gemini-3.8-flash-high');
     assert.equal(paymentsWs.modelLevel, 'high');
-    assert.equal(portalWs.model, 'gemini-4-argon-medium');
+    assert.equal(portalWs.model, 'claude-opus-5-5-medium');
     assert.equal(portalWs.modelLevel, 'medium');
 
     nextAgentBehavior = async () => ({
@@ -1238,12 +1305,14 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // Simulate external config.json edit on disk (e.g. from `npm run setup`) and verify hot-reload
     await new Promise((r) => setTimeout(r, 15));
     const diskCfg = JSON.parse(await fsp.readFile(configStore.configFile, 'utf8'));
-    diskCfg.workspaces.find((w) => w.id === 'payments').modelLevel = 'max';
+    diskCfg.workspaces.find((w) => w.id === 'payments').model = 'claude-opus-5-5-low';
+    diskCfg.workspaces.find((w) => w.id === 'payments').modelLevel = 'low';
     await fsp.writeFile(configStore.configFile, JSON.stringify(diskCfg, null, 2), 'utf8');
 
     await controller.handleUpdate(makeUserMsg('Second check after hot reload'));
     await controller.waitForBackgroundTasks();
-    assert.equal(lastAgentCallArgs.modelLevel, 'max');
+    assert.equal(lastAgentCallArgs.model, 'claude-opus-5-5-low');
+    assert.equal(lastAgentCallArgs.modelLevel, 'low');
   });
 
   it('coalesces multi-photo albums + split big messages into a single agent run and caps uploads at 5 files', async () => {

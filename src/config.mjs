@@ -256,6 +256,12 @@ export class ConfigStore {
     if (typeof this.config.defaultModelLevel !== 'string') {
       this.config.defaultModelLevel = process.env.DEFAULT_AGENT_MODEL_LEVEL || '';
     }
+    if (this.config.defaultModelLevel) {
+      const normDefaultLvl = this.config.defaultModelLevel.trim().toLowerCase();
+      this.config.defaultModelLevel = ['low', 'medium', 'high'].includes(normDefaultLvl)
+        ? normDefaultLvl
+        : 'high';
+    }
     if (this.config.skipPermissions === undefined) {
       this.config.skipPermissions = true;
     }
@@ -291,6 +297,13 @@ export class ConfigStore {
     }
 
     for (const ws of this.config.workspaces) {
+      const fallbackSlug = slugifyWorkspaceId(
+        ws.label || ws.name || path.basename(String(ws.path || 'workspace'))
+      );
+      ws.id = String(ws.id || fallbackSlug).trim();
+      ws.label = String(ws.label || ws.name || ws.id).trim();
+      delete ws.name;
+
       if (!Array.isArray(ws.jenkinsJobs)) {
         ws.jenkinsJobs = [];
       }
@@ -302,6 +315,9 @@ export class ConfigStore {
       }
       if (typeof ws.modelLevel !== 'string') {
         ws.modelLevel = '';
+      } else if (ws.modelLevel.trim()) {
+        const normLvl = ws.modelLevel.trim().toLowerCase();
+        ws.modelLevel = ['low', 'medium', 'high'].includes(normLvl) ? normLvl : 'high';
       }
       if (!Array.isArray(ws.repos)) {
         ws.repos = [];
@@ -348,10 +364,12 @@ export class ConfigStore {
       for (const seed of seedWorkspaces) {
         if (fs.existsSync(seed.path)) {
           const repos = await discoverWorkspaceRepos(seed.path, {}, seed.repoJobs || null);
+          const wsId =
+            seed.id || slugifyWorkspaceId(seed.label || seed.name || path.basename(seed.path));
+          const wsLabel = String(seed.label || seed.name || wsId).trim();
           this.config.workspaces.push({
-            id: seed.id || slugifyWorkspaceId(seed.name),
-            name: seed.name,
-            label: seed.label || seed.name,
+            id: wsId,
+            label: wsLabel,
             path: seed.path,
             extraDirs: seed.extraDirs || [],
             liveUrl: seed.liveUrl || '',

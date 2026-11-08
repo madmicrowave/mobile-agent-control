@@ -125,6 +125,11 @@ export class BotController {
     return this.configStore.config.workspaces.find((w) => w.id === workspaceId) || null;
   }
 
+  getWorkspaceLabel(ws) {
+    if (!ws) return 'IDE';
+    return String(ws.label || ws.id || 'IDE').trim();
+  }
+
   getConfiguredHistoryCount() {
     return Math.max(1, Math.min(50, Number(this.configStore.config.defaultHistoryCount) || 6));
   }
@@ -286,7 +291,7 @@ export class BotController {
         chatId,
         text:
           `🔓 <b>Session unlocked!</b>\n` +
-          `Active until the bot application is restarted (or <code>/lock</code>). Use the buttons below anytime to switch IDEs, inspect messages, or change Gemini models.`,
+          `Active until the bot application is restarted (or <code>/lock</code>). Use the buttons below anytime to switch IDEs, inspect messages, or change AI models.`,
         replyMarkup: MAIN_REPLY_KEYBOARD
       });
       await this.sendIdeSelectorMenu(chatId, userId);
@@ -297,9 +302,6 @@ export class BotController {
 
     // ── Global Commands & Reply Keyboard Shortcuts ───────────────────────────
     if (text === '/start' || text === '/ides' || text === REPLY_BTN_SWITCH_IDE) {
-      sess.inputMode = null;
-      sess.inputTargetWsId = null;
-      await this.configStore.saveState();
       await this.sendIdeSelectorMenu(chatId, userId);
       return;
     }
@@ -319,9 +321,6 @@ export class BotController {
       text === REPLY_BTN_SETTINGS ||
       text === LEGACY_REPLY_BTN_SETTINGS
     ) {
-      sess.inputMode = null;
-      sess.inputTargetWsId = null;
-      await this.configStore.saveState();
       await this.sendSettingsAndRegisterMenu(chatId, userId);
       return;
     }
@@ -380,18 +379,6 @@ export class BotController {
       return;
     }
 
-    // ── Modal Input Mode (Custom Gemini Model ID) ────────────────────────────
-    if (sess.inputMode === 'SET_CUSTOM_MODEL') {
-      const targetWsId = sess.inputTargetWsId || sess.selectedWorkspaceId;
-      sess.inputMode = null;
-      sess.inputTargetWsId = null;
-      await this.configStore.saveState();
-      if (targetWsId) {
-        await this.handleSetModelCommand(chatId, targetWsId, text);
-      }
-      return;
-    }
-
     // ── Ensure an IDE is selected ────────────────────────────────────────────
     const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
     if (!ws) {
@@ -399,6 +386,7 @@ export class BotController {
       return;
     }
 
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     // ── Custom Branch Text Input (during AWAITING_CUSTOM_BRANCH) ─────────────
@@ -406,7 +394,7 @@ export class BotController {
       if (!text) {
         await this.telegram.sendMessage({
           chatId,
-          text: `🌿 Type a valid git branch name for <b>${escapeHtml(ws.name)}</b>:`,
+          text: `🌿 Type a valid git branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
@@ -425,12 +413,12 @@ export class BotController {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `⚠️ <b>${escapeHtml(ws.name)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>. Complete the action below (or tap <b>${REPLY_BTN_SWITCH_IDE}</b> to work in another IDE):`
+        `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>. Complete the action below (or tap <b>${REPLY_BTN_SWITCH_IDE}</b> to work in another IDE):`
       );
       return;
     }
 
-    // If user starts typing/sending photo while in SELECT_CHAT, seamlessly enter IDLE
+    // Same Chat is the default option: if user didn't tap any button in SELECT_CHAT and starts typing/uploading, auto-continue Same Chat!
     if (st.phase === 'SELECT_CHAT') {
       if (!st.conversationId) {
         const recent = await discoverRecentWorkspaceConversations(
@@ -440,6 +428,9 @@ export class BotController {
         );
         if (recent.length > 0) {
           st.conversationId = recent[0].conversationId;
+          st.continueLatest = false;
+        } else {
+          st.continueLatest = true;
         }
       }
       st.phase = 'IDLE';
@@ -471,7 +462,7 @@ export class BotController {
         await this.telegram.sendMessage({
           chatId,
           text:
-            `⚠️ <b>Maximum ${MAX_FILES_PER_TURN} files allowed at once</b> (${st.pendingPhotos.length}/${MAX_FILES_PER_TURN} already attached for <b>${escapeHtml(ws.name)}</b>).\n` +
+            `⚠️ <b>Maximum ${MAX_FILES_PER_TURN} files allowed at once</b> (${st.pendingPhotos.length}/${MAX_FILES_PER_TURN} already attached for <b>${escapeHtml(wsLabel)}</b>).\n` +
             `Type your message to run with these ${MAX_FILES_PER_TURN} files, or tap <b>🗑 Clear Photo(s)</b> first:`,
           replyMarkup: {
             inline_keyboard: [
@@ -521,7 +512,7 @@ export class BotController {
       await this.telegram.sendMessage({
         chatId,
         text:
-          `🖼 <b>Photo attached (${st.pendingPhotos.length})</b> <i>(max ${MAX_FILES_PER_TURN})</i> for <b>${escapeHtml(ws.name)}</b>.\n` +
+          `🖼 <b>Photo attached (${st.pendingPhotos.length})</b> <i>(max ${MAX_FILES_PER_TURN})</i> for <b>${escapeHtml(wsLabel)}</b>.\n` +
           `Now type your message explaining what to do${remaining > 0 ? ` (or attach up to ${remaining} more)` : ''}:`,
         replyMarkup: {
           inline_keyboard: [
@@ -711,7 +702,7 @@ export class BotController {
         await this.telegram.sendMessage({
           chatId: batch.chatId,
           text:
-            `🖼 <b>Photo attached (${st.pendingPhotos.length})</b> <i>(max ${MAX_FILES_PER_TURN})</i> for <b>${escapeHtml(ws.name)}</b>.` +
+            `🖼 <b>Photo attached (${st.pendingPhotos.length})</b> <i>(max ${MAX_FILES_PER_TURN})</i> for <b>${escapeHtml(this.getWorkspaceLabel(ws))}</b>.` +
             (extraNotice ? `\n${escapeHtml(extraNotice)}` : '') +
             `\nNow type your message explaining what to do${remaining > 0 ? ` (or attach up to ${remaining} more)` : ''}:`,
           replyMarkup: {
@@ -766,9 +757,6 @@ export class BotController {
 
     try {
       if (data === 'ide:menu') {
-        sess.inputMode = null;
-        sess.inputTargetWsId = null;
-        await this.configStore.saveState();
         await this.sendIdeSelectorMenu(chatId, userId);
         return;
       }
@@ -817,22 +805,7 @@ export class BotController {
 
       if (data.startsWith('mdl:custom:')) {
         const wsId = data.slice('mdl:custom:'.length);
-        const ws = this.getWorkspace(wsId);
-        if (ws) {
-          sess.inputMode = 'SET_CUSTOM_MODEL';
-          sess.inputTargetWsId = ws.id;
-          await this.configStore.saveState();
-          await this.telegram.sendMessage({
-            chatId,
-            text:
-              `🧠 <b>Set Gemini Model &amp; Level for "${escapeHtml(ws.name)}"</b>\n\n` +
-              `Reply with <code>&lt;gemini-model&gt; [level]</code>\n` +
-              `Examples:\n` +
-              `• <code>gemini-3.8-flash high</code>\n` +
-              `• <code>gemini-4-argon medium</code>\n` +
-              `• <code>gemini-3.8-flash max</code>`
-          });
-        }
+        await this.sendWorkspaceRepoInfo(chatId, wsId, messageId);
         return;
       }
 
@@ -897,9 +870,11 @@ export class BotController {
         const rt = this.runtime.get(wsId);
         if (rt?.abortAgent) {
           rt.abortAgent();
+          const stopWs = this.getWorkspace(wsId);
+          const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
           await this.telegram.sendMessage({
             chatId,
-            text: `🛑 Stopping Antigravity agent in <b>${escapeHtml(wsId)}</b>...`
+            text: `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...`
           });
         }
         return;
@@ -1040,7 +1015,7 @@ export class BotController {
     }
   }
 
-  // ── Menus: Select / Switch IDEs & Per-IDE Gemini Model Settings ────────────
+  // ── Menus: Select / Switch IDEs & Per-IDE AI Model Settings ────────────────
   async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select an IDE Workspace:</b>') {
     const sess = this.configStore.getUserSession(userId);
     const rows = [];
@@ -1051,8 +1026,9 @@ export class BotController {
       for (const ws of workspaces.slice(i, i + 2)) {
         const st = this.configStore.getWorkspaceState(ws.id);
         const activeMark = sess.selectedWorkspaceId === ws.id ? ' •' : '';
+        const wsLabel = this.getWorkspaceLabel(ws);
         row.push({
-          text: `${phaseIcon(st.phase)} ${ws.name}${activeMark}`,
+          text: `${phaseIcon(st.phase)} ${wsLabel}${activeMark}`,
           callback_data: `ide:sel:${ws.id}`
         });
       }
@@ -1082,9 +1058,10 @@ export class BotController {
     for (const item of allWorkspaces) {
       const mInfo = this.resolveWorkspaceModel(item);
       const activeBadge = ws && ws.id === item.id ? ' •' : '';
+      const itemLabel = this.getWorkspaceLabel(item);
       rows.push([
         {
-          text: `🧠 ${item.name}${activeBadge}: ${mInfo.displayLabel}`,
+          text: `🧠 ${itemLabel}${activeBadge}: ${mInfo.displayLabel}`,
           callback_data: `ide:cfg:${item.id}`
         }
       ]);
@@ -1098,7 +1075,8 @@ export class BotController {
             .map((item) => {
               const mInfo = this.resolveWorkspaceModel(item);
               const activeTag = ws && ws.id === item.id ? ' <i>(active)</i>' : '';
-              return `  • <code>${escapeHtml(item.name)}</code> → <code>${escapeHtml(mInfo.displayLabel)}</code>${activeTag}`;
+              const itemLabel = this.getWorkspaceLabel(item);
+              return `  • <code>${escapeHtml(itemLabel)}</code> → <code>${escapeHtml(mInfo.displayLabel)}</code>${activeTag}`;
             })
             .join('\n')
         : '  <i>(No IDEs configured — run <code>npm run setup</code> or <code>npm run add-ide</code> in terminal)</i>';
@@ -1107,7 +1085,7 @@ export class BotController {
       chatId,
       text:
         `⚙️ <b>AI Model Settings</b>\n\n` +
-        `Select an IDE below to change its Gemini model &amp; level:\n${ideModelsSummary}`,
+        `Select an IDE below to change its AI model &amp; level:\n${ideModelsSummary}`,
       replyMarkup: { inline_keyboard: rows }
     });
   }
@@ -1116,6 +1094,7 @@ export class BotController {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
 
+    const wsLabel = this.getWorkspaceLabel(ws);
     const modelInfo = this.resolveWorkspaceModel(ws);
 
     const familyButtons = GEMINI_MODEL_FAMILIES.map((fam) => {
@@ -1140,18 +1119,17 @@ export class BotController {
     });
 
     const text =
-      `🧠 <b>AI Model — ${escapeHtml(ws.name)}</b>\n\n` +
-      `• <b>Gemini Model:</b> <code>${escapeHtml(modelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
+      `🧠 <b>AI Model — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `• <b>AI Model:</b> <code>${escapeHtml(modelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
       `• <b>Model Level:</b> <code>${escapeHtml(modelInfo.effort || 'high')}</code>`;
 
     const replyMarkup = {
       inline_keyboard: [
         ...familyRows,
         levelButtons,
-        [{ text: '⌨️ Custom Gemini Model ID', callback_data: `mdl:custom:${ws.id}` }],
         [
           { text: '⚙️ All IDEs (Models)', callback_data: 'cfg:menu' },
-          { text: `💬 Open "${ws.name}"`, callback_data: `ide:sel:${ws.id}` }
+          { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
         ]
       ]
     };
@@ -1180,11 +1158,13 @@ export class BotController {
   async handleUpdateWorkspaceModelFamily(chatId, wsId, shortCode, editMessageId = null) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
-    const fam = DEFAULT_AGENT_MODEL_FAMILIES.find((f) => f.shortCode === shortCode);
+    const fam =
+      GEMINI_MODEL_FAMILIES.find((f) => f.shortCode === shortCode) ||
+      DEFAULT_AGENT_MODEL_FAMILIES.find((f) => f.shortCode === shortCode);
     if (!fam) return;
 
     const current = this.resolveWorkspaceModel(ws);
-    const nextLevel = current.effort || 'high';
+    const nextLevel = VALID_MODEL_LEVELS.includes(current.effort) ? current.effort : 'high';
     const resolved = resolveEffectiveModelAndLevel({
       model: fam.family,
       modelLevel: nextLevel
@@ -1217,6 +1197,7 @@ export class BotController {
   async handleSetModelCommand(chatId, wsId, rawArgs) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const tokens = String(rawArgs || '').trim().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) {
       await this.sendWorkspaceRepoInfo(chatId, ws.id);
@@ -1227,10 +1208,33 @@ export class BotController {
     if (tokens.length >= 2 && VALID_MODEL_LEVELS.includes(tokens[tokens.length - 1].toLowerCase())) {
       rawLevel = tokens.pop().toLowerCase();
     }
-    const rawModel = tokens.join(' ');
-    const fallbackLevel = rawLevel || ws.modelLevel || this.configStore.config.defaultModelLevel || 'high';
+    const rawModel = tokens.join(' ').toLowerCase();
+    const suffixMatch = rawModel.match(/^(.*)-(low|medium|high)$/);
+    const baseCandidate = suffixMatch ? suffixMatch[1] : rawModel;
+    const suffixLevel = suffixMatch ? suffixMatch[2] : '';
+
+    const matchedFam = GEMINI_MODEL_FAMILIES.find(
+      (f) =>
+        f.shortCode === rawModel ||
+        f.family === rawModel ||
+        f.family === baseCandidate ||
+        f.aliases.includes(rawModel) ||
+        f.aliases.includes(baseCandidate)
+    );
+
+    if (!matchedFam) {
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⚠️ Choose one of the supported models below (${GEMINI_MODEL_FAMILIES.map((f) => escapeHtml(f.label)).join(', ')}) and levels (<code>low</code> / <code>medium</code> / <code>high</code>):`
+      });
+      await this.sendWorkspaceRepoInfo(chatId, ws.id);
+      return;
+    }
+
+    const fallbackLevel =
+      rawLevel || suffixLevel || (VALID_MODEL_LEVELS.includes(ws.modelLevel) ? ws.modelLevel : 'high');
     const resolved = resolveEffectiveModelAndLevel({
-      model: rawModel,
+      model: matchedFam.family,
       modelLevel: fallbackLevel
     });
 
@@ -1241,14 +1245,14 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ Updated Gemini model for <b>${escapeHtml(ws.name)}</b>:\n` +
+        `✅ Updated AI model for <b>${escapeHtml(wsLabel)}</b>:\n` +
         `• Model: <code>${escapeHtml(ws.model || 'gemini-3.8-flash-high')}</code>\n` +
         `• Level: <code>${escapeHtml(ws.modelLevel || 'high')}</code>`
     });
     await this.sendWorkspaceRepoInfo(chatId, ws.id);
   }
 
-  // ── Selecting IDE & Same Chat vs New Chat Flow ─────────────────────────────
+  // ── Selecting IDE & Same Chat (Default) vs New Chat Flow ───────────────────
   async handleSelectIde(chatId, userId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) {
@@ -1256,9 +1260,9 @@ export class BotController {
       return;
     }
 
+    const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     sess.selectedWorkspaceId = ws.id;
-    sess.inputMode = null;
 
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -1268,13 +1272,12 @@ export class BotController {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `🗂 <b>Switched to IDE: ${escapeHtml(ws.name)}</b>\nResuming pending step:`
+        `🗂 <b>Switched to IDE: ${escapeHtml(wsLabel)}</b>\nResuming pending step:`
       );
       return;
     }
 
     st.phase = 'SELECT_CHAT';
-    await this.configStore.saveState();
 
     // Discover recent Antigravity conversations for this workspace (Desktop IDE + CLI)
     const discovered = await discoverRecentWorkspaceConversations(
@@ -1284,23 +1287,29 @@ export class BotController {
     );
     this.cachedRecentChatsByWs.set(ws.id, discovered);
 
-    if (!st.conversationId && discovered.length > 0) {
-      st.conversationId = discovered[0].conversationId;
-      await this.configStore.saveState();
+    // Same Chat is active by default when selecting an IDE
+    if (!st.conversationId) {
+      if (discovered.length > 0) {
+        st.conversationId = discovered[0].conversationId;
+        st.continueLatest = false;
+      } else {
+        st.continueLatest = true;
+      }
     }
+    await this.configStore.saveState();
 
-    const hasSameChat = Boolean(st.conversationId || st.messages.length > 0);
-    const defaultX = this.getConfiguredHistoryCount();
-
-    const keyboard = [];
-    if (hasSameChat) {
-      keyboard.push([
+    const keyboard = [
+      [
         {
-          text: `💬 Same Chat (Show Latest ${defaultX})`,
+          text: '✅ Same Chat',
           callback_data: `chat:same:${ws.id}`
+        },
+        {
+          text: '🆕 New Chat',
+          callback_data: `chat:new:${ws.id}`
         }
-      ]);
-    }
+      ]
+    ];
 
     if (discovered.length > 1) {
       discovered.slice(1, 3).forEach((d, idx) => {
@@ -1313,9 +1322,8 @@ export class BotController {
       });
     }
 
-    keyboard.push([{ text: '🆕 Start New Chat', callback_data: `chat:new:${ws.id}` }]);
     keyboard.push([
-      { text: '🧠 Gemini Model & Level', callback_data: `ide:cfg:${ws.id}` },
+      { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` },
       { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
     ]);
 
@@ -1326,11 +1334,11 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🗂 <b>IDE Selected: ${escapeHtml(ws.name)}</b>\n` +
+        `🗂 <b>IDE Selected: ${escapeHtml(wsLabel)}</b>\n` +
         `📁 <code>${escapeHtml(ws.path)}</code>\n` +
-        `🧠 Gemini Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>\n` +
+        `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>\n` +
         (shortJobsSummary ? `🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n` : '') +
-        `\nChoose <b>Same Chat</b> (to view latest ${defaultX} messages &amp; continue) or <b>New Chat</b>:`,
+        `\n✅ <b>Same Chat</b> is active by default — start typing or attach file(s) right away, or tap <b>🆕 New Chat</b>:`,
       replyMarkup: { inline_keyboard: keyboard }
     });
   }
@@ -1338,6 +1346,7 @@ export class BotController {
   async activateSameChat(chatId, userId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     sess.selectedWorkspaceId = ws.id;
 
@@ -1350,6 +1359,7 @@ export class BotController {
       );
       if (discovered.length > 0) {
         st.conversationId = discovered[0].conversationId;
+        st.continueLatest = false;
       } else {
         st.continueLatest = true;
       }
@@ -1357,18 +1367,17 @@ export class BotController {
     st.phase = 'IDLE';
     await this.configStore.saveState();
 
-    await this.sendLatestMessagesForWorkspace(chatId, ws.id);
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✏️ <b>Continuing Same Chat in ${escapeHtml(ws.name)}</b>` +
+        `✅ <b>Continuing Same Chat in ${escapeHtml(wsLabel)}</b>` +
         (st.conversationId ? ` (<code>${escapeHtml(st.conversationId.slice(0, 8))}</code>)` : '') +
         `.\nType your message or send a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
           [
-            { text: '🆕 Start New Chat Instead', callback_data: `chat:new:${ws.id}` },
-            { text: '🧠 Gemini Model', callback_data: `ide:cfg:${ws.id}` }
+            { text: '🆕 New Chat', callback_data: `chat:new:${ws.id}` },
+            { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }
           ],
           [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
         ]
@@ -1379,13 +1388,14 @@ export class BotController {
   async activateNewChat(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `⚠️ Complete or cancel the active turn in <b>${escapeHtml(ws.name)}</b> before starting a new chat:`
+        `⚠️ Complete or cancel the active turn in <b>${escapeHtml(wsLabel)}</b> before starting a new chat:`
       );
       return;
     }
@@ -1400,14 +1410,15 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🆕 <b>New Chat Ready in ${escapeHtml(ws.name)}</b>\n` +
+        `🆕 <b>New Chat Ready in ${escapeHtml(wsLabel)}</b>\n` +
         `Type your message or attach a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
           [
-            { text: '🧠 Gemini Model & Level', callback_data: `ide:cfg:${ws.id}` },
-            { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-          ]
+            { text: '💬 Same Chat', callback_data: `chat:same:${ws.id}` },
+            { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }
+          ],
+          [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
         ]
       }
     });
@@ -1416,6 +1427,7 @@ export class BotController {
   async sendLatestMessagesForWorkspace(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
     const count = this.getConfiguredHistoryCount();
 
@@ -1429,7 +1441,7 @@ export class BotController {
     if (messages.length === 0) {
       await this.telegram.sendMessage({
         chatId,
-        text: `📭 No previous messages found in <b>${escapeHtml(ws.name)}</b> yet.`
+        text: `📭 No previous messages found in <b>${escapeHtml(wsLabel)}</b> yet.`
       });
       return;
     }
@@ -1444,7 +1456,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `📜 <b>Latest ${messages.length} of ${total} message(s) in ${escapeHtml(ws.name)}:</b>\n\n` +
+        `📜 <b>Latest ${messages.length} of ${total} message(s) in ${escapeHtml(wsLabel)}:</b>\n\n` +
         formatted
     });
   }
@@ -1499,11 +1511,12 @@ export class BotController {
         ? `⚠️ Max ${MAX_FILES_PER_TURN} files allowed at once — attached first ${MAX_FILES_PER_TURN} file(s), skipped ${droppedFromQueue}.`
         : '');
 
+    const wsLabel = this.getWorkspaceLabel(ws);
     const modelInfo = this.resolveWorkspaceModel(ws);
     const statusMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🤖 <b>Running Antigravity Agent in ${escapeHtml(ws.name)}…</b>\n` +
+        `🤖 <b>Running Antigravity Agent in ${escapeHtml(wsLabel)}…</b>\n` +
         `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
         (attachedPhotos.length > 0
           ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
@@ -1528,7 +1541,7 @@ export class BotController {
           await this.configStore.saveState();
           await this.telegram.sendMessage({
             chatId,
-            text: `❌ Unexpected error in <b>${escapeHtml(ws.name)}</b>: ${escapeHtml(st.lastError)}`
+            text: `❌ Unexpected error in <b>${escapeHtml(wsLabel)}</b>: ${escapeHtml(st.lastError)}`
           });
         }
       )
@@ -1538,6 +1551,7 @@ export class BotController {
   async #executeAgentTurn(chatId, ws, st, attachedPhotos, statusMessageId) {
     let lastProgressEditMs = 0;
 
+    const wsLabel = this.getWorkspaceLabel(ws);
     const effectiveModel = this.resolveWorkspaceModel(ws);
 
     try {
@@ -1573,7 +1587,7 @@ export class BotController {
                 chatId,
                 messageId: statusMessageId,
                 text:
-                  `🤖 <b>Antigravity working in ${escapeHtml(ws.name)}…</b>\n` +
+                  `🤖 <b>Antigravity working in ${escapeHtml(wsLabel)}…</b>\n` +
                   `⚙️ <code>${escapeHtml(stepLabel)}</code>`,
                 replyMarkup: {
                   inline_keyboard: [
@@ -1614,7 +1628,7 @@ export class BotController {
 
       await this.telegram.sendMessage({
         chatId,
-        text: `🤖 <b>${escapeHtml(ws.name)} — Agent Response:</b>\n\n${markdownToTelegramHtml(replyText)}`
+        text: `🤖 <b>${escapeHtml(wsLabel)} — Agent Response:</b>\n\n${markdownToTelegramHtml(replyText)}`
       });
     } catch (agentErr) {
       this.runtime.delete(ws.id);
@@ -1634,7 +1648,7 @@ export class BotController {
       await this.telegram.sendMessage({
         chatId,
         text:
-          `❌ <b>Agent stopped/failed in ${escapeHtml(ws.name)}:</b>\n` +
+          `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n` +
           `${escapeHtml(agentErr.message)}\n\n` +
           `Uncommitted edits from this run were cleaned up. Ready for your next message.`
       });
@@ -1666,7 +1680,7 @@ export class BotController {
 
       await this.telegram.sendMessage({
         chatId,
-        text: `ℹ️ <b>No files were changed in ${escapeHtml(ws.name)}.</b>\nReady for your next message.`,
+        text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\nReady for your next message.`,
         replyMarkup: {
           inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
         }
@@ -1682,6 +1696,7 @@ export class BotController {
   }
 
   formatChangedFilesSummary(ws, deltas) {
+    const wsLabel = this.getWorkspaceLabel(ws);
     let totalFiles = 0;
     const repoBlocks = [];
 
@@ -1702,7 +1717,7 @@ export class BotController {
     }
 
     return (
-      `📝 <b>Changes made in ${escapeHtml(ws.name)}</b> (${totalFiles} file${totalFiles === 1 ? '' : 's'} in ${deltas.length} repo${deltas.length === 1 ? '' : 's'}):\n\n` +
+      `📝 <b>Changes made in ${escapeHtml(wsLabel)}</b> (${totalFiles} file${totalFiles === 1 ? '' : 's'} in ${deltas.length} repo${deltas.length === 1 ? '' : 's'}):\n\n` +
       `${repoBlocks.join('\n\n')}\n\n` +
       `<b>Commit &amp; push these changes?</b>`
     );
@@ -1732,6 +1747,7 @@ export class BotController {
   async handleCommitNo(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (st.phase !== 'AWAITING_COMMIT_CHOICE' && st.phase !== 'AWAITING_CUSTOM_BRANCH') {
@@ -1765,7 +1781,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🗑 <b>Last action:</b> Discarded uncommitted changes in <b>${escapeHtml(ws.name)}</b> (did not commit).\n` +
+        `🗑 <b>Last action:</b> Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n` +
         `Ready for your next message!`,
       replyMarkup: {
         inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
@@ -1776,6 +1792,7 @@ export class BotController {
   async promptForCustomBranch(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (st.phase !== 'AWAITING_COMMIT_CHOICE') {
@@ -1789,7 +1806,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🌿 <b>Custom Branch for ${escapeHtml(ws.name)}</b>\n` +
+        `🌿 <b>Custom Branch for ${escapeHtml(wsLabel)}</b>\n` +
         `Reply with the branch name to commit &amp; push to (e.g. <code>feat/mobile-fix</code>):`,
       replyMarkup: {
         inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
@@ -1998,6 +2015,7 @@ export class BotController {
 
   // ── STEP 3: Run Jenkins? Yes / No / All / Single Job ───────────────────────
   async sendRunJenkinsPrompt(chatId, ws, targets, { isAfterRevert = false } = {}) {
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
     const sourceCommits = isAfterRevert
       ? st.activeTurn?.revertCommits || []
@@ -2027,7 +2045,7 @@ export class BotController {
       if (allWsTargets.length > targets.length) {
         keyboard.push([
           {
-            text: `🚀 Run All ${allWsTargets.length} ${ws.name} Jobs`,
+            text: `🚀 Run All ${allWsTargets.length} ${wsLabel} Jobs`,
             callback_data: `${prefix}:all:${ws.id}`
           }
         ]);
@@ -2041,8 +2059,8 @@ export class BotController {
         .join('\n');
 
       bodyText = isAfterRevert
-        ? `🚀 <b>Run Jenkins to redeploy ${escapeHtml(ws.name)} after revert?</b>\n${allDesc}`
-        : `🚀 <b>Modified shared repository in ${escapeHtml(ws.name)} — run Jenkins deploy?</b>\n${allDesc}`;
+        ? `🚀 <b>Run Jenkins to redeploy ${escapeHtml(wsLabel)} after revert?</b>\n${allDesc}`
+        : `🚀 <b>Modified shared repository in ${escapeHtml(wsLabel)} — run Jenkins deploy?</b>\n${allDesc}`;
 
       keyboard.push([
         {
@@ -2081,6 +2099,7 @@ export class BotController {
   ) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (!shouldRun) {
@@ -2107,7 +2126,7 @@ export class BotController {
           chatId,
           text:
             `⏭ <b>Last action:</b> Skipped Jenkins after revert.\n` +
-            `Bad commit remains reverted on <code>origin</code>. <b>${escapeHtml(ws.name)}</b> is ready for your next message!`,
+            `Bad commit remains reverted on <code>origin</code>. <b>${escapeHtml(wsLabel)}</b> is ready for your next message!`,
           replyMarkup: {
             inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
           }
@@ -2121,7 +2140,7 @@ export class BotController {
 
       await this.telegram.sendMessage({
         chatId,
-        text: `⏭ <b>Last action:</b> Skipped Jenkins deploy for <b>${escapeHtml(ws.name)}</b>.`
+        text: `⏭ <b>Last action:</b> Skipped Jenkins deploy for <b>${escapeHtml(wsLabel)}</b>.`
       });
       await this.sendIsItOkayPrompt(chatId, ws);
       return;
@@ -2180,6 +2199,7 @@ export class BotController {
   }
 
   async #executeJenkinsBuilds(chatId, ws, st, deployTargets, isAfterRevert, progressMsgId) {
+    const wsLabel = this.getWorkspaceLabel(ws);
     const jenkins = this.jenkinsFactory(this.configStore.config.jenkins);
     const results = [];
     let failedBuild = null;
@@ -2199,7 +2219,7 @@ export class BotController {
                   chatId,
                   messageId: progressMsgId,
                   text:
-                    `🚀 <b>Jenkins running (${escapeHtml(ws.name)}):</b>\n` +
+                    `🚀 <b>Jenkins running (${escapeHtml(wsLabel)}):</b>\n` +
                     `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
                 })
                 .catch(() => {});
@@ -2326,7 +2346,7 @@ export class BotController {
         chatId,
         text:
           `✅ <b>Rollback Jenkins Deploy Succeeded!</b>\n${buildSummary}\n\n` +
-          `<b>${escapeHtml(ws.name)}</b> is restored and ready for your next message!`,
+          `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`,
         replyMarkup: {
           inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
         }
@@ -2366,6 +2386,7 @@ export class BotController {
   async handleOkConfirm(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (st.phase !== 'AWAITING_OK_OR_REVERT') {
@@ -2395,7 +2416,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Last action:</b> Confirmed changes in <b>${escapeHtml(ws.name)}</b>.\n` +
+        `✅ <b>Last action:</b> Confirmed changes in <b>${escapeHtml(wsLabel)}</b>.\n` +
         `Ready for your next message!`,
       replyMarkup: {
         inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
@@ -2406,6 +2427,7 @@ export class BotController {
   async handleRevertBadCommit(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     const commits = st.activeTurn?.commits || [];
@@ -2455,7 +2477,7 @@ export class BotController {
 
         await this.telegram.sendMessage({
           chatId,
-          text: `✅ Revert complete (no Jenkins job mapped). Ready for your next message in <b>${escapeHtml(ws.name)}</b>!`
+          text: `✅ Revert complete (no Jenkins job mapped). Ready for your next message in <b>${escapeHtml(wsLabel)}</b>!`
         });
         return;
       }
@@ -2486,6 +2508,7 @@ export class BotController {
    * Re-sends the active decision prompt for `ws` (used when switching back to an IDE with a pending step).
    */
   async sendCurrentWorkspaceGatePrompt(chatId, ws, bannerHtml = '') {
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
     const prefix = bannerHtml ? `${bannerHtml}\n\n` : '';
 
@@ -2493,7 +2516,7 @@ export class BotController {
       case 'RUNNING_AGENT':
         await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}⏳ Antigravity agent is currently running in <b>${escapeHtml(ws.name)}</b>.`,
+          text: `${prefix}⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
           replyMarkup: {
             inline_keyboard: [
               [
@@ -2513,7 +2536,7 @@ export class BotController {
       case 'AWAITING_CUSTOM_BRANCH':
         await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}🌿 Reply with the custom branch name for <b>${escapeHtml(ws.name)}</b>:`,
+          text: `${prefix}🌿 Reply with the custom branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
@@ -2531,7 +2554,7 @@ export class BotController {
       case 'RUNNING_REVERT_JENKINS':
         await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}⏳ Jenkins deployment is currently running for <b>${escapeHtml(ws.name)}</b>.`,
+          text: `${prefix}⏳ Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`,
           replyMarkup: {
             inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
           }

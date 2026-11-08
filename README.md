@@ -17,12 +17,12 @@ Because it communicates via outbound HTTPS long-polling (`getUpdates`) to `api.t
 
 ## Key Features
 
-- **Built for Google Gemini on macOS**: Native orchestration of local **Google Antigravity (`agy`)** agent sessions powered by **Google Gemini** models (`Gemini 3.8 Flash`, `Gemini 4 Argon`, plus automatic discovery of new `gemini-*` models via `agy models`) and configurable reasoning effort levels (`low`, `medium`, `high`, `max`) per IDE workspace.
+- **Built for Google Gemini on macOS**: Native orchestration of local **Google Antigravity (`agy`)** agent sessions powered by **Google Gemini** (`Gemini 3.8 Flash`, `Gemini 4 Argon`, plus automatic discovery of new `gemini-*` models via `agy models`) as well as **Claude Opus 5.5**, with configurable reasoning effort levels (`low`, `medium`, `high`) per IDE workspace.
 - **Per-Run Ephemeral Session Password**: Every `npm start` prompts in your Mac terminal for a fresh session password (masked with `*` and held strictly in RAM — never stored on disk). Your Telegram session remains unlocked until you stop/restart the app or send `/lock`.
 - **Console-Only Infrastructure Security**: Registering/removing IDE workspaces, setting/updating Jenkins credentials, and testing Jenkins connectivity happen **exclusively in your local macOS terminal** (`npm run setup`, `npm run add-ide`, `npm run update-jenkins`, `npm run test-jenkins`, or live console commands inside `npm start`). They are never exposed or modifiable in Telegram.
-- **Focused Telegram Settings**: Telegram's `⚙️ Settings` (`/settings` / `/model`) is dedicated solely to switching the **Google Gemini model & reasoning level** per IDE workspace.
-- **Multi-IDE Workspace Switching**: Switch across multiple single-repo or multi-repo monorepo workspaces at any time (`🔀 Switch IDE`). Each workspace independently preserves its active conversation and pending commit, branch, Jenkins, or revert decision.
-- **Conversation Continuity & Transcript Reader**: Resume the **Same Chat** (automatically displaying the latest `X` messages from `~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl`, where `X` is fixed in `npm run setup`) or start a **New Chat** anytime.
+- **Focused Telegram Settings**: Telegram's `⚙️ Settings` (`/settings` / `/model`) is dedicated solely to switching the **AI model & reasoning level** (`low` / `medium` / `high`) per IDE workspace.
+- **Multi-IDE Workspace Switching**: Switch across multiple single-repo or multi-repo monorepo workspaces at any time (`🔀 Switch IDE`), displaying each workspace's human-readable `label`. Each workspace independently preserves its active conversation and pending commit, branch, Jenkins, or revert decision.
+- **Default Same-Chat Continuity & Transcript Reader**: **Same Chat (`✅ Same Chat`)** is active by default whenever you select an IDE — simply start typing or sending screenshots right away to continue the active conversation automatically, tap `🆕 New Chat` to start fresh, or tap `📜 Latest Messages` to inspect the latest `X` messages from `~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (`X` defined in `npm run setup`).
 - **Smart Album & Long-Message Coalescing**: Automatically merges Telegram photo/file albums (`media_group_id`) and split `>4096`-character prompts into a **single** Google Gemini agent turn (supporting up to **5 attached images/files** at once).
 - **Rich Telegram HTML Rendering**: Converts GitHub-Flavored Markdown (GFM) agent responses — headings, bold/italic, inline code, syntax-tagged `<pre><code>` blocks, lists, blockquotes/alerts, and local `file://` symbol links — into clean, balanced Telegram HTML chunks.
 - **Interactive Git & Jenkins CI/CD Loop**:
@@ -47,9 +47,9 @@ Open Bot in Telegram (/start)
 🗂 Select IDE Workspace
    │   (Tap "🔀 Switch IDE" anytime to jump between workspaces and resume pending steps)
    ▼
-💬 Choose Chat Mode (or tap "⚙️ Settings" to change Google Gemini Model & Level):
-   ├── Same Chat ──► Displays latest X messages from Antigravity transcript (`X` defined in setup)
-   └── New Chat  ──► Starts a fresh Google Gemini / Antigravity conversation
+💬 Chat Mode (`✅ Same Chat` active by default; or tap "⚙️ Settings" to change AI Model & Level):
+   ├── ✅ Same Chat (Default) ──► Start typing/uploading immediately to continue the active chat
+   └── 🆕 New Chat           ──► Starts a fresh Antigravity conversation
    │
    ▼
 ✏️ Send Prompt Text and/or Up to 5 Photos/Screenshots
@@ -129,7 +129,7 @@ npm run setup
 6. **Jenkins API Token** + **Interactive Console Connection Test** (`Test Jenkins connection now?`)
 7. **Workspaces Auto-Discovery, Google Gemini Model & Repository Mapping**:
    - Auto-discovers unregistered Git/IDE folders on disk (`+1`, `+2`, …) or accepts any pasted folder path (`~/code/my-project`).
-   - Lets you choose each IDE's **Google Gemini model** (`gemini-3.8-flash`, `gemini-4-argon`, or custom model ID) and **reasoning level** (`low`, `medium`, `high`, `max`).
+   - Lets you choose each IDE's **AI model** (`gemini-3.8-flash`, `gemini-4-argon`, `claude-opus-5-5`) and **reasoning level** (`low`, `medium`, `high`).
    - Scans child Git repositories, detects active branches and `Jenkinsfile` hints, and lets you configure per-repo deploy jobs (including nested Jenkins folder paths like `Prod/Web/frontend-app`).
 
 ---
@@ -176,7 +176,7 @@ Once unlocked, a persistent 4-button reply keyboard stays pinned at the bottom o
 | **🔀 Switch IDE** (`/ides`) | Switch between registered IDE workspaces; each preserves its active chat and pending step. |
 | **📜 Latest Messages** (`/history`) | Show the latest `X` user/agent messages from the Antigravity conversation transcript. |
 | **🆕 New Chat** (`/newchat`) | Start a fresh Google Gemini conversation in the selected IDE workspace. |
-| **⚙️ Settings** (`/settings`, `/model`) | Change the **Google Gemini model** and **model level** (`low` / `medium` / `high` / `max`) for any IDE, or use `/setmodel <gemini-model> [level]`. |
+| **⚙️ Settings** (`/settings`, `/model`) | Change the **AI model** (`Gemini 3.8 Flash`, `Gemini 4 Argon`, `Claude Opus 5.5`) and **model level** (`low` / `medium` / `high`) for any IDE. |
 | `/lock` | Lock your Telegram session immediately. |
 
 ---

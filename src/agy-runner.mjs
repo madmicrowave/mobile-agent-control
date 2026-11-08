@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-export const VALID_MODEL_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const VALID_MODEL_LEVELS = ['low', 'medium', 'high'];
 
 export const GEMINI_MODEL_FAMILIES = [
   {
@@ -31,6 +31,24 @@ export const GEMINI_MODEL_FAMILIES = [
     label: 'Gemini 4 Argon',
     aliases: ['gemini-4', 'gemini 4', 'gemini-4-argon', 'gemini 4 argon', 'gemeni-4', 'gemeni 4'],
     tieredLevels: ['low', 'medium', 'high']
+  },
+  {
+    shortCode: 'co55',
+    family: 'claude-opus-5-5',
+    label: 'Claude Opus 5.5',
+    aliases: [
+      'claude-opus',
+      'claude opus',
+      'claude-opus-5-5',
+      'claude opus 5.5',
+      'claude-opus-5.5',
+      'cloud-opus',
+      'cloud opus',
+      'cloud-opus-5-5',
+      'cloud opus 5.5',
+      'cloud-opus-5.5'
+    ],
+    tieredLevels: ['low', 'medium', 'high']
   }
 ];
 
@@ -46,19 +64,6 @@ export const DEFAULT_AGENT_MODEL_FAMILIES = [
       'claude-sonnet-5-5',
       'claude sonnet 5.5',
       'claude-sonnet-5.5'
-    ],
-    tieredLevels: ['low', 'medium', 'high']
-  },
-  {
-    shortCode: 'co55',
-    family: 'claude-opus-5-5',
-    label: 'Claude Opus 5.5',
-    aliases: [
-      'claude-opus',
-      'claude opus',
-      'claude-opus-5-5',
-      'claude opus 5.5',
-      'claude-opus-5.5'
     ],
     tieredLevels: ['low', 'medium', 'high']
   },
@@ -82,7 +87,8 @@ export function resolveDefaultAgyBin() {
  */
 export function resolveEffectiveModelAndLevel({ model = '', modelLevel = '' } = {}) {
   const rawLevel = String(modelLevel || '').trim().toLowerCase();
-  const explicitLevel = VALID_MODEL_LEVELS.includes(rawLevel) ? rawLevel : '';
+  const normalizedLevel = ['xhigh', 'max'].includes(rawLevel) ? 'high' : rawLevel;
+  const explicitLevel = VALID_MODEL_LEVELS.includes(normalizedLevel) ? normalizedLevel : '';
 
   const rawModel = String(model || '').trim();
   const lowerModel = rawModel.toLowerCase();
