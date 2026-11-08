@@ -22,7 +22,7 @@ Because it communicates via outbound HTTPS long-polling (`getUpdates`) to `api.t
 - **Console-Only Infrastructure Security**: Registering/removing IDE workspaces, setting/updating Jenkins credentials, and testing Jenkins connectivity happen **exclusively in your local macOS terminal** (`npm run setup`, `npm run add-ide`, `npm run update-jenkins`, `npm run test-jenkins`, or live console commands inside `npm start`). They are never exposed or modifiable in Telegram.
 - **Focused Telegram Settings**: Telegram's `⚙️ Settings` (`/settings` / `/model`) is dedicated solely to switching the **AI model & reasoning level** (`low` / `medium` / `high`) per IDE workspace.
 - **Multi-IDE Workspace Switching**: Switch across multiple single-repo or multi-repo monorepo workspaces at any time (`🔀 Switch IDE`), displaying each workspace's human-readable `label`. Each workspace independently preserves its active conversation and pending commit, branch, Jenkins, or revert decision.
-- **Default Same-Chat Continuity & Transcript Reader**: **Same Chat (`✅ Same Chat`)** is active by default whenever you select an IDE — simply start typing or sending screenshots right away to continue the active conversation automatically, tap `🆕 New Chat` to start fresh, or tap `📜 Latest Messages` to inspect the latest `X` messages from `~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (`X` defined in `npm run setup`).
+- **Default Same-Chat Continuity & Transcript Reader**: **Same Chat (`✅ Same Chat`)** is active by default whenever you select an IDE — simply start typing or sending screenshots right away to continue the active conversation automatically, tap `🆕 New Chat` to start fresh, or run `/history` to inspect the latest `X` messages from `~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (`X` defined in `npm run setup`).
 - **Smart Album & Long-Message Coalescing**: Automatically merges Telegram photo/file albums (`media_group_id`) and split `>4096`-character prompts into a **single** Google Gemini agent turn (supporting up to **5 attached images/files** at once).
 - **Rich Telegram HTML Rendering**: Converts GitHub-Flavored Markdown (GFM) agent responses — headings, bold/italic, inline code, syntax-tagged `<pre><code>` blocks, lists, blockquotes/alerts, and local `file://` symbol links — into clean, balanced Telegram HTML chunks.
 - **Interactive Git & Jenkins CI/CD Loop**:
@@ -169,14 +169,14 @@ caffeinate -dimsu npm start
 
 ## Telegram Controls & Slash Commands
 
-Once unlocked, a persistent 4-button reply keyboard stays pinned at the bottom of Telegram:
+Once unlocked, a persistent 2-button reply keyboard stays pinned at the bottom of Telegram:
 
 | Button / Command | Description |
 | :--- | :--- |
 | **🔀 Switch IDE** (`/ides`) | Switch between registered IDE workspaces; each preserves its active chat and pending step. |
-| **📜 Latest Messages** (`/history`) | Show the latest `X` user/agent messages from the Antigravity conversation transcript. |
-| **🆕 New Chat** (`/newchat`) | Start a fresh Google Gemini conversation in the selected IDE workspace. |
 | **⚙️ Settings** (`/settings`, `/model`) | Change the **AI model** (`Gemini 3.8 Flash`, `Gemini 4 Argon`, `Claude Opus 5.5`) and **model level** (`low` / `medium` / `high`) for any IDE. |
+| `/newchat` | Start a fresh conversation in the selected IDE workspace (also available via the `🆕 New Chat` inline button on IDE selection). |
+| `/history` | Show the latest `X` user/agent messages from the Antigravity conversation transcript. |
 | `/lock` | Lock your Telegram session immediately. |
 
 ---

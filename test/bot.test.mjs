@@ -837,7 +837,11 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(mockTg.lastSent().text, /Invalid password/);
 
     await controller.handleUpdate(makeUserMsg('run-secret-2'));
-    assert.ok(mockTg.sentMessages.some((m) => /Session unlocked!/.test(m.text)));
+    const unlockedMsg = mockTg.sentMessages.find((m) => /Session unlocked!/.test(m.text));
+    assert.ok(unlockedMsg);
+    assert.deepEqual(unlockedMsg.reply_markup.keyboard, [
+      [{ text: REPLY_BTN_SWITCH_IDE }, { text: REPLY_BTN_SETTINGS }]
+    ]);
   });
 
   it('shows workspace labels (without name field), makes ✅ Same Chat default when typing immediately, and supports New Chat & Latest Messages', async () => {
@@ -908,6 +912,11 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('chat:same:payments'));
     assert.equal(mockTg.sentMessages.length, 1);
     assert.match(mockTg.lastSent().text, /Continuing Same Chat in Payments Platform/);
+    const sameChatBtns = mockTg.lastSent().reply_markup.inline_keyboard.flat();
+    const newChatBtnInSame = sameChatBtns.find((b) => b.callback_data === 'chat:new:payments');
+    assert.equal(newChatBtnInSame.text, '🆕 New Chat');
+    assert.ok(!sameChatBtns.some((b) => /Instead/i.test(b.text)));
+    assert.ok(!sameChatBtns.some((b) => b.callback_data === 'ide:menu'));
 
     // Reset back to New Chat for the next test
     await controller.handleUpdate(makeCallback('chat:new:payments'));
@@ -1275,6 +1284,17 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(cbs.includes('mdl:l:payments:high'));
     assert.ok(!cbs.some((c) => c.endsWith(':xhigh') || c.endsWith(':max')));
     assert.ok(!cbs.some((c) => c.startsWith('mdl:custom:')));
+    assert.ok(cbs.includes('chat:hist:payments'));
+    assert.ok(!flatModelBtns.some((b) => /All IDEs/i.test(b.text)));
+
+    const rows = cfgMsg.reply_markup.inline_keyboard;
+    const actionRow = rows[rows.length - 2];
+    assert.equal(actionRow.length, 2);
+    assert.match(actionRow[0].text, /Last Messages/);
+    assert.equal(actionRow[0].callback_data, 'chat:hist:payments');
+    assert.match(actionRow[1].text, /Open "Payments Platform"/);
+    const backRow = rows[rows.length - 1];
+    assert.deepEqual(backRow, [{ text: '< BACK', callback_data: 'cfg:menu' }]);
 
     // Configure `payments` IDE -> Gemini 3.8 Flash (high)
     await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));

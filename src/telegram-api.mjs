@@ -50,7 +50,7 @@ const GFM_ALERT_LABELS = {
 
 function renderLocalFileRef(rawLabel, rawUrl, forceCode = false) {
   const cleanLabel = String(rawLabel || '')
-    .replace(/^`+|`+$/g, '')
+    .replace(/^(?:\*+|_+|\`+|\s)+|(?:\*+|_+|\`+|\s)+$/g, '')
     .trim();
   const lineMatch = String(rawUrl || '').match(/#(L\d+(?:-L?\d+)?)$/i);
   const lineSuffix = lineMatch ? `#${lineMatch[1]}` : '';
@@ -144,9 +144,9 @@ export function markdownToTelegramHtml(markdown) {
       }
 
       const rawUrl = String(linkUrl || '').trim();
-      const hadBackticks = /^`+[\s\S]*`+$/.test(String(linkLabel || '').trim());
+      const hadBackticks = /`/.test(String(linkLabel || ''));
       const cleanLabel = String(linkLabel || '')
-        .replace(/^`+|`+$/g, '')
+        .replace(/^(?:\*+|_+|\`+|\s)+|(?:\*+|_+|\`+|\s)+$/g, '')
         .trim();
 
       if (/^(?:https?:\/\/|tg:\/\/|mailto:)/i.test(rawUrl)) {

@@ -36,10 +36,7 @@ export const MAX_FILES_PER_TURN = 5;
 export const BIG_MESSAGE_SPLIT_THRESHOLD = 3800;
 
 export const MAIN_REPLY_KEYBOARD = {
-  keyboard: [
-    [{ text: REPLY_BTN_SWITCH_IDE }, { text: REPLY_BTN_LATEST_MSGS }],
-    [{ text: REPLY_BTN_NEW_CHAT }, { text: REPLY_BTN_SETTINGS }]
-  ],
+  keyboard: [[{ text: REPLY_BTN_SWITCH_IDE }, { text: REPLY_BTN_SETTINGS }]],
   resize_keyboard: true,
   is_persistent: true
 };
@@ -291,7 +288,7 @@ export class BotController {
         chatId,
         text:
           `🔓 <b>Session unlocked!</b>\n` +
-          `Active until the bot application is restarted (or <code>/lock</code>). Use the buttons below anytime to switch IDEs, inspect messages, or change AI models.`,
+          `Active until the bot application is restarted (or <code>/lock</code>). Use the buttons below anytime to switch IDEs or change AI models.`,
         replyMarkup: MAIN_REPLY_KEYBOARD
       });
       await this.sendIdeSelectorMenu(chatId, userId);
@@ -838,6 +835,12 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('chat:hist:')) {
+        const wsId = data.slice('chat:hist:'.length);
+        await this.sendLatestMessagesForWorkspace(chatId, wsId);
+        return;
+      }
+
       if (data.startsWith('photo:run:')) {
         const wsId = data.slice('photo:run:'.length);
         const ws = this.getWorkspace(wsId);
@@ -1067,8 +1070,6 @@ export class BotController {
       ]);
     }
 
-    rows.push([{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]);
-
     const ideModelsSummary =
       allWorkspaces.length > 0
         ? allWorkspaces
@@ -1128,9 +1129,10 @@ export class BotController {
         ...familyRows,
         levelButtons,
         [
-          { text: '⚙️ All IDEs (Models)', callback_data: 'cfg:menu' },
+          { text: '📜 Last Messages', callback_data: `chat:hist:${ws.id}` },
           { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
-        ]
+        ],
+        [{ text: '< BACK', callback_data: 'cfg:menu' }]
       ]
     };
 
@@ -1322,10 +1324,7 @@ export class BotController {
       });
     }
 
-    keyboard.push([
-      { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` },
-      { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-    ]);
+    keyboard.push([{ text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }]);
 
     const allJobs = this.getWorkspaceJenkinsJobs(ws);
     const shortJobsSummary = allJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
@@ -1378,8 +1377,7 @@ export class BotController {
           [
             { text: '🆕 New Chat', callback_data: `chat:new:${ws.id}` },
             { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }
-          ],
-          [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
+          ]
         ]
       }
     });
@@ -1417,8 +1415,7 @@ export class BotController {
           [
             { text: '💬 Same Chat', callback_data: `chat:same:${ws.id}` },
             { text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }
-          ],
-          [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
+          ]
         ]
       }
     });
@@ -1431,9 +1428,21 @@ export class BotController {
     const st = this.configStore.getWorkspaceState(ws.id);
     const count = this.getConfiguredHistoryCount();
 
+    let effectiveConvId = st.conversationId;
+    if (!effectiveConvId) {
+      const discovered = await discoverRecentWorkspaceConversations(
+        this.configStore.config.antigravityBrainDir,
+        ws.path,
+        { maxResults: 1 }
+      );
+      if (discovered.length > 0) {
+        effectiveConvId = discovered[0].conversationId;
+      }
+    }
+
     const { total, messages } = await getLatestConversationMessages({
       brainDir: this.configStore.config.antigravityBrainDir,
-      conversationId: st.conversationId,
+      conversationId: effectiveConvId,
       fallbackMessages: st.messages,
       limit: count
     });
@@ -1523,12 +1532,7 @@ export class BotController {
           : '') +
         (combinedNotice ? `\n${escapeHtml(combinedNotice)}` : ''),
       replyMarkup: {
-        inline_keyboard: [
-          [
-            { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` },
-            { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-          ]
-        ]
+        inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
       }
     });
 
@@ -1590,12 +1594,7 @@ export class BotController {
                   `🤖 <b>Antigravity working in ${escapeHtml(wsLabel)}…</b>\n` +
                   `⚙️ <code>${escapeHtml(stepLabel)}</code>`,
                 replyMarkup: {
-                  inline_keyboard: [
-                    [
-                      { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` },
-                      { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-                    ]
-                  ]
+                  inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
                 }
               })
               .catch(() => {});
@@ -1680,10 +1679,7 @@ export class BotController {
 
       await this.telegram.sendMessage({
         chatId,
-        text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\nReady for your next message.`,
-        replyMarkup: {
-          inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-        }
+        text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\nReady for your next message.`
       });
       return;
     }
@@ -1734,10 +1730,7 @@ export class BotController {
             { text: `✅ Yes (${defaultBranches})`, callback_data: `cmt:yes:${ws.id}` },
             { text: '🌿 Custom Branch', callback_data: `cmt:br:${ws.id}` }
           ],
-          [
-            { text: '❌ No (Discard Changes)', callback_data: `cmt:no:${ws.id}` },
-            { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-          ]
+          [{ text: '❌ No (Discard Changes)', callback_data: `cmt:no:${ws.id}` }]
         ]
       }
     });
@@ -1782,10 +1775,7 @@ export class BotController {
       chatId,
       text:
         `🗑 <b>Last action:</b> Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n` +
-        `Ready for your next message!`,
-      replyMarkup: {
-        inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-      }
+        `Ready for your next message!`
     });
   }
 
@@ -2082,8 +2072,6 @@ export class BotController {
       }
     }
 
-    keyboard.push([{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]);
-
     await this.telegram.sendMessage({
       chatId,
       text: bodyText,
@@ -2126,10 +2114,7 @@ export class BotController {
           chatId,
           text:
             `⏭ <b>Last action:</b> Skipped Jenkins after revert.\n` +
-            `Bad commit remains reverted on <code>origin</code>. <b>${escapeHtml(wsLabel)}</b> is ready for your next message!`,
-          replyMarkup: {
-            inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-          }
+            `Bad commit remains reverted on <code>origin</code>. <b>${escapeHtml(wsLabel)}</b> is ready for your next message!`
         });
         return;
       }
@@ -2279,8 +2264,7 @@ export class BotController {
               [
                 { text: '🔄 Retry Jenkins', callback_data: `rjnk:yes:${ws.id}` },
                 { text: '⏹ Finish Without Jenkins', callback_data: `rjnk:no:${ws.id}` }
-              ],
-              [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
+              ]
             ]
           }
         });
@@ -2303,10 +2287,7 @@ export class BotController {
               { text: '↩️ Revert (Mark Bad)', callback_data: `ok:rev:${ws.id}` },
               { text: '🔄 Retry Jenkins', callback_data: `jnk:yes:${ws.id}` }
             ],
-            [
-              { text: '✅ Keep Commit Anyway', callback_data: `ok:yes:${ws.id}` },
-              { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-            ]
+            [{ text: '✅ Keep Commit Anyway', callback_data: `ok:yes:${ws.id}` }]
           ]
         }
       });
@@ -2346,10 +2327,7 @@ export class BotController {
         chatId,
         text:
           `✅ <b>Rollback Jenkins Deploy Succeeded!</b>\n${buildSummary}\n\n` +
-          `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`,
-        replyMarkup: {
-          inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-        }
+          `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`
       });
       return;
     }
@@ -2376,8 +2354,7 @@ export class BotController {
           [
             { text: '✅ Yes (Confirm)', callback_data: `ok:yes:${ws.id}` },
             { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
-          ],
-          [{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]
+          ]
         ]
       }
     });
@@ -2417,10 +2394,7 @@ export class BotController {
       chatId,
       text:
         `✅ <b>Last action:</b> Confirmed changes in <b>${escapeHtml(wsLabel)}</b>.\n` +
-        `Ready for your next message!`,
-      replyMarkup: {
-        inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-      }
+        `Ready for your next message!`
     });
   }
 
@@ -2493,12 +2467,7 @@ export class BotController {
         chatId,
         text: `❌ <b>Git revert error:</b>\n<code>${escapeHtml(revErr.message)}</code>`,
         replyMarkup: {
-          inline_keyboard: [
-            [
-              { text: '🔄 Retry Revert', callback_data: `ok:rev:${ws.id}` },
-              { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-            ]
-          ]
+          inline_keyboard: [[{ text: '🔄 Retry Revert', callback_data: `ok:rev:${ws.id}` }]]
         }
       });
     }
@@ -2518,12 +2487,7 @@ export class BotController {
           chatId,
           text: `${prefix}⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
           replyMarkup: {
-            inline_keyboard: [
-              [
-                { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` },
-                { text: '🔀 Switch IDE', callback_data: 'ide:menu' }
-              ]
-            ]
+            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
           }
         });
         break;
@@ -2554,10 +2518,7 @@ export class BotController {
       case 'RUNNING_REVERT_JENKINS':
         await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}⏳ Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`,
-          replyMarkup: {
-            inline_keyboard: [[{ text: '🔀 Switch IDE', callback_data: 'ide:menu' }]]
-          }
+          text: `${prefix}⏳ Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`
         });
         break;
       case 'AWAITING_OK_OR_REVERT':
