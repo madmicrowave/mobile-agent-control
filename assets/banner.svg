@@ -1,76 +1,139 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" width="1200" height="460" role="img" aria-label="MAC (Mobile Agent Control) — Native macOS Menu Bar App for Controlling AI Coding Agents, Git &amp; Jenkins CI/CD from Telegram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="Mobile Agent Control (mac.app / MAC) — Control Local macOS AI Workspaces, Git &amp; Jenkins CI/CD via Telegram">
   <defs>
-    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#090d1a"/>
-      <stop offset="55%" stop-color="#101a35"/>
-      <stop offset="100%" stop-color="#141132"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080d1a"/>
+      <stop offset="52%" stop-color="#0f1830"/>
+      <stop offset="100%" stop-color="#161133"/>
     </linearGradient>
-    <linearGradient id="gradText" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#38bdf8"/>
       <stop offset="50%" stop-color="#60a5fa"/>
       <stop offset="100%" stop-color="#a78bfa"/>
     </linearGradient>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.96"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-12%" y="-12%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
   </defs>
 
-  <rect width="1200" height="460" rx="22" fill="url(#bg2)"/>
-  <circle cx="1020" cy="90" r="180" fill="#2563eb" opacity="0.14"/>
-  <circle cx="820" cy="390" r="170" fill="#7c3aed" opacity="0.14"/>
+  <rect width="1200" height="500" rx="22" fill="url(#bg)"/>
+  <circle cx="990" cy="105" r="200" fill="#2563eb" opacity="0.14"/>
+  <circle cx="860" cy="400" r="185" fill="#7c3aed" opacity="0.14"/>
 
-  <!-- Top Header -->
-  <g transform="translate(60, 56)">
-    <rect x="0" y="0" width="440" height="30" rx="15" fill="#172036" stroke="#2d3c5e"/>
+  <!-- Left Column: Brand, Value Proposition & Easy Setup -->
+  <g transform="translate(56, 56)">
+    <!-- Top Pill -->
+    <rect x="0" y="0" width="356" height="30" rx="15" fill="#172036" stroke="#2d3c5e"/>
     <circle cx="18" cy="15" r="5" fill="#22c55e"/>
-    <text x="32" y="20" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="600" fill="#e2e8f0">macOS Menu Bar App • Swift + Node 20+ • Awake Mode • MIT</text>
+    <text x="32" y="20" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="12.5" font-weight="600" fill="#e2e8f0">Native Swift Menu Bar App (mac.app) • MIT</text>
 
-    <text x="0" y="80" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="44" font-weight="800" fill="#ffffff" letter-spacing="-0.8">MAC — Mobile Agent Control</text>
-    <text x="0" y="116" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="20.5" font-weight="600" fill="url(#gradText)">Native macOS Menu Bar App to Control AI Workspaces, Git &amp; Jenkins CI/CD from Telegram</text>
+    <!-- MAC Big-Letters Icon + Title -->
+    <g transform="translate(0, 50)">
+      <rect x="0" y="0" width="84" height="44" rx="10" fill="#ffffff"/>
+      <text x="42" y="31" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="26" font-weight="900" fill="#090d1a" letter-spacing="-0.8">MAC</text>
+      <text x="100" y="34" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="42" font-weight="800" fill="#ffffff" letter-spacing="-0.9">Mobile Agent Control</text>
+    </g>
+
+    <text x="0" y="132" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="22" font-weight="700" fill="url(#accent)">Control Your Local macOS Workspaces via Telegram</text>
+
+    <text x="0" y="168" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" fill="#cbd5e1">Run Google Antigravity (Gemini &amp; Claude) across any local Workspace,</text>
+    <text x="0" y="191" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" fill="#cbd5e1">review Git diffs, push branches, and deploy Staging → Prod from your phone.</text>
+
+    <!-- Easy 3-Step Setup Cards -->
+    <g transform="translate(0, 218)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
+      <text x="0" y="0" font-size="12" font-weight="700" fill="#94a3b8" letter-spacing="0.8">EASY 2-MINUTE GUI SETUP — ZERO CLI COMMANDS</text>
+
+      <rect x="0" y="14" width="176" height="68" rx="12" fill="#131c31" stroke="#334155"/>
+      <text x="16" y="38" font-size="13" font-weight="700" fill="#38bdf8">1. Open mac.app</text>
+      <text x="16" y="58" font-size="12" fill="#cbd5e1">Appears as [MAC] next</text>
+      <text x="16" y="73" font-size="12" fill="#cbd5e1">to your macOS clock</text>
+
+      <rect x="188" y="14" width="194" height="68" rx="12" fill="#131c31" stroke="#334155"/>
+      <text x="204" y="38" font-size="13" font-weight="700" fill="#60a5fa">2. Visual Settings UI</text>
+      <text x="204" y="58" font-size="12" fill="#cbd5e1">Add @BotFather Token,</text>
+      <text x="204" y="73" font-size="12" fill="#cbd5e1">Workspaces &amp; Jenkins</text>
+
+      <rect x="394" y="14" width="186" height="68" rx="12" fill="#131c31" stroke="#334155"/>
+      <text x="410" y="38" font-size="13" font-weight="700" fill="#34d399">3. Start &amp; Code</text>
+      <text x="410" y="58" font-size="12" fill="#cbd5e1">Set RAM password &amp;</text>
+      <text x="410" y="73" font-size="12" fill="#cbd5e1">control via Telegram</text>
+    </g>
+
+    <!-- Bottom Feature Badges -->
+    <g transform="translate(0, 326)" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="600" fill="#e2e8f0">
+      <rect x="0" y="0" width="176" height="32" rx="8" fill="#172036" stroke="#2d3c5e"/>
+      <text x="88" y="20" text-anchor="middle">⚡ Auto-Awake &amp; Login</text>
+
+      <rect x="188" y="0" width="194" height="32" rx="8" fill="#172036" stroke="#2d3c5e"/>
+      <text x="285" y="20" text-anchor="middle">🔒 Zero Open Ports / VPN</text>
+
+      <rect x="394" y="0" width="186" height="32" rx="8" fill="#172036" stroke="#2d3c5e"/>
+      <text x="487" y="20" text-anchor="middle">🚀 Staging → Prod CI/CD</text>
+    </g>
   </g>
 
-  <!-- 4-Stage Visual Pipeline -->
-  <g transform="translate(60, 212)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
-    <!-- Stage 1: MAC Menu Bar App -->
-    <rect x="0" y="0" width="246" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="22" y="34" font-size="16" font-weight="700" fill="#38bdf8">🖥 1. MAC Menu Bar App</text>
-    <text x="22" y="64" font-size="13" fill="#cbd5e1">• Start / Restart + Password</text>
-    <text x="22" y="88" font-size="13" fill="#cbd5e1">• Workspaces &amp; Jenkins UI</text>
-    <text x="22" y="112" font-size="13" fill="#cbd5e1">• Login Auto-Start &amp; Awake</text>
-    <rect x="22" y="134" width="202" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="123" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#22c55e">⚡ No CLI Commands Needed</text>
+  <!-- Right Column: macOS Clock-Line Menu Bar [MAC] + Telegram Mobile Card -->
+  <g transform="translate(672, 38)" filter="url(#dropShadow)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
+    <!-- macOS Menu Bar Strip Next to Clock -->
+    <rect x="0" y="0" width="474" height="32" rx="9" fill="#0f172a" stroke="#334155"/>
+    <text x="16" y="20" font-size="12" font-weight="600" fill="#94a3b8">   Finder   File   Edit</text>
 
-    <!-- Arrow 1 -->
-    <text x="262" y="96" font-size="22" font-weight="700" fill="#64748b">→</text>
+    <!-- [MAC] Big Letters Badge right next to Clock (just like Sticky-AI [SAI]) -->
+    <rect x="304" y="6" width="42" height="20" rx="5" fill="#ffffff"/>
+    <text x="325" y="20" text-anchor="middle" font-size="12.5" font-weight="900" fill="#090d1a" letter-spacing="-0.4">MAC</text>
+    <text x="360" y="20" font-size="12" font-weight="600" fill="#e2e8f0">Mon 9:41 AM</text>
 
-    <!-- Stage 2: Telegram Mobile + Workspaces -->
-    <rect x="292" y="0" width="256" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="314" y="34" font-size="16" font-weight="700" fill="#60a5fa">📱 2. Telegram &amp; AI</text>
-    <text x="314" y="64" font-size="13" fill="#cbd5e1">• Multi-Workspace switcher</text>
-    <text x="314" y="88" font-size="13" fill="#cbd5e1">• Gemini 3.8 / 4 &amp; Claude 5.5</text>
-    <text x="314" y="112" font-size="13" fill="#cbd5e1">• Text + up to 5 screenshots</text>
-    <rect x="314" y="134" width="212" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="420" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#93c5fd">🔒 Zero Open Ports / Ngrok</text>
+    <!-- Open MAC Menu Bar Dropdown -->
+    <g transform="translate(234, 38)">
+      <rect x="0" y="0" width="240" height="172" rx="11" fill="url(#cardBg)" stroke="#475569" stroke-width="1.2"/>
+      <text x="14" y="24" font-size="11.5" font-weight="700" fill="#4ade80">🟢 Running (@mac_bot) · Awake</text>
+      <line x1="8" y1="34" x2="232" y2="34" stroke="#334155"/>
+      <text x="14" y="54" font-size="12" fill="#64748b">Start...</text>
+      <rect x="6" y="62" width="228" height="22" rx="5" fill="#2563eb"/>
+      <text x="14" y="77" font-size="12" font-weight="600" fill="#ffffff">Restart... (New Password)</text>
+      <text x="14" y="99" font-size="12" fill="#f8fafc">Stop</text>
+      <line x1="8" y1="108" x2="232" y2="108" stroke="#334155"/>
+      <text x="14" y="126" font-size="12" font-weight="600" fill="#f8fafc">Settings...  (5 Tabs)</text>
+      <text x="206" y="126" font-size="11" fill="#94a3b8">⌘,</text>
+      <text x="14" y="146" font-size="12" fill="#f8fafc">Tutorial...</text>
+      <text x="14" y="164" font-size="11.5" fill="#93c5fd">✓ Start Automatically at Login</text>
+    </g>
 
-    <!-- Arrow 2 -->
-    <text x="564" y="96" font-size="22" font-weight="700" fill="#64748b">→</text>
+    <!-- Telegram Workspace Control Mobile Card -->
+    <g transform="translate(0, 178)">
+      <rect x="0" y="0" width="368" height="244" rx="16" fill="url(#cardBg)" stroke="#3b82f6" stroke-width="1.4"/>
+      <!-- Telegram Top Bar -->
+      <text x="18" y="26" font-size="13" font-weight="700" fill="#38bdf8">📱 Telegram — Workspace Control</text>
+      <rect x="266" y="11" width="86" height="20" rx="10" fill="#172554"/>
+      <text x="309" y="25" text-anchor="middle" font-size="10.5" font-weight="700" fill="#93c5fd">Same Chat •</text>
+      <line x1="0" y1="38" x2="368" y2="38" stroke="#334155"/>
 
-    <!-- Stage 3: Git Review -->
-    <rect x="594" y="0" width="236" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="616" y="34" font-size="16" font-weight="700" fill="#a78bfa">🌿 3. Git Control</text>
-    <text x="616" y="64" font-size="13" fill="#cbd5e1">• Per-repo M / A / D diff</text>
-    <text x="616" y="88" font-size="13" fill="#cbd5e1">• Default or Custom Branch</text>
-    <text x="616" y="112" font-size="13" fill="#cbd5e1">• Discard or 1-tap Revert</text>
-    <rect x="616" y="134" width="192" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="712" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#c4b5fd">Multi-Repo Monorepos</text>
+      <!-- Workspace & Staging Build Bubble -->
+      <rect x="14" y="48" width="340" height="84" rx="10" fill="#131c31" stroke="#334155"/>
+      <text x="26" y="68" font-size="12" font-weight="700" fill="#f8fafc">🗂 Workspace: CRYPTO FUSION •</text>
+      <text x="26" y="88" font-size="11.5" fill="#4ade80">✅ Staging Jenkins #142: SUCCESS</text>
+      <text x="26" y="106" font-size="11.5" fill="#cbd5e1">🌐 Preview ready — Deploy to Production?</text>
+      <text x="26" y="123" font-size="10.5" fill="#94a3b8">🧠 Gemini 3.8 Flash (medium) • 3 files committed</text>
 
-    <!-- Arrow 3 -->
-    <text x="846" y="96" font-size="22" font-weight="700" fill="#64748b">→</text>
+      <!-- Multi-Env Promotion Buttons -->
+      <rect x="14" y="140" width="340" height="28" rx="7" fill="#1d4ed8"/>
+      <text x="184" y="158" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">🚀 Yes, deploy on prod</text>
 
-    <!-- Stage 4: Jenkins Staging -> Prod -->
-    <rect x="876" y="0" width="264" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="898" y="34" font-size="16" font-weight="700" fill="#34d399">🚀 4. Jenkins CI/CD</text>
-    <text x="898" y="64" font-size="13" fill="#cbd5e1">• Deploy Staging (VERSION)</text>
-    <text x="898" y="88" font-size="13" fill="#cbd5e1">• Tail build error logs</text>
-    <text x="898" y="112" font-size="13" fill="#cbd5e1">• Confirm → Auto-Deploy Prod</text>
-    <rect x="898" y="134" width="220" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="1008" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#34d399">Staging → Prod Promotion</text>
+      <rect x="14" y="174" width="166" height="26" rx="7" fill="#1e293b" stroke="#475569"/>
+      <text x="97" y="191" text-anchor="middle" font-size="11.5" font-weight="600" fill="#e2e8f0">✅ Yes (skip prod)</text>
+
+      <rect x="188" y="174" width="166" height="26" rx="7" fill="#1e293b" stroke="#475569"/>
+      <text x="271" y="191" text-anchor="middle" font-size="11.5" font-weight="600" fill="#fca5a5">↩️ Revert Commit</text>
+
+      <!-- Persistent Bottom Reply Keyboard -->
+      <rect x="14" y="208" width="166" height="24" rx="6" fill="#0f172a" stroke="#334155"/>
+      <text x="97" y="224" text-anchor="middle" font-size="11" font-weight="600" fill="#cbd5e1">🔀 Switch Workspace</text>
+
+      <rect x="188" y="208" width="166" height="24" rx="6" fill="#0f172a" stroke="#334155"/>
+      <text x="271" y="224" text-anchor="middle" font-size="11" font-weight="600" fill="#cbd5e1">⚙️ Settings</text>
+    </g>
   </g>
 </svg>

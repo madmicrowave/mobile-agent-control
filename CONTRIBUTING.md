@@ -1,6 +1,6 @@
-# Contributing to MAC (Mobile Agent Control)
+# Contributing to Mobile Agent Control (`mac.app` / `MAC`)
 
-Thank you for contributing to **MAC (`mobile-agent-control`)** — open-source native macOS menu bar app & Telegram controller for **Google Antigravity (`agy`)** Workspaces, Git, and Jenkins CI/CD!
+Thank you for contributing to **Mobile Agent Control (`mobile-agent-control`)** — open-source native macOS menu bar app (`mac.app`) & Telegram Workspace controller for **Google Antigravity (`agy`)**, Git, and Jenkins CI/CD!
 
 ## Local Development
 
@@ -13,7 +13,7 @@ Thank you for contributing to **MAC (`mobile-agent-control`)** — open-source n
    ```bash
    npm test
    ```
-3. Build the standalone macOS menu bar app (`MAC.app`):
+3. Build the standalone macOS menu bar app (`mac.app`):
    ```bash
    npm run build:app
    ```
@@ -21,5 +21,5 @@ Thank you for contributing to **MAC (`mobile-agent-control`)** — open-source n
 ## Pull Request Guidelines
 
 - Keep runtime dependencies at **zero** (native Swift/AppKit/SwiftUI + pure Node.js 20+ standard library ES Modules).
-- Never commit `data/`, `.env*`, `MAC.app/`, bot tokens, or credentials.
+- Never commit `data/`, `.env*`, `mac.app/`, `MAC.app/`, bot tokens, or credentials.
 - Add or update tests in `test/bot.test.mjs` and/or `Tests/MACAppTestMain.swift` and ensure `npm test` passes cleanly.

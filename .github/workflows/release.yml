@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    name: Build & Publish MAC-macOS.zip
+    name: Build & Publish mac-macOS.zip
     runs-on: macos-latest
     steps:
       - name: Checkout repository
@@ -24,16 +24,16 @@ jobs:
       - name: Run Test Suites
         run: npm test
 
-      - name: Build Portable MAC.app
+      - name: Build Portable mac.app
         env:
           MAC_PORTABLE_BUILD: "1"
         run: npm run build:app
 
-      - name: Package MAC-macOS.zip
-        run: ditto -c -k --sequesterRsrc --keepParent MAC.app MAC-macOS.zip
+      - name: Package mac-macOS.zip
+        run: ditto -c -k --sequesterRsrc --keepParent mac.app mac-macOS.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: MAC-macOS.zip
+          files: mac-macOS.zip
           generate_release_notes: true

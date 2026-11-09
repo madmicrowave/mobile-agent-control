@@ -2,20 +2,20 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_PATH="$PROJECT_ROOT/MAC.app"
+APP_PATH="$PROJECT_ROOT/mac.app"
 CONTENTS_DIR="$APP_PATH/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 RUNTIME_DIR="$RESOURCES_DIR/runtime"
 
-rm -rf "$APP_PATH" "$PROJECT_ROOT/.build"
+rm -rf "$PROJECT_ROOT/MAC.app" "$APP_PATH" "$PROJECT_ROOT/.build"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$RUNTIME_DIR/src"
 
 if [ -d "$PROJECT_ROOT/Resources" ]; then
   cp -R "$PROJECT_ROOT"/Resources/* "$RESOURCES_DIR/" 2>/dev/null || true
 fi
 
-# Bundle Node.js bot runtime inside MAC.app so the app is 100% standalone
+# Bundle Node.js bot runtime inside mac.app so the app is 100% standalone
 cp "$PROJECT_ROOT"/src/*.mjs "$RUNTIME_DIR/src/"
 cp "$PROJECT_ROOT/package.json" "$RUNTIME_DIR/package.json"
 
@@ -44,15 +44,15 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>MAC</string>
+  <string>mac</string>
   <key>CFBundleDisplayName</key>
-  <string>MAC</string>
+  <string>mac</string>
   <key>CFBundleIdentifier</key>
   <string>com.domonk.mac</string>
   <key>CFBundleVersion</key>
-  <string>3.0.0</string>
+  <string>3.1.0</string>
   <key>CFBundleShortVersionString</key>
-  <string>3.0.0</string>
+  <string>3.1.0</string>
   <key>CFBundleExecutable</key>
   <string>MAC</string>
   <key>CFBundlePackageType</key>

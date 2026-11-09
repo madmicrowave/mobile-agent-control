@@ -12,6 +12,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     public private(set) var restartMenuItem: NSMenuItem!
     public private(set) var stopMenuItem: NSMenuItem!
     public private(set) var settingsMenuItem: NSMenuItem!
+    public private(set) var tutorialMenuItem: NSMenuItem!
     public private(set) var launchAtLoginMenuItem: NSMenuItem!
     public private(set) var quitMenuItem: NSMenuItem!
 
@@ -49,10 +50,9 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     private func configureStatusBarButton() {
         guard let button = statusItem.button else { return }
         if let iconImage = loadMenuBarIcon() {
-            iconImage.size = NSSize(width: 18, height: 18)
             iconImage.isTemplate = true
             button.image = iconImage
-            button.imagePosition = .imageLeading
+            button.imagePosition = .imageOnly
         } else {
             button.title = "MAC"
         }
@@ -100,6 +100,10 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         settingsMenuItem.target = self
         menu.addItem(settingsMenuItem)
 
+        tutorialMenuItem = NSMenuItem(title: "Tutorial...", action: #selector(handleTutorialClicked), keyEquivalent: "")
+        tutorialMenuItem.target = self
+        menu.addItem(tutorialMenuItem)
+
         launchAtLoginMenuItem = NSMenuItem(
             title: "Start Automatically at Login",
             action: #selector(handleToggleLaunchAtLogin),
@@ -132,18 +136,24 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         launchAtLoginMenuItem.state = appState.launchAtLogin ? .on : .off
 
         if let button = statusItem.button {
+            if button.image != nil {
+                button.title = ""
+                button.imagePosition = .imageOnly
+            } else {
+                button.title = "MAC"
+            }
             switch appState.status {
-            case .running:
-                button.title = button.image != nil ? "•" : "MAC •"
-                button.toolTip = "MAC — Running (Mac Sleep Prevented)"
+            case .running(let username):
+                if let u = username, !u.isEmpty {
+                    button.toolTip = "MAC — Running (@\(u)) · Mac Sleep Prevented"
+                } else {
+                    button.toolTip = "MAC — Running · Mac Sleep Prevented"
+                }
             case .starting:
-                button.title = button.image != nil ? "…" : "MAC …"
                 button.toolTip = "MAC — Starting..."
             case .error(let msg):
-                button.title = button.image != nil ? "!" : "MAC !"
                 button.toolTip = "MAC — Error: \(msg)"
             case .stopped:
-                button.title = button.image != nil ? "" : "MAC"
                 button.toolTip = "MAC — Mobile Agent Control (Stopped)"
             }
         }
@@ -165,6 +175,10 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
     @objc public func handleSettingsClicked() {
         openSettings(tab: nil)
+    }
+
+    @objc public func handleTutorialClicked() {
+        openSettings(tab: .tutorial)
     }
 
     @objc public func handleToggleLaunchAtLogin() {

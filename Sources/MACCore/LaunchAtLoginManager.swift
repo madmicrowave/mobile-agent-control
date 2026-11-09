@@ -25,15 +25,18 @@ public final class LaunchAtLoginManager {
            FileManager.default.isExecutableFile(atPath: bundleExec) {
             return bundleExec
         }
-        let appInApplications = "/Applications/MAC.app/Contents/MacOS/MAC"
-        if FileManager.default.isExecutableFile(atPath: appInApplications) {
-            return appInApplications
+        let candidates = [
+            "/Applications/mac.app/Contents/MacOS/MAC",
+            "/Applications/MAC.app/Contents/MacOS/MAC"
+        ]
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            return path
         }
         if let bundleExec = Bundle.main.executableURL?.path,
            FileManager.default.isExecutableFile(atPath: bundleExec) {
             return bundleExec
         }
-        return appInApplications
+        return "/Applications/mac.app/Contents/MacOS/MAC"
     }
 
     public var isEnabled: Bool {

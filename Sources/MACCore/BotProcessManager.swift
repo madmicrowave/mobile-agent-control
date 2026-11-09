@@ -38,7 +38,8 @@ public enum MACSettingsTab: String, CaseIterable, Identifiable {
     case manageWorkspaces = "Manage Workspaces"
     case addWorkspace = "Add Workspace"
     case manageJenkins = "Manage Jenkins"
-    case botAndStartup = "Bot & Startup"
+    case telegramData = "Telegram Data"
+    case tutorial = "Tutorial"
 
     public var id: String { rawValue }
 }
@@ -229,8 +230,8 @@ public final class MACAppState: ObservableObject {
         reloadConfigFromDisk()
         if config.telegramBotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             status = .error("Telegram Bot Token is not configured.")
-            appendLog("[MAC] ⚠️ Set your Telegram Bot Token in Settings → Bot & Startup before starting.")
-            onRequestOpenSettings?(.botAndStartup)
+            appendLog("[MAC] ⚠️ Set your Telegram Bot Token in Settings → Telegram Data before starting.")
+            onRequestOpenSettings?(.telegramData)
             return
         }
 
@@ -462,3 +463,4 @@ public final class MACAppState: ObservableObject {
         }
     }
 }
+

@@ -592,3 +592,40 @@ public enum JenkinsConnectionTester {
         }
     }
 }
+
+public enum TelegramTokenTester {
+    public static func verifyToken(token: String, apiBaseUrl: String = "https://api.telegram.org") async -> Result<String, Error> {
+        let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanToken.isEmpty else {
+            return .failure(NSError(domain: "MACTelegram", code: 1, userInfo: [NSLocalizedDescriptionKey: "Enter a Telegram Bot Token from @BotFather first."]))
+        }
+        let base = apiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let effectiveBase = base.isEmpty ? "https://api.telegram.org" : base
+        guard let url = URL(string: "\(effectiveBase)/bot\(cleanToken)/getMe") else {
+            return .failure(NSError(domain: "MACTelegram", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Telegram API URL or token format."]))
+        }
+
+        var req = URLRequest(url: url, timeoutInterval: 10.0)
+        req.httpMethod = "GET"
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(NSError(domain: "MACTelegram", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response from Telegram API."]))
+            }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if http.statusCode == 200,
+               (json?["ok"] as? Bool) == true,
+               let result = json?["result"] as? [String: Any] {
+                let username = (result["username"] as? String) ?? "bot"
+                let firstName = (result["first_name"] as? String) ?? username
+                return .success("Verified @\(username) (\(firstName)) — ready to start!")
+            }
+            let desc = (json?["description"] as? String) ?? "HTTP \(http.statusCode)"
+            return .failure(NSError(domain: "MACTelegram", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Telegram rejected token: \(desc)"]))
+        } catch {
+            return .failure(error)
+        }
+    }
+}
+

@@ -2,6 +2,7 @@ data/
 node_modules/
 .build/
 .swiftpm/
+mac.app/
 MAC.app/
 .env
 .env.*

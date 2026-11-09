@@ -61,15 +61,21 @@ public struct MACSettingsRootView: View {
                     }
                     .tag(MACSettingsTab.manageJenkins)
 
-                BotAndStartupTabView(appState: appState)
+                TelegramDataTabView(appState: appState)
                     .tabItem {
-                        Label("Bot & Startup", systemImage: "bolt.shield")
+                        Label("Telegram Data", systemImage: "paperplane.fill")
                     }
-                    .tag(MACSettingsTab.botAndStartup)
+                    .tag(MACSettingsTab.telegramData)
+
+                TutorialTabView(appState: appState)
+                    .tabItem {
+                        Label("Tutorial", systemImage: "book.fill")
+                    }
+                    .tag(MACSettingsTab.tutorial)
             }
             .padding(14)
         }
-        .frame(minWidth: 920, minHeight: 640)
+        .frame(minWidth: 940, minHeight: 650)
     }
 
     private var headerBar: some View {
@@ -937,160 +943,431 @@ private struct ManageJenkinsTabView: View {
     }
 }
 
-// MARK: - Tab 4: Bot & Startup
+// MARK: - Tab 4: Telegram Data & Startup
 
-private final class BotAndStartupVM: ObservableObject {
+private final class TelegramDataVM: ObservableObject {
     @Published var botToken: String = ""
     @Published var showBotToken: Bool = false
+    @Published var telegramApiBaseUrl: String = "https://api.telegram.org"
     @Published var allowedUsersText: String = ""
     @Published var historyCount: Int = 20
     @Published var agyBinPath: String = ""
+    @Published var isVerifyingToken: Bool = false
+    @Published var tokenCheckMessage: String?
+    @Published var tokenCheckSucceeded: Bool = false
 }
 
-private struct BotAndStartupTabView: View {
+private struct TelegramDataTabView: View {
     @ObservedObject var appState: MACAppState
-    @StateObject private var vm = BotAndStartupVM()
+    @StateObject private var vm = TelegramDataVM()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            GroupBox(label: Label("Telegram Bot & Startup Preferences", systemImage: "paperplane.fill")) {
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Telegram Bot Token (@BotFather)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GroupBox(label: Label("Telegram Bot Credentials & Access Control", systemImage: "paperplane.fill")) {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            if vm.showBotToken {
-                                TextField("123456:ABC-DEF...", text: $vm.botToken)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("123456:ABC-DEF...", text: $vm.botToken)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showBotToken ? "Hide" : "Show") {
-                                vm.showBotToken.toggle()
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Allowed Telegram User IDs (comma-separated, blank = anyone with session password)")
+                            Text("Configure your @BotFather API token and who can control your Workspaces on Telegram.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            TextField("e.g. 652545688", text: $vm.allowedUsersText)
-                                .textFieldStyle(.roundedBorder)
+                            Spacer()
+                            Button("How to get Token & User ID? Open Tutorial →") {
+                                appState.selectedTab = .tutorial
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
                         }
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Latest Messages Count (X)")
+                            Text("Telegram Bot Token (@BotFather)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Stepper("\(vm.historyCount) messages", value: $vm.historyCount, in: 1...50)
-                                .frame(width: 160)
-                        }
-                    }
-
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Antigravity CLI Binary Path (agy)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                    }
-
-                    Divider()
-
-                    HStack(spacing: 24) {
-                        Toggle(
-                            "Start MAC automatically when macOS starts (Login Item)",
-                            isOn: Binding(
-                                get: { appState.launchAtLogin },
-                                set: { appState.toggleLaunchAtLogin($0) }
-                            )
-                        )
-
-                        Spacer()
-
-                        HStack(spacing: 6) {
-                            Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
-                                .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
-                            Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby (Active when Started)")
-                                .font(.caption)
-                                .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
-                        }
-                    }
-
-                    HStack {
-                        Spacer()
-                        Button("Save Bot Settings") {
-                            appState.config.telegramBotToken = vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                            appState.config.allowedUserIds = vm.allowedUsersText
-                                .components(separatedBy: CharacterSet(charactersIn: ", \n\t"))
-                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                .filter { !$0.isEmpty }
-                            appState.config.defaultHistoryCount = vm.historyCount
-                            let cleanAgy = vm.agyBinPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !cleanAgy.isEmpty {
-                                appState.config.agyBin = cleanAgy
+                            HStack(spacing: 8) {
+                                if vm.showBotToken {
+                                    TextField("123456:ABC-DEF...", text: $vm.botToken)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    SecureField("123456:ABC-DEF...", text: $vm.botToken)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                Button(vm.showBotToken ? "Hide" : "Show") {
+                                    vm.showBotToken.toggle()
+                                }
+                                Button {
+                                    verifyBotToken()
+                                } label: {
+                                    if vm.isVerifyingToken {
+                                        ProgressView().controlSize(.small)
+                                        Text("Verifying...")
+                                    } else {
+                                        Label("Verify Token", systemImage: "checkmark.shield")
+                                    }
+                                }
+                                .disabled(vm.isVerifyingToken || vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                            appState.saveConfigToDisk(banner: "Saved Telegram Bot & Startup settings.")
                         }
-                        .buttonStyle(.borderedProminent)
-                    }
-                }
-                .padding(8)
-            }
 
-            GroupBox(label: Label("Live Bot Activity Log", systemImage: "terminal")) {
-                VStack(alignment: .leading, spacing: 6) {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            if appState.logLines.isEmpty {
-                                Text("Bot is currently stopped. Click 'Start...' in the menu bar (or top-right) and enter a session password.")
-                                    .font(.system(size: 11.5, design: .monospaced))
+                        if let msg = vm.tokenCheckMessage {
+                            HStack(spacing: 8) {
+                                Image(systemName: vm.tokenCheckSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                    .foregroundColor(vm.tokenCheckSucceeded ? .green : .red)
+                                Text(msg)
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background((vm.tokenCheckSucceeded ? Color.green : Color.red).opacity(0.12))
+                            .cornerRadius(6)
+                        }
+
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Allowed Telegram User IDs (comma-separated numeric IDs, blank = anyone with session password)")
+                                    .font(.caption)
                                     .foregroundColor(.secondary)
-                            } else {
-                                ForEach(Array(appState.logLines.enumerated()), id: \.offset) { _, line in
-                                    Text(line)
+                                TextField("e.g. 652545688", text: $vm.allowedUsersText)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Latest Messages Count (X)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Stepper("\(vm.historyCount) messages", value: $vm.historyCount, in: 1...50)
+                                    .frame(width: 160)
+                            }
+                        }
+
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Telegram API Base URL")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField("https://api.telegram.org", text: $vm.telegramApiBaseUrl)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Antigravity CLI Binary Path (agy)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+
+                        Divider()
+
+                        HStack(spacing: 24) {
+                            Toggle(
+                                "Start mac.app automatically when macOS starts (Login Item)",
+                                isOn: Binding(
+                                    get: { appState.launchAtLogin },
+                                    set: { appState.toggleLaunchAtLogin($0) }
+                                )
+                            )
+
+                            Spacer()
+
+                            HStack(spacing: 6) {
+                                Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
+                                    .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
+                                Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby (Active when Started)")
+                                    .font(.caption)
+                                    .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
+                            }
+                        }
+
+                        HStack {
+                            Spacer()
+                            Button("Save Telegram Data & Startup Settings") {
+                                appState.config.telegramBotToken = vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                                let cleanBaseUrl = vm.telegramApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                                appState.config.telegramApiBaseUrl = cleanBaseUrl.isEmpty ? "https://api.telegram.org" : cleanBaseUrl
+                                appState.config.allowedUserIds = vm.allowedUsersText
+                                    .components(separatedBy: CharacterSet(charactersIn: ", \n\t"))
+                                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                    .filter { !$0.isEmpty }
+                                appState.config.defaultHistoryCount = vm.historyCount
+                                let cleanAgy = vm.agyBinPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !cleanAgy.isEmpty {
+                                    appState.config.agyBin = cleanAgy
+                                }
+                                appState.saveConfigToDisk(banner: "Saved Telegram Data & Startup settings.")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(8)
+                }
+
+                GroupBox(label: Label("Live Bot Activity Log", systemImage: "terminal")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                if appState.logLines.isEmpty {
+                                    Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password.")
                                         .font(.system(size: 11.5, design: .monospaced))
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    ForEach(Array(appState.logLines.enumerated()), id: \.offset) { _, line in
+                                        Text(line)
+                                            .font(.system(size: 11.5, design: .monospaced))
+                                            .textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
                                 }
                             }
+                            .padding(6)
                         }
-                        .padding(6)
+                        .frame(minHeight: 150, maxHeight: 220)
+                        .background(Color.black.opacity(0.05))
+                        .cornerRadius(6)
+
+                        HStack {
+                            Button("Copy Logs") {
+                                let pb = NSPasteboard.general
+                                pb.clearContents()
+                                pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
+                            }
+                            .disabled(appState.logLines.isEmpty)
+
+                            Button("Clear Logs") {
+                                appState.clearLogs()
+                            }
+                            .disabled(appState.logLines.isEmpty)
+
+                            Spacer()
+                        }
                     }
-                    .frame(minHeight: 150)
-                    .background(Color.black.opacity(0.05))
-                    .cornerRadius(6)
-
-                    HStack {
-                        Button("Copy Logs") {
-                            let pb = NSPasteboard.general
-                            pb.clearContents()
-                            pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
-                        }
-                        .disabled(appState.logLines.isEmpty)
-
-                        Button("Clear Logs") {
-                            appState.clearLogs()
-                        }
-                        .disabled(appState.logLines.isEmpty)
-
-                        Spacer()
-                    }
+                    .padding(6)
                 }
-                .padding(6)
             }
+            .padding(.trailing, 4)
         }
         .onAppear {
             vm.botToken = appState.config.telegramBotToken
+            vm.telegramApiBaseUrl = appState.config.telegramApiBaseUrl
             vm.allowedUsersText = appState.config.allowedUserIds.joined(separator: ", ")
             vm.historyCount = appState.config.defaultHistoryCount
             vm.agyBinPath = appState.config.agyBin
+        }
+    }
+
+    private func verifyBotToken() {
+        vm.isVerifyingToken = true
+        vm.tokenCheckMessage = nil
+        let tokenSnapshot = vm.botToken
+        let baseUrlSnapshot = vm.telegramApiBaseUrl
+        let viewModel = vm
+        Task {
+            let res = await TelegramTokenTester.verifyToken(token: tokenSnapshot, apiBaseUrl: baseUrlSnapshot)
+            await MainActor.run {
+                viewModel.isVerifyingToken = false
+                switch res {
+                case .success(let msg):
+                    viewModel.tokenCheckSucceeded = true
+                    viewModel.tokenCheckMessage = msg
+                case .failure(let err):
+                    viewModel.tokenCheckSucceeded = false
+                    viewModel.tokenCheckMessage = err.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Tab 5: Step-by-Step Setup & Workflow Tutorial
+
+private struct TutorialTabView: View {
+    @ObservedObject var appState: MACAppState
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Quick Setup & Telegram Workspace Control Guide")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("Follow these 5 quick steps to control your local macOS Workspaces, Git branches, and Staging → Prod Jenkins builds from Telegram.")
+                            .font(.system(size: 12.5))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.bottom, 2)
+
+                tutorialStepCard(
+                    stepNumber: "1",
+                    title: "Create Your Telegram Bot (@BotFather — 30 seconds)",
+                    icon: "paperplane.circle.fill",
+                    accent: .blue,
+                    bullets: [
+                        "Open @BotFather in Telegram and send /newbot.",
+                        "Pick any display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
+                        "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into Settings → Telegram Data.",
+                        "Click 'Verify Token' and 'Save Telegram Data & Startup Settings'."
+                    ],
+                    actionTitle: "Open @BotFather",
+                    actionURL: "https://t.me/BotFather",
+                    secondaryTitle: "Go to Telegram Data →",
+                    secondaryAction: { appState.selectedTab = .telegramData }
+                )
+
+                tutorialStepCard(
+                    stepNumber: "2",
+                    title: "Lock Down Allowed Telegram User IDs (Recommended)",
+                    icon: "lock.shield.fill",
+                    accent: .indigo,
+                    bullets: [
+                        "Open @userinfobot in Telegram and tap Start — it replies with your numeric Telegram User ID (e.g. 652545688).",
+                        "Paste your numeric ID into 'Allowed Telegram User IDs' in the Telegram Data tab (comma-separate multiple IDs if needed).",
+                        "Even if someone guesses your bot's @username, unauthorized User IDs are silently ignored."
+                    ],
+                    actionTitle: "Open @userinfobot",
+                    actionURL: "https://t.me/userinfobot",
+                    secondaryTitle: nil,
+                    secondaryAction: nil
+                )
+
+                tutorialStepCard(
+                    stepNumber: "3",
+                    title: "Add Workspaces & Optional Staging → Production Jenkins Jobs",
+                    icon: "folder.fill.badge.gearshape",
+                    accent: .purple,
+                    bullets: [
+                        "Open the 'Add Workspace' tab, choose a Workspace Label (shown as a button in Telegram), and click 'Browse...' to pick your project or monorepo folder.",
+                        "Click 'Scan Git Repos' to auto-detect single or multi-repo Git folders, and choose the Workspace's default AI Model (Gemini 3.8 Flash, Gemini 4 Argon, Claude Opus 5.5) and effort level (low / medium / high).",
+                        "Optional CI/CD: Choose 'Single' (Staging/default Jenkins jobs) or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, and add your server credentials in 'Manage Jenkins'."
+                    ],
+                    actionTitle: nil,
+                    actionURL: nil,
+                    secondaryTitle: "Add a Workspace →",
+                    secondaryAction: { appState.selectedTab = .addWorkspace }
+                )
+
+                tutorialStepCard(
+                    stepNumber: "4",
+                    title: "Click MAC Next to Your Clock → Start... + Session Password",
+                    icon: "menubar.rectangle",
+                    accent: .green,
+                    bullets: [
+                        "Click the bold 'MAC' badge next to your macOS menu bar clock and choose 'Start...'.",
+                        "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
+                        "While running, mac.app automatically prevents your MacBook from sleeping so long AI turns and Jenkins builds never drop offline. Clicking 'Stop' restores normal Mac sleep."
+                    ],
+                    actionTitle: nil,
+                    actionURL: nil,
+                    secondaryTitle: nil,
+                    secondaryAction: nil
+                )
+
+                tutorialStepCard(
+                    stepNumber: "5",
+                    title: "Control Your Workspaces From Telegram on Your Phone",
+                    icon: "iphone.radiowaves.left.and.right",
+                    accent: .teal,
+                    bullets: [
+                        "Open your bot in Telegram, send /start, and reply once with your current session password (your password message is auto-deleted immediately from chat).",
+                        "Tap a Workspace ('•' marks your active Workspace and 'Same Chat •' continues your active Antigravity Desktop conversation automatically).",
+                        "Type coding instructions or attach up to 5 UI screenshots at once — Antigravity (agy) edits your local code and sends back a formatted summary + modified files (M / A / D).",
+                        "Tap ✅ Yes or 🌿 Custom Branch to commit & push (or ❌ No to discard changes), run Staging Jenkins, verify your live preview URL, and tap 🚀 Yes, deploy on prod, ✅ Yes (skip prod deploy), or ↩️ Revert (Bad Commit)."
+                    ],
+                    actionTitle: nil,
+                    actionURL: nil,
+                    secondaryTitle: nil,
+                    secondaryAction: nil
+                )
+
+                GroupBox(label: Label("Telegram Controls & Slash Commands Cheat Sheet", systemImage: "command.square.fill")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        commandRow("/start", "Authenticate your session and open the Workspace selector")
+                        commandRow("🔀 Switch Workspace  (/workspaces)", "Switch between your configured Workspaces without losing pending state")
+                        commandRow("⚙️ Settings  (/settings, /model)", "Switch AI Model, effort level (low/medium/high), or view 📜 Last Messages")
+                        commandRow("🆕 New Chat  (/newchat)", "Start a brand-new Antigravity conversation in the active Workspace")
+                        commandRow("/history", "Read the latest X user & agent messages from the active conversation")
+                        commandRow("/lock", "Lock your Telegram session immediately until you re-enter the password")
+                    }
+                    .padding(8)
+                }
+            }
+            .padding(.trailing, 6)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func tutorialStepCard(
+        stepNumber: String,
+        title: String,
+        icon: String,
+        accent: Color,
+        bullets: [String],
+        actionTitle: String?,
+        actionURL: String?,
+        secondaryTitle: String?,
+        secondaryAction: (() -> Void)?
+    ) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Text(stepNumber)
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                        .background(accent)
+                        .clipShape(Circle())
+
+                    Image(systemName: icon)
+                        .foregroundColor(accent)
+                        .font(.system(size: 15, weight: .semibold))
+
+                    Text(title)
+                        .font(.system(size: 13.5, weight: .bold))
+
+                    Spacer()
+
+                    if let actionTitle = actionTitle, let urlStr = actionURL, let url = URL(string: urlStr) {
+                        Button(actionTitle) {
+                            NSWorkspace.shared.open(url)
+                        }
+                        .controlSize(.small)
+                    }
+                    if let secondaryTitle = secondaryTitle, let secondaryAction = secondaryAction {
+                        Button(secondaryTitle) {
+                            secondaryAction()
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(bullets.enumerated()), id: \.offset) { _, line in
+                        HStack(alignment: .top, spacing: 7) {
+                            Text("•")
+                                .font(.system(size: 12.5, weight: .bold))
+                                .foregroundColor(accent)
+                            Text(line)
+                                .font(.system(size: 12.5))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.leading, 34)
+            }
+            .padding(6)
+        }
+    }
+
+    private func commandRow(_ cmd: String, _ desc: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(cmd)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .frame(width: 255, alignment: .leading)
+            Text(desc)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Spacer()
         }
     }
 }

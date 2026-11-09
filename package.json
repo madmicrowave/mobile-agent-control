@@ -1,7 +1,7 @@
 {
   "name": "mobile-agent-control",
-  "version": "3.0.0",
-  "description": "MAC (Mobile Agent Control) — Native macOS menu bar app & Telegram controller for local AI coding agents (Google Antigravity, Gemini & Claude), Git branches, and Staging-to-Production Jenkins CI/CD — zero open ports",
+  "version": "3.1.0",
+  "description": "Mobile Agent Control (mac.app / MAC) — Native macOS menu bar app to remotely control local AI coding Workspaces (Google Antigravity, Gemini & Claude), Git branches, and Staging-to-Prod Jenkins CI/CD via Telegram with 2-minute GUI setup",
   "type": "module",
   "license": "MIT",
   "author": "DOMONK Factory (https://domonk.com)",
@@ -43,7 +43,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "[ -d ./MAC.app ] || zsh scripts/build-app.sh; open ./MAC.app",
+    "start": "[ -d ./mac.app ] || zsh scripts/build-app.sh; open ./mac.app",
     "build:app": "zsh scripts/build-app.sh",
     "cli": "node src/bot.mjs",
     "setup": "node src/setup.mjs",

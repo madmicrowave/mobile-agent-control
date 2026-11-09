@@ -172,10 +172,18 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         }
     )
 
+    expect(MACSettingsTab.allCases.map(\.rawValue) == [
+        "Manage Workspaces",
+        "Add Workspace",
+        "Manage Jenkins",
+        "Telegram Data",
+        "Tutorial"
+    ], "Expected 5 Settings tabs including Telegram Data and Tutorial")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")
     expect(controller.restartMenuItem.title == "Restart...", "Menu has Restart...")
     expect(controller.stopMenuItem.title == "Stop", "Menu has Stop")
     expect(controller.settingsMenuItem.title == "Settings...", "Menu has Settings...")
+    expect(controller.tutorialMenuItem.title == "Tutorial...", "Menu has Tutorial...")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Initial menu enabled state")
 
     // Trigger Start...

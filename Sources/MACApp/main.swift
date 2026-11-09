@@ -9,9 +9,9 @@ final class MACAppDelegate: NSObject, NSApplicationDelegate {
         appState = MACAppState()
         statusBarController = MACStatusBarController(appState: appState)
 
-        // If Telegram Bot Token hasn't been configured yet on first run, open Settings automatically
+        // If Telegram Bot Token hasn't been configured yet on first run, open Settings -> Telegram Data
         if appState.config.telegramBotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            statusBarController.openSettings(tab: .botAndStartup)
+            statusBarController.openSettings(tab: .telegramData)
         }
     }
 
@@ -30,3 +30,4 @@ app.setActivationPolicy(.accessory)
 let delegate = MainActor.assumeIsolated { MACAppDelegate() }
 app.delegate = delegate
 app.run()
+

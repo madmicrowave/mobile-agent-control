@@ -8,7 +8,7 @@ on:
 
 jobs:
   macos-app-and-tests:
-    name: macOS Native App (MAC.app) & Full Test Suite
+    name: macOS Native App (mac.app) & Full Test Suite
     runs-on: macos-latest
     steps:
       - name: Checkout repository
@@ -22,7 +22,7 @@ jobs:
       - name: Run Node.js & Swift Automated Test Suites
         run: npm test
 
-      - name: Build Native MAC.app Bundle
+      - name: Build Native mac.app Bundle
         env:
           MAC_PORTABLE_BUILD: "1"
         run: npm run build:app
