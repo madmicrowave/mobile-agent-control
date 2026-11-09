@@ -1,23 +1,27 @@
 {
-  "name": "phone-agent-control",
-  "version": "2.4.0",
-  "description": "Control local macOS AI coding agents (Google Antigravity IDE, Gemini & Claude Opus), Git branches, and Staging-to-Production Jenkins CI/CD deployments from Telegram — zero open ports",
+  "name": "mobile-agent-control",
+  "version": "3.0.0",
+  "description": "MAC (Mobile Agent Control) — Native macOS menu bar app & Telegram controller for local AI coding agents (Google Antigravity, Gemini & Claude), Git branches, and Staging-to-Production Jenkins CI/CD — zero open ports",
   "type": "module",
   "license": "MIT",
   "author": "DOMONK Factory (https://domonk.com)",
-  "homepage": "https://github.com/madmicrowave/phone-agent-control#readme",
+  "homepage": "https://github.com/madmicrowave/mobile-agent-control#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/madmicrowave/phone-agent-control.git"
+    "url": "https://github.com/madmicrowave/mobile-agent-control.git"
   },
   "bugs": {
-    "url": "https://github.com/madmicrowave/phone-agent-control/issues"
+    "url": "https://github.com/madmicrowave/mobile-agent-control/issues"
   },
   "os": [
     "darwin"
   ],
   "keywords": [
     "macos",
+    "macos-app",
+    "menubar-app",
+    "swift",
+    "swiftui",
     "ai-coding-agent",
     "telegram-bot",
     "google-gemini",
@@ -25,7 +29,7 @@
     "claude-opus",
     "antigravity",
     "antigravity-ide",
-    "remote-ide",
+    "remote-workspace",
     "mobile-coding",
     "chatops",
     "git-automation",
@@ -39,12 +43,16 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "node src/bot.mjs",
+    "start": "[ -d ./MAC.app ] || zsh scripts/build-app.sh; open ./MAC.app",
+    "build:app": "zsh scripts/build-app.sh",
+    "cli": "node src/bot.mjs",
     "setup": "node src/setup.mjs",
-    "add-ide": "node src/setup.mjs add-ide",
+    "add-workspace": "node src/setup.mjs add-ide",
     "update-jenkins": "node src/setup.mjs update-jenkins",
     "test-jenkins": "node src/setup.mjs test-jenkins",
     "stop": "node src/service.mjs stop",
-    "test": "node --test test/*.test.mjs"
+    "test:node": "node --test test/*.test.mjs",
+    "test:mac": "zsh scripts/run-mac-tests.sh",
+    "test": "node --test test/*.test.mjs && ([ \"$(uname -s)\" != \"Darwin\" ] || zsh scripts/run-mac-tests.sh)"
   }
 }

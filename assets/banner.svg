@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" width="1200" height="460" role="img" aria-label="Phone Agent Control — Control AI Coding Agents, Git &amp; Jenkins CI/CD on macOS from Telegram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" width="1200" height="460" role="img" aria-label="MAC (Mobile Agent Control) — Native macOS Menu Bar App for Controlling AI Coding Agents, Git &amp; Jenkins CI/CD from Telegram">
   <defs>
     <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#090d1a"/>
@@ -18,36 +18,36 @@
 
   <!-- Top Header -->
   <g transform="translate(60, 56)">
-    <rect x="0" y="0" width="330" height="30" rx="15" fill="#172036" stroke="#2d3c5e"/>
+    <rect x="0" y="0" width="440" height="30" rx="15" fill="#172036" stroke="#2d3c5e"/>
     <circle cx="18" cy="15" r="5" fill="#22c55e"/>
-    <text x="32" y="20" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="600" fill="#e2e8f0">macOS • Node.js 20+ • Zero Dependencies • MIT</text>
+    <text x="32" y="20" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="12.5" font-weight="600" fill="#e2e8f0">macOS Menu Bar App • Swift + Node 20+ • Awake Mode • MIT</text>
 
-    <text x="0" y="80" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="44" font-weight="800" fill="#ffffff" letter-spacing="-0.8">Phone Agent Control</text>
-    <text x="0" y="116" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="21" font-weight="600" fill="url(#gradText)">Control Local macOS AI Coding Agents, Git &amp; Jenkins CI/CD from Telegram</text>
+    <text x="0" y="80" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="44" font-weight="800" fill="#ffffff" letter-spacing="-0.8">MAC — Mobile Agent Control</text>
+    <text x="0" y="116" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="20.5" font-weight="600" fill="url(#gradText)">Native macOS Menu Bar App to Control AI Workspaces, Git &amp; Jenkins CI/CD from Telegram</text>
   </g>
 
   <!-- 4-Stage Visual Pipeline -->
   <g transform="translate(60, 212)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
-    <!-- Stage 1: Telegram Phone -->
+    <!-- Stage 1: MAC Menu Bar App -->
     <rect x="0" y="0" width="246" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="22" y="34" font-size="16" font-weight="700" fill="#38bdf8">📱 1. Telegram Mobile</text>
-    <text x="22" y="64" font-size="13" fill="#cbd5e1">• Per-run RAM password</text>
-    <text x="22" y="88" font-size="13" fill="#cbd5e1">• Text + up to 5 screenshots</text>
-    <text x="22" y="112" font-size="13" fill="#cbd5e1">• Multi-IDE switcher</text>
+    <text x="22" y="34" font-size="16" font-weight="700" fill="#38bdf8">🖥 1. MAC Menu Bar App</text>
+    <text x="22" y="64" font-size="13" fill="#cbd5e1">• Start / Restart + Password</text>
+    <text x="22" y="88" font-size="13" fill="#cbd5e1">• Workspaces &amp; Jenkins UI</text>
+    <text x="22" y="112" font-size="13" fill="#cbd5e1">• Login Auto-Start &amp; Awake</text>
     <rect x="22" y="134" width="202" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="123" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#22c55e">🔒 Zero Open Ports / Ngrok</text>
+    <text x="123" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#22c55e">⚡ No CLI Commands Needed</text>
 
     <!-- Arrow 1 -->
     <text x="262" y="96" font-size="22" font-weight="700" fill="#64748b">→</text>
 
-    <!-- Stage 2: Antigravity IDE -->
+    <!-- Stage 2: Telegram Mobile + Workspaces -->
     <rect x="292" y="0" width="256" height="184" rx="16" fill="#131c31" stroke="#334155" stroke-width="1.5"/>
-    <text x="314" y="34" font-size="16" font-weight="700" fill="#60a5fa">🧠 2. Antigravity IDE (agy)</text>
-    <text x="314" y="64" font-size="13" fill="#cbd5e1">• Gemini 3.8 Flash &amp; 4 Argon</text>
-    <text x="314" y="88" font-size="13" fill="#cbd5e1">• Claude Opus 5.5</text>
-    <text x="314" y="112" font-size="13" fill="#cbd5e1">• Low / Medium / High effort</text>
+    <text x="314" y="34" font-size="16" font-weight="700" fill="#60a5fa">📱 2. Telegram &amp; AI</text>
+    <text x="314" y="64" font-size="13" fill="#cbd5e1">• Multi-Workspace switcher</text>
+    <text x="314" y="88" font-size="13" fill="#cbd5e1">• Gemini 3.8 / 4 &amp; Claude 5.5</text>
+    <text x="314" y="112" font-size="13" fill="#cbd5e1">• Text + up to 5 screenshots</text>
     <rect x="314" y="134" width="212" height="30" rx="8" fill="#0f172a" stroke="#1e293b"/>
-    <text x="420" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#93c5fd">✅ Same-Chat Continuity</text>
+    <text x="420" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#93c5fd">🔒 Zero Open Ports / Ngrok</text>
 
     <!-- Arrow 2 -->
     <text x="564" y="96" font-size="22" font-weight="700" fill="#64748b">→</text>
@@ -74,4 +74,3 @@
     <text x="1008" y="154" text-anchor="middle" font-size="12" font-weight="600" fill="#34d399">Staging → Prod Promotion</text>
   </g>
 </svg>
-

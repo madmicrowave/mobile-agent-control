@@ -1,5 +1,8 @@
 data/
 node_modules/
+.build/
+.swiftpm/
+MAC.app/
 .env
 .env.*
 !.env.example

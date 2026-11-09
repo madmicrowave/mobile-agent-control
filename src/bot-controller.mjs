@@ -26,7 +26,9 @@ import {
 } from './transcript-reader.mjs';
 import { escapeHtml, markdownToTelegramHtml } from './telegram-api.mjs';
 
-export const REPLY_BTN_SWITCH_IDE = '🔀 Switch IDE';
+export const REPLY_BTN_SWITCH_WORKSPACE = '🔀 Switch Workspace';
+export const REPLY_BTN_SWITCH_IDE = REPLY_BTN_SWITCH_WORKSPACE;
+const LEGACY_REPLY_BTN_SWITCH_IDE = '🔀 Switch IDE';
 export const REPLY_BTN_LATEST_MSGS = '📜 Latest Messages';
 export const REPLY_BTN_NEW_CHAT = '🆕 New Chat';
 export const REPLY_BTN_SETTINGS = '⚙️ Settings';
@@ -36,7 +38,7 @@ export const MAX_FILES_PER_TURN = 5;
 export const BIG_MESSAGE_SPLIT_THRESHOLD = 3800;
 
 export const MAIN_REPLY_KEYBOARD = {
-  keyboard: [[{ text: REPLY_BTN_SWITCH_IDE }, { text: REPLY_BTN_SETTINGS }]],
+  keyboard: [[{ text: REPLY_BTN_SWITCH_WORKSPACE }, { text: REPLY_BTN_SETTINGS }]],
   resize_keyboard: true,
   is_persistent: true
 };
@@ -124,8 +126,8 @@ export class BotController {
   }
 
   getWorkspaceLabel(ws) {
-    if (!ws) return 'IDE';
-    return String(ws.label || ws.id || 'IDE').trim();
+    if (!ws) return 'Workspace';
+    return String(ws.label || ws.id || 'Workspace').trim();
   }
 
   getConfiguredHistoryCount() {
@@ -318,9 +320,9 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🔐 <b>Antigravity IDE Controller</b>\n\n` +
+        `🔐 <b>Mobile Agent Control (MAC)</b>\n\n` +
         `Session requires authentication.\n` +
-        `Reply with the password entered on <code>npm start</code>:`
+        `Reply with the current session password:`
     });
   }
 
@@ -362,7 +364,7 @@ export class BotController {
         this.recordPasswordFailure(userId);
         await this.telegram.sendMessage({
           chatId,
-          text: '❌ Invalid password. Please enter the session password set on <code>npm start</code>:'
+          text: '❌ Invalid password. Please enter the current session password:'
         });
         return;
       }
@@ -375,7 +377,7 @@ export class BotController {
         chatId,
         text:
           `🔓 <b>Session unlocked!</b>\n` +
-          `Active until the bot application is restarted (or <code>/lock</code>). Use the buttons below anytime to switch IDEs or change AI models.`,
+          `Active until the bot is stopped or restarted (or <code>/lock</code>). Use the buttons below anytime to switch Workspaces or change AI models.`,
         replyMarkup: MAIN_REPLY_KEYBOARD
       });
       await this.sendIdeSelectorMenu(chatId, userId);
@@ -385,7 +387,13 @@ export class BotController {
     const sess = this.configStore.getUserSession(userId);
 
     // ── Global Commands & Reply Keyboard Shortcuts ───────────────────────────
-    if (text === '/start' || text === '/ides' || text === REPLY_BTN_SWITCH_IDE) {
+    if (
+      text === '/start' ||
+      text === '/workspaces' ||
+      text === '/ides' ||
+      text === REPLY_BTN_SWITCH_WORKSPACE ||
+      text === LEGACY_REPLY_BTN_SWITCH_IDE
+    ) {
       await this.sendIdeSelectorMenu(chatId, userId);
       return;
     }
@@ -422,8 +430,8 @@ export class BotController {
       await this.telegram.sendMessage({
         chatId,
         text:
-          `🔒 IDE registration and Jenkins configuration are local-console-only and cannot be viewed or changed in Telegram.\n` +
-          `Use <code>npm run setup</code>, <code>npm run add-ide</code>, or <code>npm run update-jenkins</code> in terminal.`
+          `🔒 Workspace registration and Jenkins configuration are local-only and cannot be viewed or changed in Telegram.\n` +
+          `Open <b>MAC → Settings</b> in your macOS menu bar to manage Workspaces and Jenkins.`
       });
       return;
     }
@@ -447,7 +455,7 @@ export class BotController {
 
     if (text === REPLY_BTN_LATEST_MSGS || text === '/history' || text.startsWith('/history ')) {
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
-        await this.sendIdeSelectorMenu(chatId, userId, 'Select an IDE first to view messages:');
+        await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first to view messages:');
         return;
       }
       await this.sendLatestMessagesForWorkspace(chatId, sess.selectedWorkspaceId);
@@ -456,17 +464,17 @@ export class BotController {
 
     if (text === REPLY_BTN_NEW_CHAT || text === '/newchat') {
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
-        await this.sendIdeSelectorMenu(chatId, userId, 'Select an IDE first:');
+        await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
         return;
       }
       await this.activateNewChat(chatId, sess.selectedWorkspaceId);
       return;
     }
 
-    // ── Ensure an IDE is selected ────────────────────────────────────────────
+    // ── Ensure a Workspace is selected ───────────────────────────────────────
     const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
     if (!ws) {
-      await this.sendIdeSelectorMenu(chatId, userId, 'Select an IDE workspace first:');
+      await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
       return;
     }
 
@@ -497,7 +505,7 @@ export class BotController {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>. Complete the action below (or tap <b>${REPLY_BTN_SWITCH_IDE}</b> to work in another IDE):`
+        `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>. Complete the action below (or tap <b>${REPLY_BTN_SWITCH_WORKSPACE}</b> to work in another Workspace):`
       );
       return;
     }
@@ -863,8 +871,8 @@ export class BotController {
         await this.telegram.sendMessage({
           chatId,
           text:
-            `🔒 IDE registration and Jenkins configuration are local-console-only and cannot be viewed or changed in Telegram.\n` +
-            `Use <code>npm run setup</code>, <code>npm run add-ide</code>, or <code>npm run update-jenkins</code> in terminal.`
+            `🔒 Workspace registration and Jenkins configuration are local-only and cannot be viewed or changed in Telegram.\n` +
+            `Open <b>MAC → Settings</b> in your macOS menu bar to manage Workspaces and Jenkins.`
         });
         return;
       }
@@ -897,7 +905,7 @@ export class BotController {
         const parts = data.split(':');
         const wsId = parts[2];
         await this.activateSameChat(chatId, userId, wsId);
-        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+        if (messageId && cb.message?.text?.includes('Workspace Selected:')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
             await this.telegram.updateInlineKeyboard(
@@ -927,7 +935,7 @@ export class BotController {
           await this.configStore.saveState();
         }
         await this.activateSameChat(chatId, userId, wsId);
-        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+        if (messageId && cb.message?.text?.includes('Workspace Selected:')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
             await this.telegram.updateInlineKeyboard(
@@ -943,7 +951,7 @@ export class BotController {
       if (data.startsWith('chat:new:')) {
         const wsId = data.slice('chat:new:'.length);
         await this.activateNewChat(chatId, wsId);
-        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+        if (messageId && cb.message?.text?.includes('Workspace Selected:')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
             await this.telegram.updateInlineKeyboard(
@@ -1150,8 +1158,8 @@ export class BotController {
     }
   }
 
-  // ── Menus: Select / Switch IDEs & Per-IDE AI Model Settings ────────────────
-  async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select an IDE Workspace:</b>') {
+  // ── Menus: Select / Switch Workspaces & Per-Workspace AI Model Settings ────
+  async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select a Workspace:</b>') {
     const sess = this.configStore.getUserSession(userId);
     const rows = [];
     const workspaces = this.configStore.config.workspaces || [];
@@ -1177,7 +1185,7 @@ export class BotController {
       text:
         workspaces.length > 0
           ? `${heading}\n<i>🟢 Ready  ⏳ Running  🟣 Waiting for your Yes/No</i>`
-          : `No IDEs configured yet. Run <code>npm run setup</code> or <code>npm run add-ide</code> in terminal.`,
+          : `No Workspaces configured yet. Open <b>MAC → Settings</b> in your macOS menu bar to add a Workspace.`,
       replyMarkup: { inline_keyboard: rows }
     });
   }
@@ -1189,7 +1197,7 @@ export class BotController {
 
     const rows = [];
 
-    // Dedicated AI Model & Level configuration button for EACH configured IDE
+    // Dedicated AI Model & Level configuration button for EACH configured Workspace
     for (const item of allWorkspaces) {
       const mInfo = this.resolveWorkspaceModel(item);
       const activeBadge = ws && ws.id === item.id ? ' •' : '';
@@ -1212,13 +1220,13 @@ export class BotController {
               return `  • <code>${escapeHtml(itemLabel)}</code> → <code>${escapeHtml(mInfo.displayLabel)}</code>${activeTag}`;
             })
             .join('\n')
-        : '  <i>(No IDEs configured — run <code>npm run setup</code> or <code>npm run add-ide</code> in terminal)</i>';
+        : '  <i>(No Workspaces configured — open <b>MAC → Settings</b> in your macOS menu bar)</i>';
 
     await this.telegram.sendMessage({
       chatId,
       text:
         `⚙️ <b>AI Model Settings</b>\n\n` +
-        `Select an IDE below to change its AI model &amp; level:\n${ideModelsSummary}`,
+        `Select a Workspace below to change its AI model &amp; level:\n${ideModelsSummary}`,
       replyMarkup: { inline_keyboard: rows }
     });
   }
@@ -1386,11 +1394,11 @@ export class BotController {
     await this.sendWorkspaceRepoInfo(chatId, ws.id);
   }
 
-  // ── Selecting IDE & Same Chat (Default) vs New Chat Flow ───────────────────
+  // ── Selecting Workspace & Same Chat (Default) vs New Chat Flow ─────────────
   async handleSelectIde(chatId, userId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) {
-      await this.sendIdeSelectorMenu(chatId, userId, 'IDE not found — select an available IDE:');
+      await this.sendIdeSelectorMenu(chatId, userId, 'Workspace not found — select an available Workspace:');
       return;
     }
 
@@ -1400,20 +1408,20 @@ export class BotController {
 
     const st = this.configStore.getWorkspaceState(ws.id);
 
-    // If this IDE is mid-workflow (agent running, commit choice, Jenkins choice, ok/revert), resume right where it paused!
+    // If this Workspace is mid-workflow (agent running, commit choice, Jenkins choice, ok/revert), resume right where it paused!
     if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
       await this.configStore.saveState();
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `🗂 <b>Switched to IDE: ${escapeHtml(wsLabel)}</b>\nResuming pending step:`
+        `🗂 <b>Switched to Workspace: ${escapeHtml(wsLabel)}</b>\nResuming pending step:`
       );
       return;
     }
 
     st.phase = 'SELECT_CHAT';
 
-    // Discover recent Antigravity conversations for this workspace (Desktop IDE + CLI)
+    // Discover recent Antigravity conversations for this workspace
     const discovered = await discoverRecentWorkspaceConversations(
       this.configStore.config.antigravityBrainDir,
       ws.path,
@@ -1421,7 +1429,7 @@ export class BotController {
     );
     this.cachedRecentChatsByWs.set(ws.id, discovered);
 
-    // Same Chat is active by default when selecting an IDE
+    // Same Chat is active by default when selecting a Workspace
     if (!st.conversationId) {
       if (discovered.length > 0) {
         st.conversationId = discovered[0].conversationId;
@@ -1450,7 +1458,7 @@ export class BotController {
         : '';
 
     const infoLines = [
-      `🗂 <b>IDE Selected: ${escapeHtml(wsLabel)}</b>`,
+      `🗂 <b>Workspace Selected: ${escapeHtml(wsLabel)}</b>`,
       `📁 <code>${escapeHtml(ws.path)}</code>`,
       `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>`,
       ...(jenkinsLines ? [jenkinsLines] : [])

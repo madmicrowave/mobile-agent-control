@@ -458,10 +458,10 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.match(args[1], /\/tmp\/bot-uploads\/shot1\.jpg/);
 
     const plistXml = buildLaunchdPlistXml({
-      projectRoot: '/opt/phone-agent-control',
+      projectRoot: '/opt/mobile-agent-control',
       homeDir: '/Users/example'
     });
-    assert.match(plistXml, /io\.antigravity\.phone-agent-control/);
+    assert.match(plistXml, /com\.domonk\.mobile-agent-control/);
     assert.match(plistXml, /GIT_TERMINAL_PROMPT/);
   });
 
@@ -829,7 +829,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     await controller.handleUpdate(makeUserMsg('/start'));
     assert.match(mockTg.lastSent().text, /Session requires authentication/);
-    assert.match(mockTg.lastSent().text, /<code>npm start<\/code>/);
+    assert.match(mockTg.lastSent().text, /Mobile Agent Control \(MAC\)/);
 
     const wrongUpd = makeUserMsg('wrong-pass');
     await controller.handleUpdate(wrongUpd);
@@ -840,13 +840,14 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(rightUpd);
     assert.ok(mockTg.deletedMessages.some((d) => d.messageId === rightUpd.message.message_id));
     assert.ok(mockTg.sentMessages.some((m) => /Session unlocked!/.test(m.text)));
-    assert.match(mockTg.lastSent().text, /Select an IDE Workspace/);
+    assert.match(mockTg.lastSent().text, /Select a Workspace/);
+    assert.doesNotMatch(mockTg.lastSent().text, /\bIDE\b/);
 
     // Advance several calendar days WITHOUT restarting app -> stays unlocked (NOT daily!)
     currentNow = new Date('2026-11-12T14:30:00');
     mockTg.clearSent();
-    await controller.handleUpdate(makeUserMsg('/ides'));
-    assert.match(mockTg.lastSent().text, /Select an IDE Workspace/);
+    await controller.handleUpdate(makeUserMsg('/workspaces'));
+    assert.match(mockTg.lastSent().text, /Select a Workspace/);
 
     // Simulate restarting the application with a brand-new password (`npm start`)
     configStore.setRuntimePassword('run-secret-2');
@@ -896,7 +897,9 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     const selectMsg = mockTg.lastSent();
-    assert.match(selectMsg.text, /IDE Selected: Payments Platform/);
+    assert.equal(REPLY_BTN_SWITCH_IDE, '🔀 Switch Workspace');
+    assert.match(selectMsg.text, /Workspace Selected: Payments Platform/);
+    assert.doesNotMatch(selectMsg.text, /\bIDE\b/);
     assert.doesNotMatch(selectMsg.text, /Show Latest/i);
     assert.doesNotMatch(selectMsg.text, /is active by default/i);
     const flatButtons = selectMsg.reply_markup.inline_keyboard.flat();
@@ -1184,12 +1187,13 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg(`/register extra ${extraRepo.workRoot}`));
     assert.equal(configStore.config.workspaces.length, wsCountBefore);
-    assert.match(mockTg.lastSent().text, /local-console-only/);
+    assert.match(mockTg.lastSent().text, /local-only/);
+    assert.match(mockTg.lastSent().text, /MAC → Settings/);
 
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/setjenkins https://evil.example.com hacker secret'));
     assert.equal(configStore.config.jenkins.username, prevJenkinsUser);
-    assert.match(mockTg.lastSent().text, /local-console-only/);
+    assert.match(mockTg.lastSent().text, /local-only/);
 
     // 3) Update & test Jenkins strictly via console command (`update-jenkins` + `test-jenkins`)
     const jnkLogs = [];
@@ -1266,7 +1270,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_IDE));
-    assert.match(mockTg.lastSent().text, /Select an IDE Workspace/);
+    assert.match(mockTg.lastSent().text, /Select a Workspace/);
     const selectorCallbacks = (mockTg.lastSent().reply_markup?.inline_keyboard || [])
       .flat()
       .map((b) => b.callback_data);
@@ -1279,7 +1283,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:extra'));
     assert.equal(configStore.getUserSession(USER_ID).selectedWorkspaceId, 'extra');
-    assert.ok(mockTg.sentMessages.some((m) => /Switched to IDE: Extra Service/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Switched to Workspace: Extra Service/.test(m.text)));
     assert.match(mockTg.lastSent().text, /Commit &amp; push these changes\?/);
 
     await controller.handleUpdate(makeCallback('cmt:no:extra'));
@@ -1678,6 +1682,6 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(warns.some((w) => /Too Many Requests: retry after 1.*Waiting 2s/i.test(w)));
     assert.ok(logs.some((l) => /Telegram connection restored/i.test(l)));
     assert.ok(mockTg.sentMessages.some((m) => /Session requires authentication/.test(m.text)));
-    assert.ok(mockTg.sentMessages.some((m) => /Select an IDE Workspace/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Select a Workspace/.test(m.text)));
   });
 });

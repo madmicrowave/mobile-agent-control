@@ -26,12 +26,12 @@ const __dirname = path.dirname(__filename);
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 export const BOT_COMMANDS = [
-  { command: 'start', description: 'Authenticate session & select IDE' },
-  { command: 'ides', description: 'Switch active IDE workspace' },
-  { command: 'model', description: 'Change AI model & level for active IDE' },
+  { command: 'start', description: 'Authenticate session & select Workspace' },
+  { command: 'workspaces', description: 'Switch active Workspace' },
+  { command: 'model', description: 'Change AI model & level for active Workspace' },
   { command: 'history', description: 'Show latest X messages (setup count)' },
-  { command: 'newchat', description: 'Start a fresh chat in active IDE' },
-  { command: 'settings', description: 'Change AI model & level per IDE' },
+  { command: 'newchat', description: 'Start a fresh chat in active Workspace' },
+  { command: 'settings', description: 'Change AI model & level per Workspace' },
   { command: 'lock', description: 'Lock session immediately' }
 ];
 
@@ -205,7 +205,7 @@ export async function executeConsoleCommand(
     return { handled: false };
   }
 
-  if (cmd === 'add-ide' || cmd === 'register-ide' || cmd === 'workspaces') {
+  if (cmd === 'add-workspace' || cmd === 'add-ide' || cmd === 'register-ide' || cmd === 'workspaces') {
     await runAddIdeWizard({
       dataDir,
       store: configStore,
@@ -264,7 +264,7 @@ export async function executeConsoleCommand(
         .join('\n') || '    (none configured)';
     const jenkinsOk = Boolean(cfg.jenkins?.username && cfg.jenkins?.apiToken);
     log('');
-    log(`  Registered IDEs (${(cfg.workspaces || []).length}):`);
+    log(`  Registered Workspaces (${(cfg.workspaces || []).length}):`);
     log(ideLines);
     log(
       `  Jenkins: ${cfg.jenkins?.baseUrl || '(not configured)'}${cfg.jenkins?.baseUrl ? ` (${jenkinsOk ? `configured as ${cfg.jenkins.username}` : 'credentials not set'})` : ''}`
@@ -276,11 +276,11 @@ export async function executeConsoleCommand(
   if (cmd === 'help' || cmd === '?') {
     log('');
     log('  Available Console Commands:');
-    log('    add-ide         Scan & register an available IDE workspace (or edit existing)');
+    log('    add-workspace   Scan & register an available Workspace (or edit existing)');
     log('    update-jenkins  Update Jenkins URL, username & API token, and test connection');
     log('    test-jenkins    Test Jenkins connection right now');
     log('    setup           Run full setup wizard');
-    log('    status          Show configured IDEs, AI models & Jenkins status');
+    log('    status          Show configured Workspaces, AI models & Jenkins status');
     log('');
     return { handled: true, command: 'help' };
   }
@@ -498,10 +498,21 @@ async function main() {
   const consoleAbort = new AbortController();
 
   try {
-    const dataDir = path.join(PROJECT_ROOT, 'data');
+    const rawArgs = process.argv.slice(2);
+    let customDataDir = process.env.MAC_DATA_DIR ? path.resolve(process.env.MAC_DATA_DIR) : '';
+    const startupArgs = [];
+    for (let i = 0; i < rawArgs.length; i++) {
+      if (rawArgs[i] === '--data-dir' && rawArgs[i + 1]) {
+        customDataDir = path.resolve(rawArgs[i + 1]);
+        i += 1;
+      } else {
+        startupArgs.push(rawArgs[i]);
+      }
+    }
+
+    const dataDir = customDataDir || path.join(PROJECT_ROOT, 'data');
     loadProjectDotEnv(PROJECT_ROOT);
 
-    const startupArgs = process.argv.slice(2);
     if (startupArgs.length > 0 && process.stdin.isTTY) {
       const preStore = new ConfigStore(dataDir);
       await preStore.init();
@@ -542,7 +553,7 @@ async function main() {
 
     console.log('');
     console.log('============================================================');
-    console.log('  Antigravity IDE — Bot Session Password');
+    console.log('  MAC (Mobile Agent Control) — Bot Session Password');
     console.log('============================================================');
     console.log('  Set a new password for this run (valid until app restart).');
     const sessionPassword = await promptStartupPassword();
@@ -565,25 +576,18 @@ async function main() {
 
     console.log('');
     console.log('============================================================');
-    console.log('  Antigravity IDE — Telegram Bot Controller');
+    console.log('  MAC (Mobile Agent Control) — Telegram Bot Active');
     console.log('============================================================');
     console.log(`  Telegram Bot    : @${botInfo.username} (https://t.me/${botInfo.username})`);
     console.log('  Session Auth    : ******** (active until app restart)');
     console.log(`  Allowed Users   : ${allowlistDesc}`);
-    console.log(`  Latest X Msgs   : ${cfg.defaultHistoryCount || 6} (configured via npm run setup)`);
-    console.log(`  Registered IDEs : ${(cfg.workspaces || []).length} (${ideNames})`);
+    console.log(`  Latest X Msgs   : ${cfg.defaultHistoryCount || 6}`);
+    console.log(`  Workspaces      : ${(cfg.workspaces || []).length} (${ideNames})`);
     console.log(
       `  Jenkins         : ${cfg.jenkins?.baseUrl || '(not configured)'}${cfg.jenkins?.baseUrl ? ` (${jenkinsOk ? `configured as ${cfg.jenkins.username}` : 'credentials not set yet'})` : ''}`
     );
     console.log('------------------------------------------------------------');
-    console.log('  Console Commands (type here anytime while running):');
-    console.log('    add-ide         Register/add an available IDE workspace');
-    console.log('    update-jenkins  Update Jenkins URL/auth & test connection');
-    console.log('    test-jenkins    Test Jenkins connection');
-    console.log('    setup           Run full setup wizard');
-    console.log('------------------------------------------------------------');
     console.log('  Long-polling active. Open your bot in Telegram and send /start');
-    console.log('  Press Ctrl+C to stop (next npm start will ask for a new password).');
     console.log('============================================================');
     console.log('');
 

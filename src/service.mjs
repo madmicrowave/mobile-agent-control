@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
 
-export const SERVICE_LABEL = 'io.antigravity.phone-agent-control';
+export const SERVICE_LABEL = 'com.domonk.mobile-agent-control';
 
 function escapeXml(str) {
   return String(str || '')

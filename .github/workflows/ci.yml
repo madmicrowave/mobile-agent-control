@@ -7,22 +7,22 @@ on:
     branches: [master]
 
 jobs:
-  test:
-    name: Node.js ${{ matrix.node }} Unit & E2E Tests
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [20, 22]
+  macos-app-and-tests:
+    name: macOS Native App (MAC.app) & Full Test Suite
+    runs-on: macos-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node }}
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
 
-      - name: Run automated test suite
+      - name: Run Node.js & Swift Automated Test Suites
         run: npm test
 
+      - name: Build Native MAC.app Bundle
+        env:
+          MAC_PORTABLE_BUILD: "1"
+        run: npm run build:app
