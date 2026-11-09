@@ -1785,7 +1785,7 @@ private struct TutorialTabView: View {
                 MACSectionCard(title: "Telegram Controls & Slash Commands Cheat Sheet", systemImage: "command.square.fill") {
                     VStack(alignment: .leading, spacing: 8) {
                         commandRow("/start", "Authenticate your session and open the Workspace selector")
-                        commandRow("🔀 Switch Workspace  (/workspaces)", "Switch between your configured Workspaces without losing pending state")
+                        commandRow("🔀 Workspace  (/workspaces)", "Switch between your configured Workspaces without losing pending state")
                         commandRow("⚙️ Settings  (/settings, /model)", "Switch AI Model, effort level (low/medium/high), or view 📜 Last Messages")
                         commandRow("🆕 New Chat  (/newchat)", "Start a brand-new Antigravity conversation in the active Workspace")
                         commandRow("/history", "Read the latest X user & agent messages from the active conversation")

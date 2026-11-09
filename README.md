@@ -24,7 +24,7 @@
 **Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source **native macOS application** that places a bold **`MAC`** icon right next to your macOS menu bar clock (matching [Sticky-AI](https://github.com/madmicrowave/sticky-ai)'s `SAI` badge) and connects your local **Google Antigravity (`agy`)** coding Workspaces (**Google Gemini 3.8 Flash**, **Gemini 4 Argon**, **Claude Opus 5.5**, **Claude Sonnet 5.5**) directly to **Telegram** on your iPhone or Android.
 
 Whether you are away from your desk, commuting, or testing a mobile build on your phone, you can:
-1. **Switch between any local Mac Workspace** in one tap (`🔀 Switch Workspace`) — each with its own AI model, effort level, active chat, and Git repositories.
+1. **Switch between any local Mac Workspace** in one tap (`🔀 Workspace`) — each with its own AI model, effort level, active chat, and Git repositories.
 2. **Continue your live Desktop chat** (`Same Chat •`) or start a **`🆕 New Chat`** — sending text prompts and up to **5 UI screenshots** at once.
 3. **Use Git-Only Push Mode OR Full Jenkins CI/CD**:
    - **Git-Only Workspaces (No Jenkins Required)**: Leave Jenkins jobs empty and `mac.app` reviews modified files (`M` / `A` / `D`) across one or multiple Git repositories in the Workspace, then commits & pushes to your configured branch (or a new **Custom Branch**) right from Telegram.
@@ -145,7 +145,7 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 
 | Control / Command | Description |
 | :--- | :--- |
-| **`🔀 Switch Workspace`** (`/workspaces`) | Switch between local Mac Workspaces; each Workspace keeps its own active chat and pending Git/Jenkins state. |
+| **`🔀 Workspace`** (`/workspaces`) | Switch between local Mac Workspaces; each Workspace keeps its own active chat and pending Git/Jenkins state. |
 | **`⚙️ Settings`** (`/settings`, `/model`) | Change the **AI Model**, **Effort Level** (`low` / `medium` / `high`), or read **`📜 Last Messages`** for any Workspace. |
 | **`🆕 New Chat`** (`/newchat`) | Start a fresh Antigravity conversation in the selected Workspace. |
 | `/history` | Display the latest `X` user & agent messages from the active Workspace transcript. |

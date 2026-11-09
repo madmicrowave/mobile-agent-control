@@ -877,7 +877,18 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/ides'));
-    const ideMenuBtns = mockTg.lastSent().reply_markup.inline_keyboard.flat().map((b) => b.text);
+    const ideMenuMsg = mockTg.lastSent();
+    assert.match(
+      ideMenuMsg.text,
+      /🗂 <b>Select a Workspace:<\/b>\n\n🟢 <i>Ready<\/i>\n⏳ <i>Running<\/i>\n🟣 <i>Waiting for your Yes\/No<\/i>/
+    );
+    // 2 workspaces (even) -> Row 1 has 2 workspaces, Row 2 has full-width ⚙️ Settings
+    assert.equal(ideMenuMsg.reply_markup.inline_keyboard.length, 2);
+    assert.equal(ideMenuMsg.reply_markup.inline_keyboard[0].length, 2);
+    assert.deepEqual(ideMenuMsg.reply_markup.inline_keyboard[1], [
+      { text: '⚙️ Settings', callback_data: 'cfg:menu' }
+    ]);
+    const ideMenuBtns = ideMenuMsg.reply_markup.inline_keyboard.flat().map((b) => b.text);
     assert.ok(ideMenuBtns.some((t) => t.includes('Payments Platform')));
     assert.ok(ideMenuBtns.some((t) => t.includes('Web Portal')));
     assert.ok(!ideMenuBtns.some((t) => /\bpayments\b/.test(t)));
@@ -897,18 +908,33 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     const selectMsg = mockTg.lastSent();
-    assert.equal(REPLY_BTN_SWITCH_IDE, '🔀 Switch Workspace');
-    assert.match(selectMsg.text, /Workspace Selected: Payments Platform/);
+    assert.equal(REPLY_BTN_SWITCH_IDE, '🔀 Workspace');
+    assert.match(
+      selectMsg.text,
+      /🗂 <b>Workspace Selected<\/b>\n<b>Payments Platform<\/b>\n<code>[^<]+<\/code>\n\n🧠 AI Model:/
+    );
+    assert.doesNotMatch(selectMsg.text, /📁/);
     assert.doesNotMatch(selectMsg.text, /\bIDE\b/);
     assert.doesNotMatch(selectMsg.text, /Show Latest/i);
     assert.doesNotMatch(selectMsg.text, /is active by default/i);
-    const flatButtons = selectMsg.reply_markup.inline_keyboard.flat();
-    const sameChatBtn = flatButtons.find((b) => b.callback_data === 'chat:same:payments');
-    assert.ok(sameChatBtn);
-    assert.equal(sameChatBtn.text, '✅ Same Chat •');
-    assert.ok(!flatButtons.some((b) => /Show Latest|Last 5|Last 10|Last 20/i.test(b.text)));
-    assert.ok(flatButtons.some((b) => b.callback_data === 'chat:new:payments'));
-    assert.ok(flatButtons.some((b) => b.callback_data === 'ide:cfg:payments'));
+    const selectRows = selectMsg.reply_markup.inline_keyboard;
+    assert.equal(selectRows.length, 2);
+    assert.deepEqual(
+      selectRows[0].map((b) => b.text),
+      ['✅ Same Chat •', '🆕 New Chat']
+    );
+    assert.deepEqual(selectRows[1], [
+      { text: '📜 History', callback_data: 'chat:hist:payments' },
+      { text: '🧠 AI Model', callback_data: 'ide:cfg:payments' }
+    ]);
+    const flatButtons = selectRows.flat();
+    assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:pick:')));
+    assert.ok(!flatButtons.some((b) => /AI Model & Level/i.test(b.text)));
+
+    // Tapping 📜 History on Workspace Selected shows history of the current chat
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('chat:hist:payments'));
+    assert.match(mockTg.lastSent().text, /Latest 2 of 4 message\(s\) in Payments Platform/);
 
     // Without clicking ✅ Same Chat, typing a prompt immediately must auto-continue Same Chat!
     nextAgentBehavior = async () => ({
@@ -1002,9 +1028,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('cmt:no:payments', commitAsk.message_id));
+    assert.doesNotMatch(mockTg.lastSent().text, /Last action:/);
     assert.match(
       mockTg.lastSent().text,
-      /Last action:.*Discarded uncommitted changes in .*Payments Platform/s
+      /Discarded uncommitted changes in <b>Payments Platform<\/b>.*Ready for your next message!/s
     );
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
 
@@ -1018,7 +1045,9 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
   });
 
   it('commits & pushes to a Custom Branch, triggers Jenkins with VERSION=<branch>, and confirms Is it okay -> Yes', async () => {
-    nextAgentBehavior = async () => {
+    nextAgentBehavior = async (opts) => {
+      opts.onStepEvent?.({ stepType: 'tool', toolName: 'read_file', state: 'ACTIVE' });
+      await new Promise((r) => setTimeout(r, 25));
       await fsp.writeFile(
         path.join(coreRepo.cloneDir, 'src', 'branch-feature.js'),
         'export const feat = "custom";\n',
@@ -1031,8 +1060,22 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     };
 
     mockTg.clearSent();
+    mockTg.editedMessages.length = 0;
     await controller.handleUpdate(makeUserMsg('Add custom branch feature'));
     await controller.waitForBackgroundTasks();
+
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /🤖 Antigravity working…\n<b>Payments Platform<\/b>\n\n🧠/.test(m.text)
+      )
+    );
+    assert.ok(
+      mockTg.editedMessages.some((e) =>
+        /🤖 Antigravity working…\n<b>Payments Platform<\/b>\n\n⚙️ <code>tool: read_file \(ACTIVE\)<\/code>/.test(
+          e.text
+        )
+      )
+    );
 
     const commitPrompt = mockTg.lastSent();
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
@@ -1050,9 +1093,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeUserMsg('feat/tg-branch'));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
 
+    assert.ok(!mockTg.sentMessages.some((m) => /Last action:/.test(m.text)));
     assert.ok(
       mockTg.sentMessages.some((m) =>
-        /Last action: Committed &amp; pushed to custom branch "feat\/tg-branch"/.test(m.text)
+        /Committed &amp; pushed to custom branch "feat\/tg-branch"/.test(m.text)
       )
     );
     assert.match(mockTg.lastSent().text, /Run Jenkins deploy\?/);
@@ -1080,9 +1124,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ok:yes:payments'));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+    assert.doesNotMatch(mockTg.lastSent().text, /Last action:/);
     assert.match(
       mockTg.lastSent().text,
-      /Last action:.*Confirmed changes in .*Payments Platform/s
+      /^✅ Confirmed changes in <b>Payments Platform<\/b>\.\n\nReady for your next message!/
     );
 
     await runGit(coreRepo.cloneDir, ['checkout', 'master']);
@@ -1107,7 +1152,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('cmt:yes:payments'));
-    assert.ok(mockTg.sentMessages.some((m) => /Last action: Committed &amp; pushed/.test(m.text)));
+    assert.ok(!mockTg.sentMessages.some((m) => /Last action:/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Committed &amp; pushed/.test(m.text)));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
 
     mockJenkins.setNextOutcome(
@@ -1125,8 +1171,9 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ok:rev:payments', failMsg.message_id));
+    assert.ok(!mockTg.sentMessages.some((m) => /Last action:/.test(m.text)));
     assert.ok(
-      mockTg.sentMessages.some((m) => /Last action: Reverted last commit\(s\) as bad/.test(m.text))
+      mockTg.sentMessages.some((m) => /Reverted last commit\(s\) as bad/.test(m.text))
     );
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_REVERT_JENKINS_CHOICE');
     assert.match(mockTg.lastSent().text, /Run Jenkins to deploy reverted commit\(s\)\?/);
@@ -1271,9 +1318,14 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_IDE));
     assert.match(mockTg.lastSent().text, /Select a Workspace/);
-    const selectorCallbacks = (mockTg.lastSent().reply_markup?.inline_keyboard || [])
-      .flat()
-      .map((b) => b.callback_data);
+    // 3 workspaces (odd) -> Row 1 has 2 workspaces, Row 2 pairs the 3rd workspace with ⚙️ Settings on half width!
+    const oddWsRows = mockTg.lastSent().reply_markup.inline_keyboard;
+    assert.equal(oddWsRows.length, 2);
+    assert.equal(oddWsRows[0].length, 2);
+    assert.equal(oddWsRows[1].length, 2);
+    assert.equal(oddWsRows[1][0].callback_data, 'ide:sel:extra');
+    assert.deepEqual(oddWsRows[1][1], { text: '⚙️ Settings', callback_data: 'cfg:menu' });
+    const selectorCallbacks = oddWsRows.flat().map((b) => b.callback_data);
     assert.ok(!selectorCallbacks.includes('ide:reg_menu'));
 
     await controller.handleUpdate(makeCallback('ide:sel:portal'));
