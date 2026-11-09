@@ -48,6 +48,7 @@ function phaseIcon(phase) {
       return '🟢';
     case 'RUNNING_AGENT':
     case 'RUNNING_JENKINS':
+    case 'RUNNING_PROD_JENKINS':
     case 'RUNNING_REVERT_JENKINS':
       return '⏳';
     default:
@@ -177,6 +178,92 @@ export class BotController {
         branch: matchedCommit?.branch || repoForJob?.branch || 'master'
       };
     });
+  }
+
+  /**
+   * Returns all configured Production Jenkins job paths for a multi-environment workspace.
+   */
+  getWorkspaceProdJenkinsJobs(ws) {
+    if (!ws || ws.environmentMode !== 'multi') return [];
+    const seen = new Set();
+    const list = [];
+    for (const j of ws.prodJenkinsJobs || []) {
+      if (j && !seen.has(j)) {
+        seen.add(j);
+        list.push(j);
+      }
+    }
+    for (const r of ws.repos || []) {
+      if (r.deployEnabled && r.prodJenkinsJob && !seen.has(r.prodJenkinsJob)) {
+        seen.add(r.prodJenkinsJob);
+        list.push(r.prodJenkinsJob);
+      }
+    }
+    return list;
+  }
+
+  hasWorkspaceProdJenkins(ws) {
+    return this.getWorkspaceProdJenkinsJobs(ws).length > 0;
+  }
+
+  buildAllWorkspaceProdTargets(ws, sourceCommits = []) {
+    const prodJobs = this.getWorkspaceProdJenkinsJobs(ws);
+    return prodJobs.map((prodJob) => {
+      const repoForJob = (ws?.repos || []).find((r) => r.prodJenkinsJob === prodJob);
+      const matchedCommit = (sourceCommits || []).find(
+        (c) => repoForJob && c.repoName === repoForJob.name
+      );
+      return {
+        jenkinsJob: prodJob,
+        branch: matchedCommit?.branch || repoForJob?.branch || 'master'
+      };
+    });
+  }
+
+  resolveProdJenkinsTargets(ws, st) {
+    if (!this.hasWorkspaceProdJenkins(ws)) return [];
+    const commits = st?.activeTurn?.commits || [];
+    const stagingDeployed = st?.activeTurn?.deployedTargets || [];
+    const allStagingJobs = this.getWorkspaceJenkinsJobs(ws);
+
+    if (stagingDeployed.length > 0) {
+      if (allStagingJobs.length > 1 && stagingDeployed.length >= allStagingJobs.length) {
+        return this.dedupeJenkinsTargets(this.buildAllWorkspaceProdTargets(ws, commits));
+      }
+
+      const mappedFromStaging = [];
+      for (const stgTarget of stagingDeployed) {
+        const repoForStaging = (ws?.repos || []).find(
+          (r) => r.jenkinsJob === stgTarget.jenkinsJob
+        );
+        if (repoForStaging?.prodJenkinsJob) {
+          mappedFromStaging.push({
+            jenkinsJob: repoForStaging.prodJenkinsJob,
+            branch: stgTarget.branch || repoForStaging.branch || 'master'
+          });
+        }
+      }
+
+      if (mappedFromStaging.length > 0) {
+        return this.dedupeJenkinsTargets(mappedFromStaging);
+      }
+    }
+
+    const mappedFromCommits = [];
+    for (const c of commits) {
+      const liveRepo = (ws?.repos || []).find((r) => r.name === c.repoName);
+      if (liveRepo?.deployEnabled && liveRepo.prodJenkinsJob) {
+        mappedFromCommits.push({
+          jenkinsJob: liveRepo.prodJenkinsJob,
+          branch: c.branch || liveRepo.branch || 'master'
+        });
+      }
+    }
+    if (mappedFromCommits.length > 0) {
+      return this.dedupeJenkinsTargets(mappedFromCommits);
+    }
+
+    return this.dedupeJenkinsTargets(this.buildAllWorkspaceProdTargets(ws, commits));
   }
 
   dedupeJenkinsTargets(targets = []) {
@@ -958,6 +1045,13 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('ok:prod:')) {
+        const wsId = data.slice('ok:prod:'.length);
+        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.handleOkDeployProd(chatId, wsId);
+        return;
+      }
+
       if (data.startsWith('ok:yes:')) {
         const wsId = data.slice('ok:yes:'.length);
         await this.telegram.clearInlineButtons(chatId, messageId);
@@ -1328,7 +1422,18 @@ export class BotController {
 
     const allJobs = this.getWorkspaceJenkinsJobs(ws);
     const shortJobsSummary = allJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
+    const prodJobs = this.getWorkspaceProdJenkinsJobs(ws);
+    const shortProdSummary = prodJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
+    const hasProd = prodJobs.length > 0;
     const modelInfo = this.resolveWorkspaceModel(ws);
+
+    const jenkinsLines = hasProd
+      ? (shortJobsSummary
+          ? `🚀 Staging (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n`
+          : '') + `🏁 Prod (${prodJobs.length}): <code>${escapeHtml(shortProdSummary)}</code>\n`
+      : shortJobsSummary
+        ? `🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n`
+        : '';
 
     await this.telegram.sendMessage({
       chatId,
@@ -1336,7 +1441,7 @@ export class BotController {
         `🗂 <b>IDE Selected: ${escapeHtml(wsLabel)}</b>\n` +
         `📁 <code>${escapeHtml(ws.path)}</code>\n` +
         `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>\n` +
-        (shortJobsSummary ? `🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n` : '') +
+        jenkinsLines +
         `\n✅ <b>Same Chat</b> is active by default — start typing or attach file(s) right away, or tap <b>🆕 New Chat</b>:`,
       replyMarkup: { inline_keyboard: keyboard }
     });
@@ -2011,6 +2116,8 @@ export class BotController {
       ? st.activeTurn?.revertCommits || []
       : st.activeTurn?.commits || [];
     const allWsTargets = this.buildAllWorkspaceTargets(ws, sourceCommits);
+    const hasProd = this.hasWorkspaceProdJenkins(ws);
+    const envLabel = hasProd ? 'Staging Jenkins' : 'Jenkins';
     const prefix = isAfterRevert ? 'rjnk' : 'jnk';
     const keyboard = [];
     let bodyText = '';
@@ -2024,18 +2131,18 @@ export class BotController {
         .join('\n');
 
       bodyText = isAfterRevert
-        ? `🚀 <b>Run Jenkins to deploy reverted commit(s)?</b>\n${jobsDesc}`
-        : `🚀 <b>Run Jenkins deploy?</b>\n${jobsDesc}`;
+        ? `🚀 <b>Run ${envLabel} to deploy reverted commit(s)?</b>\n${jobsDesc}`
+        : `🚀 <b>Run ${envLabel} deploy?</b>\n${jobsDesc}`;
 
       keyboard.push([
-        { text: '🚀 Yes, Run Jenkins', callback_data: `${prefix}:yes:${ws.id}` },
+        { text: `🚀 Yes, Run ${envLabel}`, callback_data: `${prefix}:yes:${ws.id}` },
         { text: '⏭ No', callback_data: `${prefix}:no:${ws.id}` }
       ]);
 
       if (allWsTargets.length > targets.length) {
         keyboard.push([
           {
-            text: `🚀 Run All ${allWsTargets.length} ${wsLabel} Jobs`,
+            text: `🚀 Run All ${allWsTargets.length} ${wsLabel} ${hasProd ? 'Staging ' : ''}Jobs`,
             callback_data: `${prefix}:all:${ws.id}`
           }
         ]);
@@ -2049,12 +2156,12 @@ export class BotController {
         .join('\n');
 
       bodyText = isAfterRevert
-        ? `🚀 <b>Run Jenkins to redeploy ${escapeHtml(wsLabel)} after revert?</b>\n${allDesc}`
-        : `🚀 <b>Modified shared repository in ${escapeHtml(wsLabel)} — run Jenkins deploy?</b>\n${allDesc}`;
+        ? `🚀 <b>Run ${envLabel} to redeploy ${escapeHtml(wsLabel)} after revert?</b>\n${allDesc}`
+        : `🚀 <b>Modified shared repository in ${escapeHtml(wsLabel)} — run ${envLabel} deploy?</b>\n${allDesc}`;
 
       keyboard.push([
         {
-          text: `🚀 Run All ${allWsTargets.length} Jobs`,
+          text: `🚀 Run All ${allWsTargets.length} ${hasProd ? 'Staging ' : ''}Jobs`,
           callback_data: `${prefix}:all:${ws.id}`
         },
         { text: '⏭ No', callback_data: `${prefix}:no:${ws.id}` }
@@ -2336,16 +2443,48 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
+    const hasProd = this.hasWorkspaceProdJenkins(ws);
+    const deployHeading = hasProd
+      ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
+      : '✅ <b>Jenkins Deploy Succeeded!</b>';
     const liveLinkLine = ws.liveUrl ? `\n🌐 Live: ${escapeHtml(ws.liveUrl)}\n` : '\n';
     await this.sendIsItOkayPrompt(
       chatId,
       ws,
-      `✅ <b>Jenkins Deploy Succeeded!</b>\n${buildSummary}${liveLinkLine}`
+      `${deployHeading}\n${buildSummary}${liveLinkLine}`
     );
   }
 
-  // ── STEP 4: Is It Okay? -> Yes / Revert ────────────────────────────────────
+  // ── STEP 4: Is It Okay? -> Yes (Prod / Skip Prod) / Revert ─────────────────
   async sendIsItOkayPrompt(chatId, ws, prefixHtml = '') {
+    const st = this.configStore.getWorkspaceState(ws.id);
+    const hasProd = this.hasWorkspaceProdJenkins(ws);
+
+    if (hasProd) {
+      const prodTargets = this.resolveProdJenkinsTargets(ws, st);
+      const prodSummary = prodTargets
+        .map((t) => `${shortJenkinsJobLabel(t.jenkinsJob)} (${t.branch})`)
+        .join(', ');
+      const prodLine = prodSummary
+        ? `\n🏁 Prod job${prodTargets.length === 1 ? '' : 's'}: <code>${escapeHtml(prodSummary)}</code>\n`
+        : '';
+
+      await this.telegram.sendMessage({
+        chatId,
+        text: `${prefixHtml ? `${prefixHtml}` : ''}${prodLine}\n<b>Is it okay?</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '🚀 Yes, deploy on prod', callback_data: `ok:prod:${ws.id}` }],
+            [
+              { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
+              { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
     await this.telegram.sendMessage({
       chatId,
       text: `${prefixHtml ? `${prefixHtml}\n` : ''}<b>Is it okay?</b>`,
@@ -2365,6 +2504,7 @@ export class BotController {
     if (!ws) return;
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
+    const hasProd = this.hasWorkspaceProdJenkins(ws);
 
     if (st.phase !== 'AWAITING_OK_OR_REVERT') {
       await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
@@ -2379,7 +2519,7 @@ export class BotController {
         prompt: st.activeTurn.prompt,
         commits: st.activeTurn.commits,
         builds: st.activeTurn.builds,
-        outcome: 'CONFIRMED'
+        outcome: hasProd ? 'CONFIRMED_SKIPPED_PROD' : 'CONFIRMED'
       });
     }
 
@@ -2393,8 +2533,176 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Last action:</b> Confirmed changes in <b>${escapeHtml(wsLabel)}</b>.\n` +
+        `✅ <b>Last action:</b> Confirmed changes in <b>${escapeHtml(wsLabel)}</b>${hasProd ? ' (skipped production deploy)' : ''}.\n` +
         `Ready for your next message!`
+    });
+  }
+
+  async handleOkDeployProd(chatId, wsId) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const st = this.configStore.getWorkspaceState(ws.id);
+
+    if (st.phase !== 'AWAITING_OK_OR_REVERT') {
+      await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+      return;
+    }
+
+    const prodTargets = this.resolveProdJenkinsTargets(ws, st);
+    if (prodTargets.length === 0) {
+      await this.handleOkConfirm(chatId, wsId);
+      return;
+    }
+
+    if (st.activeTurn) {
+      st.activeTurn.prodDeployedTargets = prodTargets;
+    }
+
+    st.phase = 'RUNNING_PROD_JENKINS';
+    st.lastError = null;
+    await this.configStore.saveState();
+
+    const jobNames = prodTargets.map((d) => `${d.jenkinsJob} (${d.branch})`).join(', ');
+    const progressMsg = await this.telegram.sendMessage({
+      chatId,
+      text: `🚀 <b>Last action:</b> Triggered Production Jenkins deploy for <code>${escapeHtml(jobNames)}</code>…`
+    });
+
+    this.#trackAsync(
+      this.#executeProdJenkinsBuilds(
+        chatId,
+        ws,
+        st,
+        prodTargets,
+        progressMsg?.message_id
+      ).catch(async (err) => {
+        st.phase = 'AWAITING_OK_OR_REVERT';
+        st.lastError = err.message;
+        await this.configStore.saveState();
+        await this.telegram.sendMessage({
+          chatId,
+          text: `❌ Production Jenkins unexpected error: ${escapeHtml(err.message)}`
+        });
+      })
+    );
+  }
+
+  async #executeProdJenkinsBuilds(chatId, ws, st, prodTargets, progressMsgId) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const jenkins = this.jenkinsFactory(this.configStore.config.jenkins);
+    const results = [];
+    let failedBuild = null;
+
+    for (const target of prodTargets) {
+      let lastEditMs = 0;
+      try {
+        const res = await jenkins.triggerAndWaitForBuild({
+          jobName: target.jenkinsJob,
+          branch: target.branch,
+          onUpdate: (upd) => {
+            const nowMs = Date.now();
+            if (progressMsgId && nowMs - lastEditMs > 3000) {
+              lastEditMs = nowMs;
+              this.telegram
+                .editMessageText({
+                  chatId,
+                  messageId: progressMsgId,
+                  text:
+                    `🚀 <b>Production Jenkins running (${escapeHtml(wsLabel)}):</b>\n` +
+                    `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
+                })
+                .catch(() => {});
+            }
+          }
+        });
+
+        results.push(res);
+        if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
+          failedBuild = {
+            jobName: target.jenkinsJob,
+            branch: target.branch,
+            buildNumber: res.buildNumber,
+            buildUrl: res.buildUrl,
+            result: res.result,
+            errorLog: res.consoleTail || `Jenkins ended with status ${res.result}`
+          };
+          break;
+        }
+      } catch (err) {
+        failedBuild = {
+          jobName: target.jenkinsJob,
+          branch: target.branch,
+          buildNumber: null,
+          buildUrl: '',
+          result: 'ERROR',
+          errorLog: err.message
+        };
+        break;
+      }
+    }
+
+    if (st.activeTurn) {
+      st.activeTurn.prodBuilds = results;
+    }
+
+    if (failedBuild) {
+      const logSnippet = truncateText(failedBuild.errorLog || 'No console output available.', 2600);
+      st.phase = 'AWAITING_OK_OR_REVERT';
+      st.lastError = failedBuild.errorLog;
+      await this.configStore.saveState();
+
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `❌ <b>Production Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
+          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+          `<b>Retry production deploy, skip prod, or revert commit?</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '🔄 Retry Prod Deploy', callback_data: `ok:prod:${ws.id}` }],
+            [
+              { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
+              { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
+    const buildSummary = results
+      .map(
+        (r) =>
+          `• <code>${escapeHtml(r.jobName)}${r.buildNumber ? ` #${r.buildNumber}` : ''}</code>: <b>${escapeHtml(r.result)}</b>`
+      )
+      .join('\n');
+
+    if (st.activeTurn) {
+      st.history.push({
+        id: st.activeTurn.id,
+        createdAt: st.activeTurn.createdAt,
+        finishedAt: this.nowProvider().toISOString(),
+        prompt: st.activeTurn.prompt,
+        commits: st.activeTurn.commits,
+        builds: st.activeTurn.builds,
+        prodBuilds: results,
+        outcome: 'CONFIRMED_PROD_DEPLOYED'
+      });
+    }
+
+    st.phase = 'IDLE';
+    st.activeTurn = null;
+    st.baselineSnapshots = null;
+    st.pendingDeltas = [];
+    st.lastError = null;
+    await this.configStore.saveState();
+
+    await this.telegram.sendMessage({
+      chatId,
+      text:
+        `✅ <b>Production Jenkins Deploy Succeeded!</b>\n${buildSummary}\n\n` +
+        `Confirmed &amp; deployed to production in <b>${escapeHtml(wsLabel)}</b>. Ready for your next message!`
     });
   }
 
@@ -2519,6 +2827,12 @@ export class BotController {
         await this.telegram.sendMessage({
           chatId,
           text: `${prefix}⏳ Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`
+        });
+        break;
+      case 'RUNNING_PROD_JENKINS':
+        await this.telegram.sendMessage({
+          chatId,
+          text: `${prefix}⏳ Production Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`
         });
         break;
       case 'AWAITING_OK_OR_REVERT':

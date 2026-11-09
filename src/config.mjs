@@ -115,6 +115,7 @@ export async function discoverWorkspaceRepos(
       name: relName,
       path: prev.path ? expandUserPath(prev.path) : repoDir,
       jenkinsJob,
+      prodJenkinsJob: prev.prodJenkinsJob || '',
       branch: prev.branch || '',
       deployEnabled
     });
@@ -307,6 +308,9 @@ export class ConfigStore {
       if (!Array.isArray(ws.jenkinsJobs)) {
         ws.jenkinsJobs = [];
       }
+      if (!Array.isArray(ws.prodJenkinsJobs)) {
+        ws.prodJenkinsJobs = [];
+      }
       if (!Array.isArray(ws.extraDirs)) {
         ws.extraDirs = [];
       }
@@ -321,6 +325,21 @@ export class ConfigStore {
       }
       if (!Array.isArray(ws.repos)) {
         ws.repos = [];
+      }
+      for (const r of ws.repos) {
+        if (typeof r.prodJenkinsJob !== 'string') {
+          r.prodJenkinsJob = '';
+        } else {
+          r.prodJenkinsJob = r.prodJenkinsJob.trim();
+        }
+      }
+
+      const rawEnvMode = String(ws.environmentMode || '').trim().toLowerCase();
+      const hasAnyProdJob =
+        ws.prodJenkinsJobs.length > 0 || ws.repos.some((r) => Boolean(r.prodJenkinsJob));
+      ws.environmentMode = rawEnvMode === 'multi' || hasAnyProdJob ? 'multi' : 'single';
+      if (ws.environmentMode === 'single') {
+        ws.prodJenkinsJobs = [];
       }
     }
   }
@@ -367,13 +386,17 @@ export class ConfigStore {
           const wsId =
             seed.id || slugifyWorkspaceId(seed.label || seed.name || path.basename(seed.path));
           const wsLabel = String(seed.label || seed.name || wsId).trim();
+          const prodJenkinsJobs = seed.prodJenkinsJobs ? [...seed.prodJenkinsJobs] : [];
           this.config.workspaces.push({
             id: wsId,
             label: wsLabel,
             path: seed.path,
             extraDirs: seed.extraDirs || [],
             liveUrl: seed.liveUrl || '',
+            environmentMode:
+              seed.environmentMode === 'multi' || prodJenkinsJobs.length > 0 ? 'multi' : 'single',
             jenkinsJobs: seed.jenkinsJobs ? [...seed.jenkinsJobs] : [],
+            prodJenkinsJobs,
             model: seed.model || '',
             modelLevel: seed.modelLevel || '',
             repos

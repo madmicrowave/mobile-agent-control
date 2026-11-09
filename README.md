@@ -25,12 +25,14 @@ Because it communicates via outbound HTTPS long-polling (`getUpdates`) to `api.t
 - **Default Same-Chat Continuity & Transcript Reader**: **Same Chat (`✅ Same Chat`)** is active by default whenever you select an IDE — simply start typing or sending screenshots right away to continue the active conversation automatically, tap `🆕 New Chat` to start fresh, or run `/history` to inspect the latest `X` messages from `~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (`X` defined in `npm run setup`).
 - **Smart Album & Long-Message Coalescing**: Automatically merges Telegram photo/file albums (`media_group_id`) and split `>4096`-character prompts into a **single** Google Gemini agent turn (supporting up to **5 attached images/files** at once).
 - **Rich Telegram HTML Rendering**: Converts GitHub-Flavored Markdown (GFM) agent responses — headings, bold/italic, inline code, syntax-tagged `<pre><code>` blocks, lists, blockquotes/alerts, and local `file://` symbol links — into clean, balanced Telegram HTML chunks.
-- **Interactive Git & Jenkins CI/CD Loop**:
+- **Interactive Git & Multi-Environment Jenkins CI/CD Loop (`single` & `multi` Staging + Prod)**:
   1. Lists modified/added/deleted files across all Git repositories in the workspace.
   2. Prompts **Commit & push?** (`✅ Yes` / `❌ No (discard turn edits)` / `🌿 Custom Branch`).
   3. Reports exact commit SHA(s) and remote branch via message text.
-  4. Prompts **Run Jenkins?** (`VERSION=<branch>` parameterized builds, nested folder job support, multi-service selective or run-all triggers).
-  5. Streams build status; on failure displays console error tail; on success asks **Is it okay?** (`✅ Yes` / `↩️ Revert (Mark Bad)` with optional rollback redeploy).
+  4. Prompts **Run Jenkins?** / **Run Staging Jenkins?** (`VERSION=<branch>` parameterized builds, nested folder job support, multi-service selective or run-all triggers).
+  5. Streams build status; on failure displays console error tail; on success asks **Is it okay?**:
+     - **Single-environment workspaces**: `✅ Yes (Confirm)` / `↩️ Revert (Bad Commit)`.
+     - **Multi-environment workspaces (`staging` + `production`)**: `🚀 Yes, deploy on prod` (auto-triggers mapped Production Jenkins job(s)), `✅ Yes (skip prod deploy)`, or `↩️ Revert (Bad Commit)`.
 - **Zero Third-Party Dependencies**: Written in modern ES Modules using only the Node.js 20+ standard library.
 
 ---
@@ -75,8 +77,9 @@ Open Bot in Telegram (/start)
           └── ✅ Success ──► Shows Build Summary       │
                                                        ▼
                                           Ask: Is it okay?
-                                          ├── ✅ Yes    ──► Confirms & unlocks IDE for next turn
-                                          └── ↩️ Revert ──► `git revert` ("Revert ... (bad commit)") + push
+                                          ├── 🚀 Yes, deploy on prod (multi-env) ──► Runs Prod Jenkins -> Ready
+                                          ├── ✅ Yes / Yes (skip prod deploy)    ──► Confirms & unlocks IDE
+                                          └── ↩️ Revert (Bad Commit)             ──► `git revert` + push
                                                                │
                                                                ▼
                                                    📣 Outputs Revert Summary
@@ -130,7 +133,8 @@ npm run setup
 7. **Workspaces Auto-Discovery, Google Gemini Model & Repository Mapping**:
    - Auto-discovers unregistered Git/IDE folders on disk (`+1`, `+2`, …) or accepts any pasted folder path (`~/code/my-project`).
    - Lets you choose each IDE's **AI model** (`gemini-3.8-flash`, `gemini-4-argon`, `claude-opus-5-5`) and **reasoning level** (`low`, `medium`, `high`).
-   - Scans child Git repositories, detects active branches and `Jenkinsfile` hints, and lets you configure per-repo deploy jobs (including nested Jenkins folder paths like `Prod/Web/frontend-app`).
+   - Lets you define **Deployment environments** (`single` vs `multi` for Staging + Production). In `multi` mode, setup requires both Staging and Production Jenkins job links/paths.
+   - Scans child Git repositories, detects active branches and `Jenkinsfile` hints, and lets you configure per-repo deploy jobs (accepting either `Folder/Subfolder/job-name` paths or full Jenkins job URLs).
 
 ---
 

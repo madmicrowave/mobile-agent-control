@@ -578,18 +578,22 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
         'high',                       // Model level
         'https://app.example.com',    // Live URL
         '-',                          // Extra --add-dir paths
+        'multi',                      // Deployment environments: multi (staging + prod)
         // Repo 1: api-service
         'y',                          // Include repo?
         '',                           // Repo path (keep default)
         '',                           // Git branch (keep detected 'main')
         'y',                          // Enable Jenkins deploy?
-        'Prod/MyStack/api-service',   // Jenkins job path
+        'Staging/MyStack/api-service',// Staging Jenkins job path
+        'https://jenkins.example.com/job/Prod/job/MyStack/job/api-service/', // Prod Jenkins job URL link!
         // Repo 2: shared-utils
         'y',                          // Include repo?
         '',                           // Repo path (keep default)
         'develop',                    // Git branch
         'n',                          // Enable Jenkins deploy? -> No!
-        // Extra workspace-level Jenkins jobs
+        // Extra workspace-level Staging Jenkins jobs
+        'Staging/MyStack/web-frontend',
+        // Extra workspace-level Production Jenkins jobs
         'Prod/MyStack/web-frontend',
         // Quick `model 1` shortcut to verify changing Gemini model & level in setup
         'model 1',
@@ -627,7 +631,12 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       assert.equal(ws.model, 'gemini-3.8-flash-high');
       assert.equal(ws.modelLevel, 'high');
       assert.equal(ws.liveUrl, 'https://app.example.com');
+      assert.equal(ws.environmentMode, 'multi');
       assert.deepEqual(ws.jenkinsJobs, [
+        'Staging/MyStack/api-service',
+        'Staging/MyStack/web-frontend'
+      ]);
+      assert.deepEqual(ws.prodJenkinsJobs, [
         'Prod/MyStack/api-service',
         'Prod/MyStack/web-frontend'
       ]);
@@ -636,12 +645,14 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       const apiRepo = ws.repos.find((r) => r.name === 'api-service');
       assert.equal(apiRepo.branch, 'main');
       assert.equal(apiRepo.deployEnabled, true);
-      assert.equal(apiRepo.jenkinsJob, 'Prod/MyStack/api-service');
+      assert.equal(apiRepo.jenkinsJob, 'Staging/MyStack/api-service');
+      assert.equal(apiRepo.prodJenkinsJob, 'Prod/MyStack/api-service');
 
       const sharedRepo = ws.repos.find((r) => r.name === 'shared-utils');
       assert.equal(sharedRepo.branch, 'develop');
       assert.equal(sharedRepo.deployEnabled, false);
       assert.equal(sharedRepo.jenkinsJob, '');
+      assert.equal(sharedRepo.prodJenkinsJob, '');
     } finally {
       await fsp.rm(tmpSetupRoot, { recursive: true, force: true });
     }
@@ -1204,6 +1215,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       'high',             // Model level: high
       '-',                // Live URL
       '-',                // Extra --add-dir
+      'single',           // Environment mode: single
       'y',                // Include repo?
       '',                 // Repo path
       '',                 // Git branch
@@ -1480,6 +1492,122 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(agentMsg.text, /<b>Summary<\/b>/);
     assert.match(agentMsg.text, /• Updated <code>HeroCard\.jsx<\/code> with <b>dark theme<\/b> and <code>\.card-btn<\/code>\./);
     assert.doesNotMatch(agentMsg.text, /file:\/\/\//);
+  });
+
+  it('supports multi-environment (Staging -> Production) Jenkins deploy and skip-prod confirmation', async () => {
+    // Configure `payments` workspace as multi-environment (Staging + Production)
+    const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
+    paymentsWs.environmentMode = 'multi';
+    paymentsWs.prodJenkinsJobs = ['HOSTEGATOR/PAYMENT-BOOK/payment-book.com-GATE'];
+    const coreRepoEntry = paymentsWs.repos.find((r) => r.name === 'payments_gate');
+    coreRepoEntry.prodJenkinsJob = 'HOSTEGATOR/PAYMENT-BOOK/payment-book.com-GATE';
+    await configStore.saveConfig();
+
+    try {
+      await controller.handleUpdate(makeCallback('ide:sel:payments'));
+      assert.match(mockTg.lastSent().text, /Staging \(/);
+      assert.match(mockTg.lastSent().text, /Prod \(1\):/);
+      await controller.handleUpdate(makeCallback('chat:new:payments'));
+
+      // Turn 1: Staging deploy -> Yes, deploy on prod!
+      nextAgentBehavior = async () => {
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src-gate.js'),
+          'export const gateVersion = 2;\n',
+          'utf8'
+        );
+        return {
+          conversationId: 'conv-multi-env-1',
+          response: 'Updated payment gate.'
+        };
+      };
+
+      mockJenkins.triggeredBuilds.length = 0;
+      mockTg.clearSent();
+      await controller.handleUpdate(makeUserMsg('Deploy gate update to staging then prod'));
+      await controller.waitForBackgroundTasks();
+
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+      await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+      assert.match(mockTg.lastSent().text, /Run Staging Jenkins deploy\?/);
+
+      mockJenkins.triggeredBuilds.length = 0;
+      mockTg.clearSent();
+      await controller.handleUpdate(makeCallback('jnk:yes:payments'));
+      await controller.waitForBackgroundTasks();
+
+      // Staging build finished -> must show 3 choices: Yes, deploy on prod / Yes (skip prod deploy) / Revert (Bad Commit)
+      assert.equal(mockJenkins.triggeredBuilds.length, 1);
+      assert.equal(mockJenkins.triggeredBuilds[0].jobName, 'Prod/payments/payments.example.com-GATE');
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+
+      const isOkMsg = mockTg.lastSent();
+      assert.match(isOkMsg.text, /Staging Jenkins Deploy Succeeded!/);
+      assert.match(isOkMsg.text, /Is it okay\?/);
+      const okBtns = isOkMsg.reply_markup.inline_keyboard.flat();
+      assert.ok(
+        okBtns.some(
+          (b) => b.callback_data === 'ok:prod:payments' && /Yes, deploy on prod/i.test(b.text)
+        )
+      );
+      assert.ok(
+        okBtns.some(
+          (b) => b.callback_data === 'ok:yes:payments' && /Yes \(skip prod deploy\)/i.test(b.text)
+        )
+      );
+      assert.ok(
+        okBtns.some(
+          (b) => b.callback_data === 'ok:rev:payments' && /Revert \(Bad Commit\)/i.test(b.text)
+        )
+      );
+
+      // Click `🚀 Yes, deploy on prod` -> must run Production Jenkins job!
+      mockTg.clearSent();
+      await controller.handleUpdate(makeCallback('ok:prod:payments'));
+      await controller.waitForBackgroundTasks();
+
+      assert.equal(mockJenkins.triggeredBuilds.length, 2);
+      assert.equal(
+        mockJenkins.triggeredBuilds[1].jobName,
+        'HOSTEGATOR/PAYMENT-BOOK/payment-book.com-GATE'
+      );
+      assert.equal(mockJenkins.triggeredBuilds[1].version, mockJenkins.triggeredBuilds[0].version);
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+      assert.match(mockTg.lastSent().text, /Production Jenkins Deploy Succeeded!/);
+
+      // Turn 2: Staging deploy -> `✅ Yes (skip prod deploy)` must confirm WITHOUT triggering Prod Jenkins!
+      nextAgentBehavior = async () => {
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src-gate.js'),
+          'export const gateVersion = 3;\n',
+          'utf8'
+        );
+        return {
+          conversationId: 'conv-multi-env-1',
+          response: 'Staging-only tweak.'
+        };
+      };
+
+      await controller.handleUpdate(makeUserMsg('Make staging-only tweak'));
+      await controller.waitForBackgroundTasks();
+      await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+      mockJenkins.triggeredBuilds.length = 0;
+      await controller.handleUpdate(makeCallback('jnk:yes:payments'));
+      await controller.waitForBackgroundTasks();
+      assert.equal(mockJenkins.triggeredBuilds.length, 1);
+
+      mockTg.clearSent();
+      await controller.handleUpdate(makeCallback('ok:yes:payments'));
+      assert.equal(mockJenkins.triggeredBuilds.length, 1);
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+      assert.match(mockTg.lastSent().text, /skipped production deploy/);
+    } finally {
+      paymentsWs.environmentMode = 'single';
+      paymentsWs.prodJenkinsJobs = [];
+      coreRepoEntry.prodJenkinsJob = '';
+      await configStore.saveConfig();
+    }
   });
 
   it('polls getUpdates, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {

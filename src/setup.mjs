@@ -90,6 +90,47 @@ function parseModelLevelSelection(answer, fallbackLevel = 'high') {
   return VALID_MODEL_LEVELS.includes(fallbackLevel) ? fallbackLevel : 'high';
 }
 
+export function parseEnvironmentMode(answer, fallback = 'single') {
+  const raw = String(answer || '').trim().toLowerCase();
+  if (!raw) return fallback === 'multi' ? 'multi' : 'single';
+  if (['1', 's', 'single'].includes(raw)) return 'single';
+  if (['2', 'm', 'multi', 'prod', 'staging+prod', 'staging/prod'].includes(raw)) return 'multi';
+  return fallback === 'multi' ? 'multi' : 'single';
+}
+
+export function cleanJenkinsJobInput(raw) {
+  let input = String(raw || '').trim();
+  if (!input || input === '-' || input.toLowerCase() === 'none') return '';
+
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const parsed = new URL(input);
+      input = parsed.pathname;
+    } catch {
+      // keep raw input
+    }
+  }
+
+  input = input.replace(/^\/+|\/+$/g, '');
+  if (!input) return '';
+
+  if (/^job\//i.test(input) || /\/job\//i.test(input)) {
+    const parts = input
+      .split(/\/?job\//i)
+      .map((seg) => {
+        try {
+          return decodeURIComponent(seg.trim());
+        } catch {
+          return seg.trim();
+        }
+      })
+      .filter(Boolean);
+    return parts.join('/');
+  }
+
+  return input;
+}
+
 async function detectCurrentGitBranch(repoPath) {
   try {
     const { stdout } = await runGit(repoPath, ['branch', '--show-current'], { timeoutMs: 5_000 });
@@ -380,12 +421,14 @@ export async function runWorkspacesWizard({
       log(`Configured workspaces (${cfg.workspaces.length}):`);
       cfg.workspaces.forEach((ws, i) => {
         const deployCount = (ws.repos || []).filter((r) => r.deployEnabled && r.jenkinsJob).length;
+        const prodCount = (ws.prodJenkinsJobs || []).length;
+        const envBadge = ws.environmentMode === 'multi' ? `multi (${prodCount} prod)` : 'single';
         const resolvedModel = resolveEffectiveModelAndLevel({
           model: ws.model || cfg.defaultModel || 'gemini-3.8-flash',
           modelLevel: ws.modelLevel || cfg.defaultModelLevel || 'high'
         });
         log(
-          `  ${i + 1}) ${ws.label || ws.id} (${ws.id}) — ${ws.path} [Model: ${resolvedModel.displayLabel}] (${(ws.repos || []).length} repos, ${deployCount} deployable)`
+          `  ${i + 1}) ${ws.label || ws.id} (${ws.id}) — ${ws.path} [Model: ${resolvedModel.displayLabel}, Env: ${envBadge}] (${(ws.repos || []).length} repos, ${deployCount} deployable)`
         );
       });
     } else {
@@ -574,6 +617,17 @@ export async function runWorkspacesWizard({
         .filter(Boolean);
     }
 
+    const defaultEnvMode =
+      existingWs?.environmentMode === 'multi' || (existingWs?.prodJenkinsJobs?.length || 0) > 0
+        ? 'multi'
+        : 'single';
+    const envModeAns = (
+      await ask(
+        `Deployment environments ("single" or "multi" for staging + production) [${defaultEnvMode}]: `
+      )
+    ).trim();
+    const wsEnvironmentMode = parseEnvironmentMode(envModeAns, defaultEnvMode);
+
     log(`\nScanning folders inside ${targetPath} ...`);
     const { gitRepos, nonGitFolders } = await scanWorkspaceDirectoryForSetup(targetPath);
 
@@ -639,19 +693,60 @@ export async function runWorkspacesWizard({
       );
 
       let finalJenkinsJob = '';
+      let finalProdJenkinsJob = '';
       let finalDeployEnabled = false;
 
       if (deployEnabledChoice) {
         const jobHint = prev?.jenkinsJob || cand.detectedJob || '';
-        const jobPrompt = jobHint
-          ? `  Jenkins job name/path for "${cand.name}" [${jobHint}]: `
-          : `  Jenkins job name/path for "${cand.name}" (e.g. Folder/service-job): `;
-        const jobAns = (await ask(jobPrompt)).trim();
-        finalJenkinsJob =
-          jobAns === '-' || jobAns.toLowerCase() === 'none' ? '' : jobAns || jobHint;
-        finalDeployEnabled = Boolean(finalJenkinsJob);
-        if (!finalJenkinsJob) {
-          log(`  (No Jenkins job entered — deploy disabled for "${cand.name}".)`);
+        if (wsEnvironmentMode === 'multi') {
+          const stgPrompt = jobHint
+            ? `  Staging Jenkins job link/path for "${cand.name}" [${jobHint}]: `
+            : `  Staging Jenkins job link/path for "${cand.name}" (required, or "-" to disable): `;
+          while (!finalJenkinsJob) {
+            const stgAns = (await ask(stgPrompt)).trim();
+            if (stgAns === '-' || stgAns.toLowerCase() === 'none') {
+              break;
+            }
+            finalJenkinsJob = cleanJenkinsJobInput(stgAns) || jobHint;
+            if (!finalJenkinsJob) {
+              warn(
+                `  Staging Jenkins job link/path is required in multi-environment mode (or enter "-" to disable deploy for "${cand.name}").`
+              );
+            }
+          }
+
+          finalDeployEnabled = Boolean(finalJenkinsJob);
+          if (!finalJenkinsJob) {
+            log(`  (No Staging Jenkins job entered — deploy disabled for "${cand.name}".)`);
+          } else {
+            const prodHint = prev?.prodJenkinsJob || '';
+            const prodPrompt = prodHint
+              ? `  Production Jenkins job link/path for "${cand.name}" [${prodHint}]: `
+              : `  Production Jenkins job link/path for "${cand.name}" (required for multi-env): `;
+            while (!finalProdJenkinsJob) {
+              const prodAns = (await ask(prodPrompt)).trim();
+              if (prodAns === '-' || prodAns.toLowerCase() === 'none') {
+                break;
+              }
+              finalProdJenkinsJob = cleanJenkinsJobInput(prodAns) || prodHint;
+              if (!finalProdJenkinsJob) {
+                warn('  Production Jenkins job link/path is required in multi-environment mode.');
+              }
+            }
+          }
+        } else {
+          const jobPrompt = jobHint
+            ? `  Jenkins job name/path for "${cand.name}" [${jobHint}]: `
+            : `  Jenkins job name/path for "${cand.name}" (e.g. Folder/service-job): `;
+          const jobAns = (await ask(jobPrompt)).trim();
+          finalJenkinsJob =
+            jobAns === '-' || jobAns.toLowerCase() === 'none'
+              ? ''
+              : cleanJenkinsJobInput(jobAns) || jobHint;
+          finalDeployEnabled = Boolean(finalJenkinsJob);
+          if (!finalJenkinsJob) {
+            log(`  (No Jenkins job entered — deploy disabled for "${cand.name}".)`);
+          }
         }
       }
 
@@ -659,6 +754,7 @@ export async function runWorkspacesWizard({
         name: cand.name,
         path: finalRepoPath,
         jenkinsJob: finalJenkinsJob,
+        prodJenkinsJob: wsEnvironmentMode === 'multi' ? finalProdJenkinsJob : '',
         branch: finalBranch,
         deployEnabled: finalDeployEnabled
       });
@@ -669,11 +765,11 @@ export async function runWorkspacesWizard({
     );
     const prevExtraJobs = (existingWs?.jenkinsJobs || []).filter((j) => !repoJobSet.has(j));
     const extraJobsDefault = prevExtraJobs.join(', ') || 'none';
-    const extraJobsAns = (
-      await ask(
-        `\nAdditional workspace-level Jenkins jobs (comma-separated, "-" for none) [${extraJobsDefault}]: `
-      )
-    ).trim();
+    const extraJobsLabel =
+      wsEnvironmentMode === 'multi'
+        ? `\nAdditional workspace-level Staging Jenkins jobs (comma-separated, "-" for none) [${extraJobsDefault}]: `
+        : `\nAdditional workspace-level Jenkins jobs (comma-separated, "-" for none) [${extraJobsDefault}]: `;
+    const extraJobsAns = (await ask(extraJobsLabel)).trim();
 
     let extraWsJobs = prevExtraJobs;
     if (extraJobsAns === '-' || extraJobsAns.toLowerCase() === 'none') {
@@ -681,11 +777,71 @@ export async function runWorkspacesWizard({
     } else if (extraJobsAns) {
       extraWsJobs = extraJobsAns
         .split(',')
-        .map((s) => s.trim())
+        .map((s) => cleanJenkinsJobInput(s))
         .filter(Boolean);
     }
 
-    const combinedJenkinsJobs = [...new Set([...repoJobSet, ...extraWsJobs])];
+    let combinedJenkinsJobs = [...new Set([...repoJobSet, ...extraWsJobs])];
+
+    let combinedProdJenkinsJobs = [];
+    if (wsEnvironmentMode === 'multi') {
+      while (combinedJenkinsJobs.length === 0) {
+        warn('Multi-environment workspace requires at least one Staging Jenkins job link/path.');
+        const reqStgAns = (
+          await ask('Staging Jenkins job link(s)/path(s) (comma-separated): ')
+        ).trim();
+        combinedJenkinsJobs = [
+          ...new Set(
+            reqStgAns
+              .split(',')
+              .map((s) => cleanJenkinsJobInput(s))
+              .filter(Boolean)
+          )
+        ];
+      }
+
+      const repoProdJobSet = new Set(
+        configuredRepos
+          .filter((r) => r.deployEnabled && r.prodJenkinsJob)
+          .map((r) => r.prodJenkinsJob)
+      );
+      const prevExtraProdJobs = (existingWs?.prodJenkinsJobs || []).filter(
+        (j) => !repoProdJobSet.has(j)
+      );
+      const extraProdDefault = prevExtraProdJobs.join(', ') || 'none';
+      const extraProdAns = (
+        await ask(
+          `Additional workspace-level Production Jenkins jobs (comma-separated, "-" for none) [${extraProdDefault}]: `
+        )
+      ).trim();
+
+      let extraProdJobs = prevExtraProdJobs;
+      if (extraProdAns === '-' || extraProdAns.toLowerCase() === 'none') {
+        extraProdJobs = [];
+      } else if (extraProdAns) {
+        extraProdJobs = extraProdAns
+          .split(',')
+          .map((s) => cleanJenkinsJobInput(s))
+          .filter(Boolean);
+      }
+
+      combinedProdJenkinsJobs = [...new Set([...repoProdJobSet, ...extraProdJobs])];
+
+      while (combinedProdJenkinsJobs.length === 0) {
+        warn('Multi-environment workspace requires at least one Production Jenkins job link/path.');
+        const reqProdAns = (
+          await ask('Production Jenkins job link(s)/path(s) (comma-separated): ')
+        ).trim();
+        combinedProdJenkinsJobs = [
+          ...new Set(
+            reqProdAns
+              .split(',')
+              .map((s) => cleanJenkinsJobInput(s))
+              .filter(Boolean)
+          )
+        ];
+      }
+    }
 
     const workspaceRecord = {
       id: wsId,
@@ -693,7 +849,9 @@ export async function runWorkspacesWizard({
       path: targetPath,
       extraDirs: wsExtraDirs,
       liveUrl: wsLiveUrl,
+      environmentMode: wsEnvironmentMode,
       jenkinsJobs: combinedJenkinsJobs,
+      prodJenkinsJobs: wsEnvironmentMode === 'multi' ? combinedProdJenkinsJobs : [],
       model: wsModel,
       modelLevel: wsModelLevel,
       repos: configuredRepos
@@ -710,7 +868,7 @@ export async function runWorkspacesWizard({
 
     await activeStore.saveConfig();
     log(
-      `\nSaved workspace "${wsLabel}" (${wsId}) [Model: ${resolvedAgent.displayLabel}] (${configuredRepos.length} repo(s), ${combinedJenkinsJobs.length} Jenkins job(s)).`
+      `\nSaved workspace "${wsLabel}" (${wsId}) [Model: ${resolvedAgent.displayLabel}, Env: ${wsEnvironmentMode}] (${configuredRepos.length} repo(s), ${combinedJenkinsJobs.length} staging/default job(s)${wsEnvironmentMode === 'multi' ? `, ${combinedProdJenkinsJobs.length} prod job(s)` : ''}).`
     );
   }
 
