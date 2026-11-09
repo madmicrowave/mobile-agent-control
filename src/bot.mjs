@@ -347,15 +347,21 @@ export async function startBotRunner({
 
   const loopPromise = (async () => {
     let backoffMs = 2000;
+    let hadPollingError = false;
 
     while (!abortController.signal.aborted) {
       try {
         const updates = await telegram.getUpdates({
           offset: configStore.state.telegramOffset || 0,
           timeout: pollTimeoutSec,
-          signal: abortController.signal
+          signal: abortController.signal,
+          freshSocket: hadPollingError
         });
 
+        if (hadPollingError) {
+          hadPollingError = false;
+          logger.log?.('[bot] ✅ Telegram connection restored — long-polling active.');
+        }
         backoffMs = 2000;
 
         if (Array.isArray(updates) && updates.length > 0) {
@@ -378,6 +384,8 @@ export async function startBotRunner({
         if (abortController.signal.aborted || err?.name === 'AbortError') {
           break;
         }
+        hadPollingError = true;
+
         if (err?.errorCode === 409) {
           logger.warn?.(
             '[bot] Telegram 409 Conflict: another bot instance is polling with the same token. Retrying in 5s...'
@@ -385,6 +393,17 @@ export async function startBotRunner({
           await sleepWithAbort(5000, abortController.signal);
           continue;
         }
+
+        if (Number(err?.retryAfterSec) > 0) {
+          const waitMs = Math.min(60_000, (Number(err.retryAfterSec) + 1) * 1000);
+          logger.warn?.(
+            `[bot] Telegram rate-limit / server reload (${err.message || err}). Waiting ${Math.round(waitMs / 1000)}s...`
+          );
+          await sleepWithAbort(waitMs, abortController.signal);
+          backoffMs = 2000;
+          continue;
+        }
+
         logger.warn?.(
           `[bot] Polling error (${err.message || err}). Retrying in ${Math.round(backoffMs / 1000)}s...`
         );

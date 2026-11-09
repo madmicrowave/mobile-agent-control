@@ -61,6 +61,8 @@ async function startMockTelegramServer() {
   const editedMessages = [];
   const callbackAnswers = [];
   const updateQueue = [];
+  const pollErrors = [];
+  let lastPollConnectionHeader = '';
   let nextMsgId = 100;
 
   const server = http.createServer(async (req, res) => {
@@ -97,6 +99,13 @@ async function startMockTelegramServer() {
     }
 
     if (method === 'getUpdates') {
+      lastPollConnectionHeader = String(req.headers.connection || '');
+      if (pollErrors.length > 0) {
+        const nextErr = pollErrors.shift();
+        res.writeHead(nextErr.status || 429, { 'Content-Type': nextErr.contentType || 'application/json' });
+        res.end(nextErr.rawBody ?? JSON.stringify(nextErr.body));
+        return;
+      }
       const offset = Number(payload.offset || 0);
       const ready = updateQueue.filter((u) => u.update_id >= offset);
       while (updateQueue.length > 0 && updateQueue[0].update_id < offset) {
@@ -181,6 +190,8 @@ async function startMockTelegramServer() {
     editedMessages,
     callbackAnswers,
     updateQueue,
+    pollErrors,
+    getLastPollConnectionHeader: () => lastPollConnectionHeader,
     clearSent() {
       sentMessages.length = 0;
     },
@@ -1610,8 +1621,17 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     }
   });
 
-  it('polls getUpdates, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {
+  it('polls getUpdates, honors 429 retry_after + fresh socket recovery, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {
     mockTg.clearSent();
+    mockTg.pollErrors.push({
+      status: 429,
+      body: {
+        ok: false,
+        error_code: 429,
+        description: 'Too Many Requests: retry after 1',
+        parameters: { retry_after: 1 }
+      }
+    });
     mockTg.updateQueue.push(
       {
         update_id: 500,
@@ -1633,20 +1653,29 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       }
     );
 
+    const logs = [];
+    const warns = [];
     const runner = await startBotRunner({
       dataDir: path.join(tmpRoot, 'data'),
       sessionPassword: 'fresh-runner-pass-999',
       nowProvider: () => currentNow,
-      pollTimeoutSec: 1
+      pollTimeoutSec: 1,
+      logger: {
+        log: (m) => logs.push(String(m)),
+        warn: (m) => warns.push(String(m)),
+        error: () => {}
+      }
     });
 
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 5000;
     while (runner.configStore.state.telegramOffset < 502 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 40));
     }
 
     await runner.stop();
     assert.equal(runner.configStore.state.telegramOffset, 502);
+    assert.ok(warns.some((w) => /Too Many Requests: retry after 1.*Waiting 2s/i.test(w)));
+    assert.ok(logs.some((l) => /Telegram connection restored/i.test(l)));
     assert.ok(mockTg.sentMessages.some((m) => /Session requires authentication/.test(m.text)));
     assert.ok(mockTg.sentMessages.some((m) => /Select an IDE Workspace/.test(m.text)));
   });

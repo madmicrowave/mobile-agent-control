@@ -374,7 +374,10 @@ export function splitTelegramText(text, maxLen = 3800) {
   return chunks;
 }
 
-function requestRaw(urlString, { method = 'GET', headers = {}, body = null, timeoutMs = 35_000, signal } = {}) {
+function requestRaw(
+  urlString,
+  { method = 'GET', headers = {}, body = null, timeoutMs = 35_000, signal, freshSocket = false } = {}
+) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       const err = new Error('Request aborted');
@@ -385,18 +388,24 @@ function requestRaw(urlString, { method = 'GET', headers = {}, body = null, time
 
     const url = new URL(urlString);
     const transport = url.protocol === 'https:' ? https : http;
+    let settled = false;
 
+    const reqHeaders = freshSocket ? { ...headers, Connection: 'close' } : headers;
     const req = transport.request(
       url,
       {
         method,
-        headers,
-        timeout: timeoutMs
+        headers: reqHeaders,
+        timeout: timeoutMs,
+        ...(freshSocket ? { agent: false } : {})
       },
       (res) => {
         const chunks = [];
         res.on('data', (chunk) => chunks.push(chunk));
         res.on('end', () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hardTimer);
           if (signal) signal.removeEventListener('abort', onAbort);
           resolve({
             status: res.statusCode || 0,
@@ -406,6 +415,15 @@ function requestRaw(urlString, { method = 'GET', headers = {}, body = null, time
         });
       }
     );
+
+    const hardTimer = setTimeout(() => {
+      if (settled) return;
+      req.destroy(new Error(`Telegram API request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    req.on('socket', (sock) => {
+      sock.setKeepAlive?.(true, 10_000);
+    });
 
     function onAbort() {
       const err = new Error('Request aborted');
@@ -422,6 +440,9 @@ function requestRaw(urlString, { method = 'GET', headers = {}, body = null, time
     });
 
     req.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimer);
       if (signal) signal.removeEventListener('abort', onAbort);
       reject(err);
     });
@@ -442,7 +463,7 @@ export class TelegramApi {
     this.baseUrl = String(baseUrl || 'https://api.telegram.org').replace(/\/+$/, '');
   }
 
-  async call(method, params = {}, { timeoutMs = 30_000, signal } = {}) {
+  async call(method, params = {}, { timeoutMs = 30_000, signal, freshSocket = false } = {}) {
     const url = `${this.baseUrl}/bot${this.token}/${method}`;
     const payload = Buffer.from(JSON.stringify(params), 'utf8');
 
@@ -455,19 +476,41 @@ export class TelegramApi {
       },
       body: payload,
       timeoutMs,
-      signal
+      signal,
+      freshSocket
     });
 
     let parsed;
     try {
       parsed = JSON.parse(res.buffer.toString('utf8'));
     } catch {
-      throw new Error(`Invalid JSON from Telegram API (${method}, HTTP ${res.status})`);
+      const gatewayErr = new Error(
+        res.status === 502
+          ? 'Bad Gateway'
+          : res.status === 503
+            ? 'Service Unavailable'
+            : res.status === 504
+              ? 'Gateway Timeout'
+              : `Invalid JSON from Telegram API (${method}, HTTP ${res.status})`
+      );
+      gatewayErr.errorCode = res.status;
+      throw gatewayErr;
     }
 
     if (!parsed.ok) {
       const err = new Error(parsed.description || `Telegram API error in ${method}`);
       err.errorCode = parsed.error_code || res.status;
+      const paramRetry = Number(parsed?.parameters?.retry_after);
+      const msgRetryMatch = String(parsed?.description || '').match(/retry after\s+(\d+)/i);
+      const retryAfterSec =
+        Number.isFinite(paramRetry) && paramRetry > 0
+          ? paramRetry
+          : msgRetryMatch
+            ? Number(msgRetryMatch[1])
+            : 0;
+      if (retryAfterSec > 0) {
+        err.retryAfterSec = retryAfterSec;
+      }
       throw err;
     }
 
@@ -482,7 +525,7 @@ export class TelegramApi {
     return this.call('setMyCommands', { commands });
   }
 
-  async getUpdates({ offset = 0, timeout = 25, signal } = {}) {
+  async getUpdates({ offset = 0, timeout = 25, signal, freshSocket = false } = {}) {
     return this.call(
       'getUpdates',
       {
@@ -492,7 +535,8 @@ export class TelegramApi {
       },
       {
         timeoutMs: (timeout + 12) * 1000,
-        signal
+        signal,
+        freshSocket
       }
     );
   }
