@@ -1,0 +1,19 @@
+name: Bug Report
+description: Report a bug in Phone Agent Control
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: env
+    attributes:
+      label: macOS & Node.js Version
+      placeholder: "e.g. macOS 15.2, Node.js v22.11.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Steps to reproduce (please redact any tokens, URLs, or passwords).
+    validations:
+      required: true

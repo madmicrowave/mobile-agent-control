@@ -1,0 +1,12 @@
+name: Feature Request
+description: Suggest an enhancement or integration for Phone Agent Control
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Feature Description
+      description: Describe the workflow or integration you would like to see.
+    validations:
+      required: true
