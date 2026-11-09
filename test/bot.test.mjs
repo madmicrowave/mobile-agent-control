@@ -898,10 +898,11 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const selectMsg = mockTg.lastSent();
     assert.match(selectMsg.text, /IDE Selected: Payments Platform/);
     assert.doesNotMatch(selectMsg.text, /Show Latest/i);
+    assert.doesNotMatch(selectMsg.text, /is active by default/i);
     const flatButtons = selectMsg.reply_markup.inline_keyboard.flat();
     const sameChatBtn = flatButtons.find((b) => b.callback_data === 'chat:same:payments');
     assert.ok(sameChatBtn);
-    assert.equal(sameChatBtn.text, '✅ Same Chat');
+    assert.equal(sameChatBtn.text, '✅ Same Chat •');
     assert.ok(!flatButtons.some((b) => /Show Latest|Last 5|Last 10|Last 20/i.test(b.text)));
     assert.ok(flatButtons.some((b) => b.callback_data === 'chat:new:payments'));
     assert.ok(flatButtons.some((b) => b.callback_data === 'ide:cfg:payments'));

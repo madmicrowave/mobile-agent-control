@@ -632,6 +632,19 @@ export class TelegramApi {
     }
   }
 
+  async updateInlineKeyboard(chatId, messageId, inlineKeyboard) {
+    if (!chatId || !messageId || !Array.isArray(inlineKeyboard)) return;
+    try {
+      await this.call('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: inlineKeyboard }
+      });
+    } catch {
+      // Ignore if message is unchanged or too old
+    }
+  }
+
   async answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
     try {
       return await this.call('answerCallbackQuery', {

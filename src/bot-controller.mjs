@@ -897,6 +897,20 @@ export class BotController {
         const parts = data.split(':');
         const wsId = parts[2];
         await this.activateSameChat(chatId, userId, wsId);
+        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+          const ws = this.getWorkspace(wsId);
+          if (ws) {
+            await this.telegram.updateInlineKeyboard(
+              chatId,
+              messageId,
+              this.buildIdeSelectedKeyboard(
+                ws,
+                this.cachedRecentChatsByWs.get(ws.id) || [],
+                this.configStore.getWorkspaceState(ws.id)
+              )
+            );
+          }
+        }
         return;
       }
 
@@ -913,12 +927,36 @@ export class BotController {
           await this.configStore.saveState();
         }
         await this.activateSameChat(chatId, userId, wsId);
+        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+          const ws = this.getWorkspace(wsId);
+          if (ws) {
+            await this.telegram.updateInlineKeyboard(
+              chatId,
+              messageId,
+              this.buildIdeSelectedKeyboard(ws, list, this.configStore.getWorkspaceState(ws.id))
+            );
+          }
+        }
         return;
       }
 
       if (data.startsWith('chat:new:')) {
         const wsId = data.slice('chat:new:'.length);
         await this.activateNewChat(chatId, wsId);
+        if (messageId && cb.message?.text?.includes('IDE Selected:')) {
+          const ws = this.getWorkspace(wsId);
+          if (ws) {
+            await this.telegram.updateInlineKeyboard(
+              chatId,
+              messageId,
+              this.buildIdeSelectedKeyboard(
+                ws,
+                this.cachedRecentChatsByWs.get(ws.id) || [],
+                this.configStore.getWorkspaceState(ws.id)
+              )
+            );
+          }
+        }
         return;
       }
 
@@ -1394,31 +1432,7 @@ export class BotController {
     }
     await this.configStore.saveState();
 
-    const keyboard = [
-      [
-        {
-          text: '✅ Same Chat',
-          callback_data: `chat:same:${ws.id}`
-        },
-        {
-          text: '🆕 New Chat',
-          callback_data: `chat:new:${ws.id}`
-        }
-      ]
-    ];
-
-    if (discovered.length > 1) {
-      discovered.slice(1, 3).forEach((d, idx) => {
-        keyboard.push([
-          {
-            text: `🕘 Chat: "${d.preview.slice(0, 28)}"`,
-            callback_data: `chat:pick:${ws.id}:${idx + 1}`
-          }
-        ]);
-      });
-    }
-
-    keyboard.push([{ text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }]);
+    const keyboard = this.buildIdeSelectedKeyboard(ws, discovered, st);
 
     const allJobs = this.getWorkspaceJenkinsJobs(ws);
     const shortJobsSummary = allJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
@@ -1430,21 +1444,58 @@ export class BotController {
     const jenkinsLines = hasProd
       ? (shortJobsSummary
           ? `🚀 Staging (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n`
-          : '') + `🏁 Prod (${prodJobs.length}): <code>${escapeHtml(shortProdSummary)}</code>\n`
+          : '') + `🏁 Prod (${prodJobs.length}): <code>${escapeHtml(shortProdSummary)}</code>`
       : shortJobsSummary
-        ? `🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>\n`
+        ? `🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>`
         : '';
+
+    const infoLines = [
+      `🗂 <b>IDE Selected: ${escapeHtml(wsLabel)}</b>`,
+      `📁 <code>${escapeHtml(ws.path)}</code>`,
+      `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>`,
+      ...(jenkinsLines ? [jenkinsLines] : [])
+    ];
 
     await this.telegram.sendMessage({
       chatId,
-      text:
-        `🗂 <b>IDE Selected: ${escapeHtml(wsLabel)}</b>\n` +
-        `📁 <code>${escapeHtml(ws.path)}</code>\n` +
-        `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>\n` +
-        jenkinsLines +
-        `\n✅ <b>Same Chat</b> is active by default — start typing or attach file(s) right away, or tap <b>🆕 New Chat</b>:`,
+      text: infoLines.join('\n'),
       replyMarkup: { inline_keyboard: keyboard }
     });
+  }
+
+  buildIdeSelectedKeyboard(ws, discovered = [], st = {}) {
+    const secondaryChats = Array.isArray(discovered) ? discovered.slice(1, 3) : [];
+    const pickedSecondaryIdx = st.conversationId
+      ? secondaryChats.findIndex((d) => d.conversationId === st.conversationId)
+      : -1;
+    const isNewChatSelected = !st.conversationId && !st.continueLatest;
+    const isSameChatSelected = !isNewChatSelected && pickedSecondaryIdx === -1;
+
+    const keyboard = [
+      [
+        {
+          text: `${isSameChatSelected ? '✅' : '💬'} Same Chat${isSameChatSelected ? ' •' : ''}`,
+          callback_data: `chat:same:${ws.id}`
+        },
+        {
+          text: `🆕 New Chat${isNewChatSelected ? ' •' : ''}`,
+          callback_data: `chat:new:${ws.id}`
+        }
+      ]
+    ];
+
+    secondaryChats.forEach((d, idx) => {
+      const activeMark = pickedSecondaryIdx === idx ? ' •' : '';
+      keyboard.push([
+        {
+          text: `🕘 Chat: "${d.preview.slice(0, 28)}"${activeMark}`,
+          callback_data: `chat:pick:${ws.id}:${idx + 1}`
+        }
+      ]);
+    });
+
+    keyboard.push([{ text: '🧠 AI Model & Level', callback_data: `ide:cfg:${ws.id}` }]);
+    return keyboard;
   }
 
   async activateSameChat(chatId, userId, wsId) {
