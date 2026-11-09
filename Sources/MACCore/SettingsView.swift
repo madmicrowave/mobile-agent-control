@@ -231,7 +231,7 @@ public struct MACSettingsRootView: View {
                         .background(statusBadgeColor.opacity(0.16))
                         .cornerRadius(6)
                 }
-                Text("Data directory: \(appState.configStore.dataDir.path)")
+                Text("Data directory: \((appState.configStore.dataDir.path as NSString).abbreviatingWithTildeInPath)")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
