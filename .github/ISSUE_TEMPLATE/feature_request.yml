@@ -10,3 +10,4 @@ body:
       description: Describe the workflow or integration you would like to see.
     validations:
       required: true
+

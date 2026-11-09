@@ -17,3 +17,4 @@ body:
       description: Steps to reproduce (please redact any tokens, URLs, or passwords).
     validations:
       required: true
+

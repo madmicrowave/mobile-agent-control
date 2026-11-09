@@ -19,3 +19,4 @@ Thank you for contributing to **Phone Agent Control** — open-source macOS soft
 - Keep runtime dependencies at **zero** (pure Node.js 20+ standard library ES Modules).
 - Never commit `data/`, `.env*`, bot tokens, or credentials.
 - Add or update tests in `test/bot.test.mjs` for all workflow or parser changes and ensure `npm test` passes cleanly.
+

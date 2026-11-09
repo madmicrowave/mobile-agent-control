@@ -25,3 +25,4 @@ jobs:
 
       - name: Run automated test suite
         run: npm test
+
