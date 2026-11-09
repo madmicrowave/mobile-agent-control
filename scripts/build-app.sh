@@ -50,9 +50,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <key>CFBundleIdentifier</key>
   <string>com.domonk.mac</string>
   <key>CFBundleVersion</key>
-  <string>3.1.0</string>
+  <string>3.1.1</string>
   <key>CFBundleShortVersionString</key>
-  <string>3.1.0</string>
+  <string>3.1.1</string>
   <key>CFBundleExecutable</key>
   <string>MAC</string>
   <key>CFBundlePackageType</key>

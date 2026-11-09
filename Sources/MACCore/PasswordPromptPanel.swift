@@ -37,7 +37,8 @@ public enum PasswordPromptPanel {
         okButton.keyEquivalent = "\r"
         alert.addButton(withTitle: "Cancel")
 
-        alert.window.level = .floating
+        alert.window.level = .modalPanel
+        alert.window.hidesOnDeactivate = false
         alert.window.initialFirstResponder = secureField
 
         DispatchQueue.main.async {

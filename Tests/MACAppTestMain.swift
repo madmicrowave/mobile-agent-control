@@ -186,6 +186,13 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(controller.tutorialMenuItem.title == "Tutorial...", "Menu has Tutorial...")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Initial menu enabled state")
 
+    // Verify Settings window stays at floating level and never hides on deactivate (e.g. during macOS screenshots)
+    controller.openSettings(tab: .manageWorkspaces)
+    expect(controller.settingsWindow != nil, "Settings window created")
+    expect(controller.settingsWindow?.level == .floating, "Expected Settings window level == .floating so it stays above normal apps during screenshots")
+    expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected Settings window hidesOnDeactivate == false")
+    controller.settingsWindow?.close()
+
     // Trigger Start...
     controller.handleStartClicked()
     let startDeadline = Date().addingTimeInterval(4.0)

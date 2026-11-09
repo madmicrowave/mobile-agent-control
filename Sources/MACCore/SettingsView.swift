@@ -2,6 +2,115 @@ import AppKit
 import Combine
 import SwiftUI
 
+// MARK: - Reusable Layout & Control Primitives (Zero AppKit Picker/GroupBox Glitches)
+
+private struct MACSectionCard<Trailing: View, Content: View>: View {
+    let title: String
+    let systemImage: String
+    let trailing: Trailing
+    let content: Content
+
+    init(
+        title: String,
+        systemImage: String,
+        @ViewBuilder trailing: () -> Trailing,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.trailing = trailing()
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                Text(title)
+                    .font(.system(size: 13.5, weight: .bold))
+                Spacer(minLength: 8)
+                trailing
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+    }
+}
+
+extension MACSectionCard where Trailing == EmptyView {
+    init(
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.init(title: title, systemImage: systemImage, trailing: { EmptyView() }, content: content)
+    }
+}
+
+private struct MACSegmentedOption<Value: Equatable>: Identifiable {
+    let id: String
+    let title: String
+    let value: Value
+}
+
+private struct MACSegmentedPicker<Value: Equatable>: View {
+    let options: [MACSegmentedOption<Value>]
+    @Binding var selection: Value
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(options) { option in
+                let isSelected = (selection == option.value)
+                Button {
+                    selection = option.value
+                } label: {
+                    Text(option.title)
+                        .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                        .foregroundColor(isSelected ? .white : .primary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(isSelected ? Color.accentColor : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Root Settings View
+
 public struct MACSettingsRootView: View {
     @ObservedObject public var appState: MACAppState
     public var onStartRequested: () -> Void
@@ -26,69 +135,103 @@ public struct MACSettingsRootView: View {
             Divider()
 
             if let banner = appState.statusBannerMessage {
-                HStack {
+                HStack(spacing: 10) {
                     Text(banner)
                         .font(.system(size: 12.5, weight: .medium))
+                        .lineLimit(2)
                     Spacer()
                     Button("Dismiss") {
                         appState.statusBannerMessage = nil
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .fixedSize()
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(Color.accentColor.opacity(0.10))
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.12))
                 Divider()
             }
 
-            TabView(selection: $appState.selectedTab) {
-                ManageWorkspacesTabView(appState: appState)
-                    .tabItem {
-                        Label("Manage Workspaces", systemImage: "folder.badge.gearshape")
-                    }
-                    .tag(MACSettingsTab.manageWorkspaces)
+            tabNavigationBar
+            Divider()
 
-                AddWorkspaceTabView(appState: appState)
-                    .tabItem {
-                        Label("Add Workspace", systemImage: "plus.rectangle.on.folder")
-                    }
-                    .tag(MACSettingsTab.addWorkspace)
-
-                ManageJenkinsTabView(appState: appState)
-                    .tabItem {
-                        Label("Manage Jenkins", systemImage: "server.rack")
-                    }
-                    .tag(MACSettingsTab.manageJenkins)
-
-                TelegramDataTabView(appState: appState)
-                    .tabItem {
-                        Label("Telegram Data", systemImage: "paperplane.fill")
-                    }
-                    .tag(MACSettingsTab.telegramData)
-
-                TutorialTabView(appState: appState)
-                    .tabItem {
-                        Label("Tutorial", systemImage: "book.fill")
-                    }
-                    .tag(MACSettingsTab.tutorial)
+            Group {
+                switch appState.selectedTab {
+                case .manageWorkspaces:
+                    ManageWorkspacesTabView(appState: appState)
+                case .addWorkspace:
+                    AddWorkspaceTabView(appState: appState)
+                case .manageJenkins:
+                    ManageJenkinsTabView(appState: appState)
+                case .telegramData:
+                    TelegramDataTabView(appState: appState)
+                case .tutorial:
+                    TutorialTabView(appState: appState)
+                }
             }
-            .padding(14)
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(minWidth: 940, minHeight: 650)
+        .frame(minWidth: 920, minHeight: 640)
+    }
+
+    private var tabNavigationBar: some View {
+        HStack(spacing: 6) {
+            tabItemButton(.manageWorkspaces, title: "Manage Workspaces", icon: "folder.badge.gearshape")
+            tabItemButton(.addWorkspace, title: "Add Workspace", icon: "plus.rectangle.on.folder")
+            tabItemButton(.manageJenkins, title: "Manage Jenkins", icon: "server.rack")
+            tabItemButton(.telegramData, title: "Telegram Data", icon: "paperplane.fill")
+            tabItemButton(.tutorial, title: "Tutorial", icon: "book.fill")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.025))
+    }
+
+    private func tabItemButton(_ tab: MACSettingsTab, title: String, icon: String) -> some View {
+        let isSelected = (appState.selectedTab == tab)
+        return Button {
+            appState.selectedTab = tab
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.10), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 
     private var headerBar: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text("MAC — Mobile Agent Control")
                         .font(.system(size: 15, weight: .bold))
+                        .fixedSize()
                     Text(appState.status.statusMenuTitle)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(statusBadgeColor.opacity(0.15))
+                        .background(statusBadgeColor.opacity(0.16))
                         .cornerRadius(6)
                 }
                 Text("Data directory: \(appState.configStore.dataDir.path)")
@@ -100,19 +243,25 @@ public struct MACSettingsRootView: View {
 
             Spacer()
 
-            if appState.status.isRunningOrStarting {
-                Button("Restart...") {
-                    onRestartRequested()
+            HStack(spacing: 8) {
+                if appState.status.isRunningOrStarting {
+                    Button("Restart...") {
+                        onRestartRequested()
+                    }
+                    .fixedSize()
+
+                    Button("Stop") {
+                        onStopRequested()
+                    }
+                    .tint(.red)
+                    .fixedSize()
+                } else {
+                    Button("Start...") {
+                        onStartRequested()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
                 }
-                Button("Stop") {
-                    onStopRequested()
-                }
-                .tint(.red)
-            } else {
-                Button("Start...") {
-                    onStartRequested()
-                }
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding(.horizontal, 16)
@@ -148,68 +297,91 @@ private struct WorkspaceEditorFormView: View {
 
     @StateObject private var vm = WorkspaceEditorFormVM()
 
+    private var selectedModelDisplayTitle: String {
+        MACModelOption.allOptions.first(where: { $0.id == vm.selectedModelFamily })?.label ?? vm.selectedModelFamily
+    }
+
+    private var levelOptions: [MACSegmentedOption<String>] {
+        MACModelOption.validLevels.map { MACSegmentedOption(id: $0, title: $0, value: $0) }
+    }
+
+    private var envModeOptions: [MACSegmentedOption<String>] {
+        [
+            MACSegmentedOption(id: "single", title: "Single (Staging / Default)", value: "single"),
+            MACSegmentedOption(id: "multi", title: "Multi (Staging → Production)", value: "multi")
+        ]
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 // 1. Identity & Paths
-                GroupBox(label: Label("Workspace Name & Paths", systemImage: "folder")) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Workspace Label (shown in Telegram)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("e.g. CRYPTO FUSION", text: $draft.label)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onChange(of: draft.label) { _, newVal in
-                                        if isNewWorkspace {
-                                            draft.id = MACPathUtils.slugifyWorkspaceId(newVal)
-                                        }
-                                    }
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Workspace ID")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("e.g. crypto-fusion", text: $draft.id)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            .frame(width: 200)
-                        }
-
+                MACSectionCard(title: "Workspace Name & Paths", systemImage: "folder.fill") {
+                    HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Workspace Root Folder Path")
+                            Text("Workspace Label (shown in Telegram)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            HStack(spacing: 8) {
-                                TextField("/Users/you/code/my-workspace", text: $draft.path)
-                                    .textFieldStyle(.roundedBorder)
-                                Button("Browse...") {
-                                    if let chosen = chooseDirectory(initialPath: draft.path) {
-                                        draft.path = chosen
-                                        if draft.label.trimmingCharacters(in: .whitespaces).isEmpty {
-                                            let base = URL(fileURLWithPath: chosen).lastPathComponent
-                                            draft.label = base.uppercased()
-                                            if isNewWorkspace {
-                                                draft.id = MACPathUtils.slugifyWorkspaceId(base)
-                                            }
-                                        }
-                                        rescanRepos()
+                            TextField("e.g. CRYPTO FUSION", text: $draft.label)
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: draft.label) { _, newVal in
+                                    if isNewWorkspace {
+                                        draft.id = MACPathUtils.slugifyWorkspaceId(newVal)
                                     }
                                 }
-                                Button("Scan Git Repos") {
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Workspace ID")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("e.g. crypto-fusion", text: $draft.id)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(width: 190, alignment: .leading)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Workspace Root Folder Path")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            TextField("/Users/you/code/my-workspace", text: $draft.path)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                if let chosen = chooseDirectory(initialPath: draft.path) {
+                                    draft.path = chosen
+                                    if draft.label.trimmingCharacters(in: .whitespaces).isEmpty {
+                                        let base = URL(fileURLWithPath: chosen).lastPathComponent
+                                        draft.label = base.uppercased()
+                                        if isNewWorkspace {
+                                            draft.id = MACPathUtils.slugifyWorkspaceId(base)
+                                        }
+                                    }
                                     rescanRepos()
                                 }
                             }
-                        }
+                            .fixedSize()
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Extra Allowed Paths (--add-dir, optional)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            if !draft.extraDirs.isEmpty {
+                            Button("Scan Git Repos") {
+                                rescanRepos()
+                            }
+                            .fixedSize()
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Extra Allowed Paths (--add-dir, optional)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        if !draft.extraDirs.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(draft.extraDirs.enumerated()), id: \.offset) { idx, dirPath in
-                                    HStack {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "folder")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
                                         Text(dirPath)
                                             .font(.system(size: 12, design: .monospaced))
                                             .lineLimit(1)
@@ -218,114 +390,155 @@ private struct WorkspaceEditorFormView: View {
                                         Button(role: .destructive) {
                                             draft.extraDirs.remove(at: idx)
                                         } label: {
-                                            Image(systemName: "trash")
+                                            Image(systemName: "minus.circle.fill")
                                         }
                                         .buttonStyle(.borderless)
                                     }
-                                    .padding(.vertical, 2)
-                                }
-                            }
-                            HStack(spacing: 8) {
-                                TextField("Optional extra folder path...", text: $vm.extraDirInput)
-                                    .textFieldStyle(.roundedBorder)
-                                Button("Add Path") {
-                                    let p = MACPathUtils.expandPath(vm.extraDirInput)
-                                    if !p.isEmpty && !draft.extraDirs.contains(p) {
-                                        draft.extraDirs.append(p)
-                                    }
-                                    vm.extraDirInput = ""
-                                }
-                                .disabled(vm.extraDirInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                                Button("Browse Extra...") {
-                                    if let chosen = chooseDirectory(initialPath: draft.path) {
-                                        if !draft.extraDirs.contains(chosen) {
-                                            draft.extraDirs.append(chosen)
-                                        }
-                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.primary.opacity(0.04))
+                                    .cornerRadius(6)
                                 }
                             }
                         }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Live Staging URL (optional, shown after Jenkins build)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("https://staging.example.com", text: $draft.liveUrl)
+                        HStack(spacing: 8) {
+                            TextField("Optional extra folder path...", text: $vm.extraDirInput)
                                 .textFieldStyle(.roundedBorder)
+                            Button("Add Path") {
+                                let p = MACPathUtils.expandPath(vm.extraDirInput)
+                                if !p.isEmpty && !draft.extraDirs.contains(p) {
+                                    draft.extraDirs.append(p)
+                                }
+                                vm.extraDirInput = ""
+                            }
+                            .disabled(vm.extraDirInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .fixedSize()
+
+                            Button("Browse Extra...") {
+                                if let chosen = chooseDirectory(initialPath: draft.path) {
+                                    if !draft.extraDirs.contains(chosen) {
+                                        draft.extraDirs.append(chosen)
+                                    }
+                                }
+                            }
+                            .fixedSize()
                         }
                     }
-                    .padding(8)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Live Staging URL (optional, shown after Jenkins build)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
 
-                // 2. AI Model & Level
-                GroupBox(label: Label("AI Model & Effort Level", systemImage: "brain")) {
-                    HStack(spacing: 20) {
-                        VStack(alignment: .leading, spacing: 4) {
+                // 2. AI Model & Effort Level (Zero clipping, flush-left dropdown, single-line CLI badge in header)
+                MACSectionCard(title: "AI Model & Effort Level", systemImage: "brain") {
+                    HStack(spacing: 6) {
+                        Text("CLI ID:")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text(draft.model)
+                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.14))
+                            .cornerRadius(5)
+                    }
+                    .fixedSize()
+                } content: {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text("AI Model Family")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Picker("", selection: $vm.selectedModelFamily) {
-                                ForEach(MACModelOption.allOptions) { opt in
-                                    Text(opt.label).tag(opt.id)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 240)
-                            .onChange(of: vm.selectedModelFamily) { _, _ in syncModelFields() }
-                        }
 
-                        VStack(alignment: .leading, spacing: 4) {
+                            Menu {
+                                ForEach(MACModelOption.allOptions) { opt in
+                                    Button {
+                                        vm.selectedModelFamily = opt.id
+                                        syncModelFields()
+                                    } label: {
+                                        if vm.selectedModelFamily == opt.id {
+                                            Label(opt.label, systemImage: "checkmark")
+                                        } else {
+                                            Text(opt.label)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Text(selectedModelDisplayTitle)
+                                        .font(.system(size: 12.5, weight: .medium))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(Color.primary.opacity(0.07))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 6) {
                             Text("Effort Level")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Picker("", selection: $vm.selectedModelLevel) {
-                                ForEach(MACModelOption.validLevels, id: \.self) { lvl in
-                                    Text(lvl).tag(lvl)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 220)
-                            .onChange(of: vm.selectedModelLevel) { _, _ in syncModelFields() }
-                        }
 
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Effective CLI Model ID")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(draft.model)
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            MACSegmentedPicker(options: levelOptions, selection: $vm.selectedModelLevel)
+                                .onChange(of: vm.selectedModelLevel) { _, _ in
+                                    syncModelFields()
+                                }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(8)
                 }
 
-                // 3. Environments & Jenkins Jobs (Staging vs Multi Staging -> Prod)
-                GroupBox(label: Label("Environments & Jenkins CI/CD Jobs", systemImage: "shippingbox")) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 16) {
-                            Text("Environment Mode:")
-                                .font(.system(size: 12.5, weight: .medium))
-                            Picker("", selection: $draft.environmentMode) {
-                                Text("Single (Staging / Default)").tag("single")
-                                Text("Multi (Staging → Production)").tag("multi")
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 340)
-                            Spacer()
-                        }
+                // 3. Environments & Jenkins Jobs (Zero overlap between label and segmented picker)
+                MACSectionCard(title: "Environments & Jenkins CI/CD Jobs", systemImage: "shippingbox.fill") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Environment Mode")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
 
-                        Divider()
+                        MACSegmentedPicker(options: envModeOptions, selection: $draft.environmentMode)
+                            .frame(maxWidth: 440, alignment: .leading)
+                    }
 
-                        // Staging Jenkins Jobs
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(draft.environmentMode == "multi" ? "Staging Jenkins Jobs" : "Jenkins Jobs (Staging / Default)")
-                                .font(.system(size: 12.5, weight: .semibold))
-                            if !draft.jenkinsJobs.isEmpty {
+                    Divider()
+
+                    // Staging Jenkins Jobs
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(draft.environmentMode == "multi" ? "Staging Jenkins Jobs" : "Jenkins Jobs (Staging / Default)")
+                            .font(.system(size: 12.5, weight: .semibold))
+
+                        if !draft.jenkinsJobs.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(draft.jenkinsJobs.enumerated()), id: \.offset) { idx, job in
-                                    HStack {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "hammer.fill")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.accentColor)
                                         Text(job)
                                             .font(.system(size: 12, design: .monospaced))
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
                                         Spacer()
                                         Button(role: .destructive) {
                                             draft.jenkinsJobs.remove(at: idx)
@@ -334,30 +547,44 @@ private struct WorkspaceEditorFormView: View {
                                         }
                                         .buttonStyle(.borderless)
                                     }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.primary.opacity(0.04))
+                                    .cornerRadius(6)
                                 }
-                            }
-                            HStack(spacing: 8) {
-                                TextField("Job path, URL, or comma list e.g. 'HS-1/app/api', 'HS-1/app/web'", text: $vm.stagingJobInput)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onSubmit { addStagingJobsFromInput() }
-                                Button("Add Staging Job(s)") {
-                                    addStagingJobsFromInput()
-                                }
-                                .disabled(vm.stagingJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                         }
 
-                        // Production Jenkins Jobs (Multi mode)
-                        if draft.environmentMode == "multi" {
-                            Divider()
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Production Jenkins Jobs (triggered when clicking '🚀 Yes, deploy on prod')")
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                if !draft.prodJenkinsJobs.isEmpty {
+                        HStack(spacing: 8) {
+                            TextField("Job path, URL, or comma list e.g. 'HS-1/app/api', 'HS-1/app/web'", text: $vm.stagingJobInput)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { addStagingJobsFromInput() }
+                            Button("Add Staging Job(s)") {
+                                addStagingJobsFromInput()
+                            }
+                            .disabled(vm.stagingJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .fixedSize()
+                        }
+                    }
+
+                    // Production Jenkins Jobs (Multi mode)
+                    if draft.environmentMode == "multi" {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Production Jenkins Jobs (triggered on '🚀 Yes, deploy on prod')")
+                                .font(.system(size: 12.5, weight: .semibold))
+
+                            if !draft.prodJenkinsJobs.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
                                     ForEach(Array(draft.prodJenkinsJobs.enumerated()), id: \.offset) { idx, job in
-                                        HStack {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "bolt.horizontal.circle.fill")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.purple)
                                             Text(job)
                                                 .font(.system(size: 12, design: .monospaced))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
                                             Spacer()
                                             Button(role: .destructive) {
                                                 draft.prodJenkinsJobs.remove(at: idx)
@@ -366,73 +593,97 @@ private struct WorkspaceEditorFormView: View {
                                             }
                                             .buttonStyle(.borderless)
                                         }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.primary.opacity(0.04))
+                                        .cornerRadius(6)
                                     }
                                 }
-                                HStack(spacing: 8) {
-                                    TextField("Prod job path, URL, or comma list e.g. 'PROD/app/api', 'PROD/app/web'", text: $vm.prodJobInput)
-                                        .textFieldStyle(.roundedBorder)
-                                        .onSubmit { addProdJobsFromInput() }
-                                    Button("Add Prod Job(s)") {
-                                        addProdJobsFromInput()
-                                    }
-                                    .disabled(vm.prodJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+
+                            HStack(spacing: 8) {
+                                TextField("Prod job path, URL, or comma list e.g. 'PROD/app/api', 'PROD/app/web'", text: $vm.prodJobInput)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onSubmit { addProdJobsFromInput() }
+                                Button("Add Prod Job(s)") {
+                                    addProdJobsFromInput()
                                 }
+                                .disabled(vm.prodJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .fixedSize()
                             }
                         }
                     }
-                    .padding(8)
                 }
 
-                // 4. Per-Repository Mapping
-                GroupBox(label: Label("Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if draft.repos.isEmpty {
-                            Text("No Git repositories scanned yet. Pick a Workspace Folder Path and click 'Scan Git Repos'.")
-                                .font(.caption)
+                // 4. Per-Repository Mapping (Always 100% full width even when 0 repos!)
+                MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
+                    Button("Re-Scan Folder") {
+                        rescanRepos()
+                    }
+                    .controlSize(.small)
+                    .disabled(draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .fixedSize()
+                } content: {
+                    if draft.repos.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
                                 .foregroundColor(.secondary)
-                                .padding(.vertical, 6)
-                        } else {
+                            Text("No Git repositories scanned yet. Pick a Workspace Root Folder Path above and click 'Scan Git Repos'.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
                             ForEach($draft.repos) { $repo in
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 10) {
                                         Toggle("Deploy", isOn: $repo.deployEnabled)
                                             .toggleStyle(.checkbox)
-                                            .frame(width: 70, alignment: .leading)
+                                            .fixedSize()
+
                                         Text(repo.name)
                                             .font(.system(size: 12.5, weight: .semibold))
-                                            .frame(width: 155, alignment: .leading)
-                                        TextField("Branch (blank = current)", text: $repo.branch)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 150)
+                                            .lineLimit(1)
+
+                                        Spacer(minLength: 8)
+
                                         Text(repo.path)
                                             .font(.system(size: 11, design: .monospaced))
                                             .foregroundColor(.secondary)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
-                                        Spacer()
                                     }
-                                    HStack(spacing: 10) {
-                                        Spacer().frame(width: 70)
+
+                                    HStack(spacing: 8) {
+                                        TextField("Branch (default = current)", text: $repo.branch)
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 155)
+
                                         TextField("Staging Jenkins Job (e.g. HS-1/project/service)", text: $repo.jenkinsJob)
                                             .textFieldStyle(.roundedBorder)
+                                            .frame(maxWidth: .infinity)
                                             .onChange(of: repo.jenkinsJob) { _, val in
                                                 if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
                                                     repo.deployEnabled = true
                                                 }
                                             }
+
                                         if draft.environmentMode == "multi" {
                                             TextField("Production Jenkins Job", text: $repo.prodJenkinsJob)
                                                 .textFieldStyle(.roundedBorder)
+                                                .frame(maxWidth: .infinity)
                                         }
                                     }
                                 }
-                                .padding(6)
-                                .background(Color.secondary.opacity(0.06))
-                                .cornerRadius(6)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.primary.opacity(0.04))
+                                .cornerRadius(8)
                             }
                         }
                     }
-                    .padding(8)
                 }
 
                 // 5. Save / Delete Action Row
@@ -443,6 +694,7 @@ private struct WorkspaceEditorFormView: View {
                         } label: {
                             Label("Delete Workspace", systemImage: "trash")
                         }
+                        .fixedSize()
                         .confirmationDialog(
                             "Remove workspace '\(draft.label)' from MAC?",
                             isPresented: $vm.showDeleteConfirm,
@@ -465,11 +717,14 @@ private struct WorkspaceEditorFormView: View {
                         onSave()
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .disabled(draft.label.trimmingCharacters(in: .whitespaces).isEmpty || draft.path.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .fixedSize()
                 }
-                .padding(.bottom, 8)
+                .padding(.top, 2)
+                .padding(.bottom, 10)
             }
-            .padding(.trailing, 6)
+            .padding(.trailing, 8)
         }
         .onAppear {
             loadFromDraft()
@@ -483,6 +738,8 @@ private struct WorkspaceEditorFormView: View {
         let norm = MACModelOption.normalizeFamilyAndLevel(rawModel: draft.model, rawLevel: draft.modelLevel)
         vm.selectedModelFamily = MACModelOption.allOptions.contains(where: { $0.id == norm.family }) ? norm.family : "gemini-3.8-flash"
         vm.selectedModelLevel = norm.level
+        draft.model = norm.modelId
+        draft.modelLevel = norm.level
     }
 
     private func syncModelFields() {
@@ -552,6 +809,7 @@ private struct WorkspaceEditorFormView: View {
 
     private func chooseDirectory(initialPath: String) -> String? {
         let panel = NSOpenPanel()
+        panel.level = .modalPanel
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
@@ -576,54 +834,87 @@ private struct ManageWorkspacesTabView: View {
     @StateObject private var vm = ManageWorkspacesVM()
 
     var body: some View {
-        HSplitView {
-            // Left Sidebar
+        HStack(alignment: .top, spacing: 0) {
+            // Left Sidebar (Clean crisp custom list without NSSplitView/Vibrancy quirks)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Workspaces (\(appState.config.workspaces.count))")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .bold))
                         .foregroundColor(.secondary)
                     Spacer()
                     Button {
                         appState.selectedTab = .addWorkspace
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add", systemImage: "plus")
+                            .font(.system(size: 11.5, weight: .semibold))
                     }
-                    .help("Add New Workspace")
+                    .controlSize(.small)
+                    .fixedSize()
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
 
-                List(selection: $appState.selectedWorkspaceId) {
-                    ForEach(appState.config.workspaces) { ws in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text(ws.label)
-                                    .font(.system(size: 13, weight: .semibold))
-                                Spacer()
-                                Text(ws.environmentMode == "multi" ? "Multi" : "Single")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background((ws.environmentMode == "multi" ? Color.purple : Color.blue).opacity(0.18))
-                                    .cornerRadius(4)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(appState.config.workspaces) { ws in
+                            let isSelected = (appState.selectedWorkspaceId == ws.id)
+                            Button {
+                                appState.selectedWorkspaceId = ws.id
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 6) {
+                                        Text(ws.label)
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundColor(isSelected ? .white : .primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        Text(ws.environmentMode == "multi" ? "Multi" : "Single")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundColor(isSelected ? .white : (ws.environmentMode == "multi" ? .purple : .blue))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                    .fill(isSelected ? Color.white.opacity(0.22) : (ws.environmentMode == "multi" ? Color.purple : Color.blue).opacity(0.16))
+                                            )
+                                            .fixedSize()
+                                    }
+
+                                    Text(ws.displayModelSummary)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(isSelected ? Color.white.opacity(0.88) : .secondary)
+                                        .lineLimit(1)
+
+                                    Text(ws.path)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(isSelected ? Color.white.opacity(0.75) : .secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                .padding(9)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.045))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.09), lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
                             }
-                            Text(ws.displayModelSummary)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                            Text(ws.path)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 3)
-                        .tag(Optional(ws.id))
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 8)
                 }
-                .listStyle(.sidebar)
             }
-            .frame(minWidth: 230, idealWidth: 255, maxWidth: 300)
+            .frame(width: 245)
+            .frame(maxHeight: .infinity)
+            .padding(.trailing, 10)
+
+            Divider()
 
             // Right Detail Editor
             Group {
@@ -639,7 +930,7 @@ private struct ManageWorkspacesTabView: View {
                             deleteSelectedWorkspace(id: selId)
                         }
                     )
-                    .padding(.leading, 12)
+                    .padding(.leading, 14)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "folder.badge.plus")
@@ -655,6 +946,7 @@ private struct ManageWorkspacesTabView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
             syncDraftFromSelection()
@@ -725,7 +1017,7 @@ private struct AddWorkspaceTabView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Add New Workspace")
-                        .font(.headline)
+                        .font(.system(size: 15, weight: .bold))
                     Text("Configure folder path, extra --add-dir paths, AI model & level, and Single vs Multi (Staging → Prod) Jenkins jobs.")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -734,6 +1026,7 @@ private struct AddWorkspaceTabView: View {
                 Button("Reset Form") {
                     resetForm()
                 }
+                .fixedSize()
             }
 
             Divider()
@@ -810,78 +1103,87 @@ private struct ManageJenkinsTabView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                GroupBox(label: Label("Jenkins Server & Credentials", systemImage: "server.rack")) {
-                    VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
+                MACSectionCard(title: "Jenkins Server & Credentials", systemImage: "server.rack") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Jenkins Base URL")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField(text: $vm.draft.baseUrl, prompt: Text(verbatim: "https://jenkins.example.com")) {}
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack(alignment: .top, spacing: 14) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Jenkins Base URL")
+                            Text("Jenkins Username")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            TextField("https://jenkins.example.com", text: $vm.draft.baseUrl)
+                            TextField("tech", text: $vm.draft.username)
                                 .textFieldStyle(.roundedBorder)
                         }
+                        .frame(width: 240, alignment: .leading)
 
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Jenkins Username")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("tech", text: $vm.draft.username)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            .frame(width: 240)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Jenkins API Token")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                HStack {
-                                    if vm.showToken {
-                                        TextField("API Token", text: $vm.draft.apiToken)
-                                            .textFieldStyle(.roundedBorder)
-                                    } else {
-                                        SecureField("API Token", text: $vm.draft.apiToken)
-                                            .textFieldStyle(.roundedBorder)
-                                    }
-                                    Button(vm.showToken ? "Hide" : "Show") {
-                                        vm.showToken.toggle()
-                                    }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Jenkins API Token")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 8) {
+                                if vm.showToken {
+                                    TextField("API Token", text: $vm.draft.apiToken)
+                                        .textFieldStyle(.roundedBorder)
+                                } else {
+                                    SecureField("API Token", text: $vm.draft.apiToken)
+                                        .textFieldStyle(.roundedBorder)
                                 }
+                                Button(vm.showToken ? "Hide" : "Show") {
+                                    vm.showToken.toggle()
+                                }
+                                .fixedSize()
                             }
                         }
-
-                        HStack(spacing: 20) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Default Job Folder Prefix (optional)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("Leave blank if jobs include full folder path", text: $vm.draft.jobPrefix)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Build Timeout (minutes)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Stepper("\(vm.timeoutMinutes) min", value: $vm.timeoutMinutes, in: 5...120, step: 5)
-                                    .frame(width: 150)
-                            }
-                        }
-
-                        Toggle("Allow self-signed / insecure TLS certificates", isOn: $vm.draft.insecureTls)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(10)
+
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Default Job Folder Prefix (optional)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("Leave blank if jobs include full folder path", text: $vm.draft.jobPrefix)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Build Timeout")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 8) {
+                                Text("\(vm.timeoutMinutes) min")
+                                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                                    .frame(width: 62, alignment: .leading)
+                                Stepper("", value: $vm.timeoutMinutes, in: 5...120, step: 5)
+                                    .labelsHidden()
+                                    .fixedSize()
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .frame(width: 140, alignment: .leading)
+                    }
+
+                    Toggle("Allow self-signed / insecure TLS certificates", isOn: $vm.draft.insecureTls)
                 }
 
                 if let msg = vm.testResultMessage {
-                    HStack {
+                    HStack(spacing: 8) {
                         Image(systemName: vm.testSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .foregroundColor(vm.testSucceeded ? .green : .red)
                         Text(msg)
                             .font(.system(size: 12.5, weight: .medium))
                         Spacer()
                     }
-                    .padding(10)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background((vm.testSucceeded ? Color.green : Color.red).opacity(0.12))
                     .cornerRadius(8)
                 }
@@ -890,14 +1192,18 @@ private struct ManageJenkinsTabView: View {
                     Button {
                         runConnectionTest()
                     } label: {
-                        if vm.isTesting {
-                            ProgressView().controlSize(.small)
-                            Text("Testing...")
-                        } else {
-                            Label("Test Jenkins Connection", systemImage: "network")
+                        HStack(spacing: 6) {
+                            if vm.isTesting {
+                                ProgressView().controlSize(.small)
+                                Text("Testing...")
+                            } else {
+                                Image(systemName: "network")
+                                Text("Test Jenkins Connection")
+                            }
                         }
                     }
                     .disabled(vm.isTesting || vm.draft.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .fixedSize()
 
                     Spacer()
 
@@ -911,9 +1217,11 @@ private struct ManageJenkinsTabView: View {
                         appState.saveConfigToDisk(banner: "Saved Jenkins configuration.")
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .fixedSize()
                 }
             }
-            .padding(4)
+            .padding(.trailing, 6)
         }
         .onAppear {
             vm.draft = appState.config.jenkins
@@ -964,186 +1272,200 @@ private struct TelegramDataTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                GroupBox(label: Label("Telegram Bot Credentials & Access Control", systemImage: "paperplane.fill")) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Configure your @BotFather API token and who can control your Workspaces on Telegram.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Button("How to get Token & User ID? Open Tutorial →") {
-                                appState.selectedTab = .tutorial
-                            }
-                            .buttonStyle(.link)
+                MACSectionCard(title: "Telegram Bot Credentials & Access Control", systemImage: "paperplane.fill") {
+                    Button("How to get Token & User ID? Open Tutorial →") {
+                        appState.selectedTab = .tutorial
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12, weight: .semibold))
+                    .fixedSize()
+                } content: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Telegram Bot Token (@BotFather)")
                             .font(.caption)
-                        }
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            if vm.showBotToken {
+                                TextField("123456:ABC-DEF...", text: $vm.botToken)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("123456:ABC-DEF...", text: $vm.botToken)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showBotToken ? "Hide" : "Show") {
+                                vm.showBotToken.toggle()
+                            }
+                            .fixedSize()
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Telegram Bot Token (@BotFather)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            HStack(spacing: 8) {
-                                if vm.showBotToken {
-                                    TextField("123456:ABC-DEF...", text: $vm.botToken)
-                                        .textFieldStyle(.roundedBorder)
-                                } else {
-                                    SecureField("123456:ABC-DEF...", text: $vm.botToken)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-                                Button(vm.showBotToken ? "Hide" : "Show") {
-                                    vm.showBotToken.toggle()
-                                }
-                                Button {
-                                    verifyBotToken()
-                                } label: {
+                            Button {
+                                verifyBotToken()
+                            } label: {
+                                HStack(spacing: 5) {
                                     if vm.isVerifyingToken {
                                         ProgressView().controlSize(.small)
                                         Text("Verifying...")
                                     } else {
-                                        Label("Verify Token", systemImage: "checkmark.shield")
+                                        Image(systemName: "checkmark.shield")
+                                        Text("Verify Token")
                                     }
                                 }
-                                .disabled(vm.isVerifyingToken || vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                        }
-
-                        if let msg = vm.tokenCheckMessage {
-                            HStack(spacing: 8) {
-                                Image(systemName: vm.tokenCheckSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                                    .foregroundColor(vm.tokenCheckSucceeded ? .green : .red)
-                                Text(msg)
-                                    .font(.system(size: 12, weight: .medium))
-                                Spacer()
-                            }
-                            .padding(8)
-                            .background((vm.tokenCheckSucceeded ? Color.green : Color.red).opacity(0.12))
-                            .cornerRadius(6)
-                        }
-
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Allowed Telegram User IDs (comma-separated numeric IDs, blank = anyone with session password)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("e.g. 652545688", text: $vm.allowedUsersText)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Latest Messages Count (X)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Stepper("\(vm.historyCount) messages", value: $vm.historyCount, in: 1...50)
-                                    .frame(width: 160)
-                            }
-                        }
-
-                        HStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Telegram API Base URL")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("https://api.telegram.org", text: $vm.telegramApiBaseUrl)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Antigravity CLI Binary Path (agy)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-
-                        Divider()
-
-                        HStack(spacing: 24) {
-                            Toggle(
-                                "Start mac.app automatically when macOS starts (Login Item)",
-                                isOn: Binding(
-                                    get: { appState.launchAtLogin },
-                                    set: { appState.toggleLaunchAtLogin($0) }
-                                )
-                            )
-
-                            Spacer()
-
-                            HStack(spacing: 6) {
-                                Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
-                                    .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
-                                Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby (Active when Started)")
-                                    .font(.caption)
-                                    .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
-                            }
-                        }
-
-                        HStack {
-                            Spacer()
-                            Button("Save Telegram Data & Startup Settings") {
-                                appState.config.telegramBotToken = vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                                let cleanBaseUrl = vm.telegramApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                                appState.config.telegramApiBaseUrl = cleanBaseUrl.isEmpty ? "https://api.telegram.org" : cleanBaseUrl
-                                appState.config.allowedUserIds = vm.allowedUsersText
-                                    .components(separatedBy: CharacterSet(charactersIn: ", \n\t"))
-                                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                    .filter { !$0.isEmpty }
-                                appState.config.defaultHistoryCount = vm.historyCount
-                                let cleanAgy = vm.agyBinPath.trimmingCharacters(in: .whitespacesAndNewlines)
-                                if !cleanAgy.isEmpty {
-                                    appState.config.agyBin = cleanAgy
-                                }
-                                appState.saveConfigToDisk(banner: "Saved Telegram Data & Startup settings.")
-                            }
-                            .buttonStyle(.borderedProminent)
+                            .disabled(vm.isVerifyingToken || vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .fixedSize()
                         }
                     }
-                    .padding(8)
+
+                    if let msg = vm.tokenCheckMessage {
+                        HStack(spacing: 8) {
+                            Image(systemName: vm.tokenCheckSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(vm.tokenCheckSucceeded ? .green : .red)
+                            Text(msg)
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background((vm.tokenCheckSucceeded ? Color.green : Color.red).opacity(0.12))
+                        .cornerRadius(6)
+                    }
+
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Allowed Telegram User IDs (comma-separated numeric IDs, blank = anyone with session password)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("e.g. 652545688", text: $vm.allowedUsersText)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Latest Messages (X)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 8) {
+                                Text("\(vm.historyCount) msgs")
+                                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                                    .frame(width: 64, alignment: .leading)
+                                Stepper("", value: $vm.historyCount, in: 1...50)
+                                    .labelsHidden()
+                                    .fixedSize()
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .frame(width: 145, alignment: .leading)
+                    }
+
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Telegram API Base URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(text: $vm.telegramApiBaseUrl, prompt: Text(verbatim: "https://api.telegram.org")) {}
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Antigravity CLI Binary Path (agy)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 16) {
+                        Toggle(
+                            "Start mac.app automatically when macOS starts (Login Item)",
+                            isOn: Binding(
+                                get: { appState.launchAtLogin },
+                                set: { appState.toggleLaunchAtLogin($0) }
+                            )
+                        )
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
+                                .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
+                            Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
+                        }
+                        .fixedSize()
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button("Save Telegram Data & Startup Settings") {
+                            appState.config.telegramBotToken = vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let cleanBaseUrl = vm.telegramApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                            appState.config.telegramApiBaseUrl = cleanBaseUrl.isEmpty ? "https://api.telegram.org" : cleanBaseUrl
+                            appState.config.allowedUserIds = vm.allowedUsersText
+                                .components(separatedBy: CharacterSet(charactersIn: ", \n\t"))
+                                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .filter { !$0.isEmpty }
+                            appState.config.defaultHistoryCount = vm.historyCount
+                            let cleanAgy = vm.agyBinPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !cleanAgy.isEmpty {
+                                appState.config.agyBin = cleanAgy
+                            }
+                            appState.saveConfigToDisk(banner: "Saved Telegram Data & Startup settings.")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .fixedSize()
+                    }
                 }
 
-                GroupBox(label: Label("Live Bot Activity Log", systemImage: "terminal")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 2) {
-                                if appState.logLines.isEmpty {
-                                    Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password.")
+                MACSectionCard(title: "Live Bot Activity Log", systemImage: "terminal") {
+                    HStack(spacing: 8) {
+                        Button("Copy Logs") {
+                            let pb = NSPasteboard.general
+                            pb.clearContents()
+                            pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
+                        }
+                        .controlSize(.small)
+                        .disabled(appState.logLines.isEmpty)
+                        .fixedSize()
+
+                        Button("Clear Logs") {
+                            appState.clearLogs()
+                        }
+                        .controlSize(.small)
+                        .disabled(appState.logLines.isEmpty)
+                        .fixedSize()
+                    }
+                } content: {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            if appState.logLines.isEmpty {
+                                Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password.")
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                ForEach(Array(appState.logLines.enumerated()), id: \.offset) { _, line in
+                                    Text(line)
                                         .font(.system(size: 11.5, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    ForEach(Array(appState.logLines.enumerated()), id: \.offset) { _, line in
-                                        Text(line)
-                                            .font(.system(size: 11.5, design: .monospaced))
-                                            .textSelection(.enabled)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
-                            .padding(6)
                         }
-                        .frame(minHeight: 150, maxHeight: 220)
-                        .background(Color.black.opacity(0.05))
-                        .cornerRadius(6)
-
-                        HStack {
-                            Button("Copy Logs") {
-                                let pb = NSPasteboard.general
-                                pb.clearContents()
-                                pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
-                            }
-                            .disabled(appState.logLines.isEmpty)
-
-                            Button("Clear Logs") {
-                                appState.clearLogs()
-                            }
-                            .disabled(appState.logLines.isEmpty)
-
-                            Spacer()
-                        }
+                        .padding(8)
                     }
-                    .padding(6)
+                    .frame(minHeight: 150, maxHeight: 220)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.06))
+                    .cornerRadius(6)
                 }
             }
-            .padding(.trailing, 4)
+            .padding(.trailing, 6)
         }
         .onAppear {
             vm.botToken = appState.config.telegramBotToken
@@ -1185,17 +1507,14 @@ private struct TutorialTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Quick Setup & Telegram Workspace Control Guide")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("Follow these 5 quick steps to control your local macOS Workspaces, Git branches, and Staging → Prod Jenkins builds from Telegram.")
-                            .font(.system(size: 12.5))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Quick Setup & Telegram Workspace Control Guide")
+                        .font(.system(size: 15.5, weight: .bold))
+                    Text("Follow these 5 quick steps to control your local macOS Workspaces, Git branches, and Staging → Prod Jenkins builds from Telegram.")
+                        .font(.system(size: 12.5))
+                        .foregroundColor(.secondary)
                 }
-                .padding(.bottom, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 tutorialStepCard(
                     stepNumber: "1",
@@ -1279,8 +1598,8 @@ private struct TutorialTabView: View {
                     secondaryAction: nil
                 )
 
-                GroupBox(label: Label("Telegram Controls & Slash Commands Cheat Sheet", systemImage: "command.square.fill")) {
-                    VStack(alignment: .leading, spacing: 6) {
+                MACSectionCard(title: "Telegram Controls & Slash Commands Cheat Sheet", systemImage: "command.square.fill") {
+                    VStack(alignment: .leading, spacing: 8) {
                         commandRow("/start", "Authenticate your session and open the Workspace selector")
                         commandRow("🔀 Switch Workspace  (/workspaces)", "Switch between your configured Workspaces without losing pending state")
                         commandRow("⚙️ Settings  (/settings, /model)", "Switch AI Model, effort level (low/medium/high), or view 📜 Last Messages")
@@ -1288,11 +1607,10 @@ private struct TutorialTabView: View {
                         commandRow("/history", "Read the latest X user & agent messages from the active conversation")
                         commandRow("/lock", "Lock your Telegram session immediately until you re-enter the password")
                     }
-                    .padding(8)
                 }
             }
-            .padding(.trailing, 6)
-            .padding(.bottom, 8)
+            .padding(.trailing, 8)
+            .padding(.bottom, 10)
         }
     }
 
@@ -1307,63 +1625,75 @@ private struct TutorialTabView: View {
         secondaryTitle: String?,
         secondaryAction: (() -> Void)?
     ) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Text(stepNumber)
-                        .font(.system(size: 13, weight: .black, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(width: 24, height: 24)
-                        .background(accent)
-                        .clipShape(Circle())
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Text(stepNumber)
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(accent)
+                    .clipShape(Circle())
 
-                    Image(systemName: icon)
-                        .foregroundColor(accent)
-                        .font(.system(size: 15, weight: .semibold))
+                Image(systemName: icon)
+                    .foregroundColor(accent)
+                    .font(.system(size: 15, weight: .semibold))
 
-                    Text(title)
-                        .font(.system(size: 13.5, weight: .bold))
+                Text(title)
+                    .font(.system(size: 13.5, weight: .bold))
 
-                    Spacer()
+                Spacer(minLength: 8)
 
-                    if let actionTitle = actionTitle, let urlStr = actionURL, let url = URL(string: urlStr) {
-                        Button(actionTitle) {
-                            NSWorkspace.shared.open(url)
-                        }
-                        .controlSize(.small)
+                if let actionTitle = actionTitle, let urlStr = actionURL, let url = URL(string: urlStr) {
+                    Button(actionTitle) {
+                        NSWorkspace.shared.open(url)
                     }
-                    if let secondaryTitle = secondaryTitle, let secondaryAction = secondaryAction {
-                        Button(secondaryTitle) {
-                            secondaryAction()
-                        }
-                        .controlSize(.small)
-                        .buttonStyle(.borderedProminent)
-                    }
+                    .controlSize(.small)
+                    .fixedSize()
                 }
-
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(Array(bullets.enumerated()), id: \.offset) { _, line in
-                        HStack(alignment: .top, spacing: 7) {
-                            Text("•")
-                                .font(.system(size: 12.5, weight: .bold))
-                                .foregroundColor(accent)
-                            Text(line)
-                                .font(.system(size: 12.5))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                if let secondaryTitle = secondaryTitle, let secondaryAction = secondaryAction {
+                    Button(secondaryTitle) {
+                        secondaryAction()
                     }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
                 }
-                .padding(.leading, 34)
             }
-            .padding(6)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(bullets.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundColor(accent)
+                        Text(line)
+                            .font(.system(size: 12.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.leading, 34)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
     }
 
     private func commandRow(_ cmd: String, _ desc: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(cmd)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .frame(width: 255, alignment: .leading)
+                .frame(width: 265, alignment: .leading)
             Text(desc)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)

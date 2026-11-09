@@ -15,8 +15,8 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     public private(set) var tutorialMenuItem: NSMenuItem!
     public private(set) var launchAtLoginMenuItem: NSMenuItem!
     public private(set) var quitMenuItem: NSMenuItem!
+    public private(set) var settingsWindow: NSWindow?
 
-    private var settingsWindow: NSWindow?
     private let passwordProvider: @MainActor (Bool) -> String?
 
     public init(
@@ -209,15 +209,23 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             let window = NSWindow(contentViewController: hostingController)
             window.title = "MAC — Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 960, height: 680))
-            window.minSize = NSSize(width: 900, height: 620)
+            window.setContentSize(NSSize(width: 980, height: 700))
+            window.minSize = NSSize(width: 920, height: 640)
+            // Keep Settings window at floating level and never hide on deactivate
+            // (e.g. when taking macOS screenshots or copying tokens/paths from other apps)
+            window.level = .floating
+            window.hidesOnDeactivate = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
             self.settingsWindow = window
         }
 
+        settingsWindow?.level = .floating
+        settingsWindow?.hidesOnDeactivate = false
         NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.orderFrontRegardless()
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
