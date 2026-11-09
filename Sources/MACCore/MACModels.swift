@@ -286,7 +286,12 @@ public struct MACConfig: Codable, Equatable {
         self.telegramApiBaseUrl = try c.decodeIfPresent(String.self, forKey: .telegramApiBaseUrl) ?? "https://api.telegram.org"
         self.allowedUserIds = try c.decodeIfPresent([String].self, forKey: .allowedUserIds) ?? []
         self.defaultHistoryCount = try c.decodeIfPresent(Int.self, forKey: .defaultHistoryCount) ?? 20
-        self.antigravityBrainDir = try c.decodeIfPresent(String.self, forKey: .antigravityBrainDir) ?? MACPathUtils.defaultBrainDir()
+        let decodedBrainDir = (try c.decodeIfPresent(String.self, forKey: .antigravityBrainDir) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if decodedBrainDir.isEmpty || decodedBrainDir == MACPathUtils.legacyDesktopBrainDir() {
+            self.antigravityBrainDir = MACPathUtils.defaultBrainDir()
+        } else {
+            self.antigravityBrainDir = decodedBrainDir
+        }
     }
 }
 
@@ -298,6 +303,11 @@ public enum MACPathUtils {
     }
 
     public static func defaultBrainDir() -> String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".gemini/antigravity-cli/brain").path
+    }
+
+    public static func legacyDesktopBrainDir() -> String {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".gemini/antigravity/brain").path
     }

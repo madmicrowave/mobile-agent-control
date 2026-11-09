@@ -89,7 +89,25 @@ private func testConfigStoreRoundTrip() throws {
     try store.save(cfg)
     let singleReloaded = store.load()
     expect(singleReloaded.workspaces[0].prodJenkinsJobs.isEmpty, "Single mode clears prodJenkinsJobs")
-    print("✓ MACConfigFileStore atomic 0600 save/load round-trip passed")
+    expect(
+        MACPathUtils.defaultBrainDir().hasSuffix(".gemini/antigravity-cli/brain"),
+        "Expected defaultBrainDir to point to .gemini/antigravity-cli/brain, got \(MACPathUtils.defaultBrainDir())"
+    )
+    expect(
+        singleReloaded.antigravityBrainDir == MACPathUtils.defaultBrainDir(),
+        "Expected saved config to use CLI brain dir"
+    )
+
+    // Legacy Desktop IDE brain dir (.gemini/antigravity/brain) auto-migrates to CLI brain dir on load
+    var legacyJsonCfg = singleReloaded
+    legacyJsonCfg.antigravityBrainDir = MACPathUtils.legacyDesktopBrainDir()
+    try store.save(legacyJsonCfg)
+    let migratedReloaded = store.load()
+    expect(
+        migratedReloaded.antigravityBrainDir == MACPathUtils.defaultBrainDir(),
+        "Expected legacy Desktop IDE brain dir to auto-migrate to .gemini/antigravity-cli/brain, got \(migratedReloaded.antigravityBrainDir)"
+    )
+    print("✓ MACConfigFileStore atomic 0600 save/load round-trip & CLI brain dir migration passed")
 }
 
 private func testSleepPreventerAndLaunchAgent() throws {

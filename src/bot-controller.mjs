@@ -17,6 +17,7 @@ import {
   DEFAULT_AGENT_MODEL_FAMILIES,
   GEMINI_MODEL_FAMILIES,
   VALID_MODEL_LEVELS,
+  isMissingTrajectoryError,
   resolveEffectiveModelAndLevel,
   runAgyTurn
 } from './agy-runner.mjs';
@@ -1726,15 +1727,16 @@ export class BotController {
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const effectiveModel = this.resolveWorkspaceModel(ws);
-
-    try {
+    const runSingleAttempt = async (attemptConversationId) => {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
         workspacePath: ws.path,
         prompt: st.activeTurn.prompt === '(Photo prompt)' ? '' : st.activeTurn.prompt,
         imagePaths: attachedPhotos.map((p) => p.path),
-        conversationId: st.conversationId,
-        continueLatest: Boolean(!st.conversationId && st.continueLatest),
+        conversationId: attemptConversationId,
+        // Never pass global `--continue` when a workspace has no conversationId yet,
+        // because `agy` CLI shares `default-cli-project` across workspaces.
+        continueLatest: false,
         model: effectiveModel.modelId || ws.model || 'gemini-3.8-flash-high',
         modelLevel: effectiveModel.effort || ws.modelLevel || 'high',
         skipPermissions: Boolean(this.configStore.config.skipPermissions),
@@ -1773,12 +1775,41 @@ export class BotController {
       });
 
       this.runtime.set(ws.id, { abortAgent: abort });
-      const result = await promise;
-      this.runtime.delete(ws.id);
+      try {
+        return await promise;
+      } finally {
+        this.runtime.delete(ws.id);
+      }
+    };
+
+    try {
+      const initialConvId = st.conversationId || null;
+      let result;
+      try {
+        result = await runSingleAttempt(initialConvId);
+      } catch (firstErr) {
+        if (initialConvId && isMissingTrajectoryError(firstErr)) {
+          // Stale, pruned, or Desktop-IDE-only trajectory ID — reset to a fresh CLI conversation and retry once automatically!
+          st.conversationId = null;
+          st.continueLatest = false;
+          const lastMsg = st.messages[st.messages.length - 1];
+          if (lastMsg && lastMsg.conversationId === initialConvId) {
+            lastMsg.conversationId = null;
+          }
+          await this.configStore.saveState();
+          result = await runSingleAttempt(null);
+        } else {
+          throw firstErr;
+        }
+      }
 
       if (result.conversationId) {
         st.conversationId = result.conversationId;
         st.continueLatest = false;
+        const lastMsg = st.messages[st.messages.length - 1];
+        if (lastMsg && !lastMsg.conversationId) {
+          lastMsg.conversationId = result.conversationId;
+        }
       }
 
       const replyText = result.response || '(Agent completed with no text output)';

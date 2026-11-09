@@ -5,7 +5,13 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-import { ConfigStore, expandUserPath, parseJenkinsfileJobName } from '../src/config.mjs';
+import {
+  ConfigStore,
+  expandUserPath,
+  parseJenkinsfileJobName,
+  resolveDefaultAgyBrainDir,
+  resolveLegacyDesktopBrainDir
+} from '../src/config.mjs';
 import { runGit, validateGitBranchName } from '../src/git-manager.mjs';
 import {
   JenkinsClient,
@@ -16,6 +22,7 @@ import {
   VALID_MODEL_LEVELS,
   GEMINI_MODEL_FAMILIES,
   buildAgyArgs,
+  isMissingTrajectoryError,
   resolveEffectiveModelAndLevel
 } from '../src/agy-runner.mjs';
 import {
@@ -512,6 +519,65 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       assert.equal(found.length, 1);
       assert.equal(found[0].conversationId, 'conv-111');
       assert.equal(found[0].preview, 'Second prompt');
+
+      // When a sibling `conversations/` trajectory store exists (like `~/.gemini/antigravity-cli/conversations`),
+      // only conversations with a corresponding `<id>.db` file are treated as resumable.
+      const tmpCliRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'agy-cli-root-'));
+      try {
+        const cliBrain = path.join(tmpCliRoot, 'brain');
+        const cliConvs = path.join(tmpCliRoot, 'conversations');
+        await fsp.mkdir(cliConvs, { recursive: true });
+        for (const id of ['conv-has-db', 'conv-missing-db']) {
+          const logsDir = path.join(cliBrain, id, '.system_generated', 'logs');
+          await fsp.mkdir(logsDir, { recursive: true });
+          await fsp.writeFile(
+            path.join(logsDir, 'transcript.jsonl'),
+            `${JSON.stringify({
+              type: 'USER_INPUT',
+              content: 'Active Workspaces:\n- /tmp/ws-beta\n<USER_REQUEST>Hello</USER_REQUEST>'
+            })}\n`,
+            'utf8'
+          );
+        }
+        await fsp.writeFile(path.join(cliConvs, 'conv-has-db.db'), 'sqlite', 'utf8');
+
+        const cliFound = await discoverRecentWorkspaceConversations(cliBrain, '/tmp/ws-beta');
+        assert.deepEqual(
+          cliFound.map((c) => c.conversationId),
+          ['conv-has-db']
+        );
+      } finally {
+        await fsp.rm(tmpCliRoot, { recursive: true, force: true });
+      }
+
+      // Verify CLI brain dir default & legacy Desktop IDE brain dir auto-migration
+      assert.match(resolveDefaultAgyBrainDir('/Users/demo'), /\/Users\/demo\/\.gemini\/antigravity-cli\/brain$/);
+      assert.equal(
+        isMissingTrajectoryError(
+          new Error(
+            'Agent finished with status ERROR: error: failed to send message: not_found: trajectory not found: 554658dd-7e8d-41fb-8d30-74c4673458dc: not found'
+          )
+        ),
+        true
+      );
+      assert.equal(isMissingTrajectoryError(new Error('Agent run stopped by user')), false);
+
+      const tmpMigrateDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'agy-cfg-migrate-'));
+      try {
+        await fsp.writeFile(
+          path.join(tmpMigrateDir, 'config.json'),
+          JSON.stringify({
+            telegramBotToken: '111:TOK',
+            antigravityBrainDir: resolveLegacyDesktopBrainDir()
+          }),
+          'utf8'
+        );
+        const migStore = new ConfigStore(tmpMigrateDir);
+        await migStore.init({ seedWorkspaces: [] });
+        assert.equal(migStore.config.antigravityBrainDir, resolveDefaultAgyBrainDir());
+      } finally {
+        await fsp.rm(tmpMigrateDir, { recursive: true, force: true });
+      }
     } finally {
       await fsp.rm(tmpBrain, { recursive: true, force: true });
     }
@@ -1676,6 +1742,59 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       coreRepoEntry.prodJenkinsJob = '';
       await configStore.saveConfig();
     }
+  });
+
+  it('auto-recovers transparently when Same Chat holds a Desktop IDE or missing trajectory ID (trajectory not found)', async () => {
+    // Select Web Portal (which has no conversation in brainDir -> starts clean without global --continue)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ide:sel:portal'));
+    const portalState = configStore.getWorkspaceState('portal');
+
+    // Simulate a stale Desktop IDE trajectory ID (exact error seen in MAC OS workspace)
+    portalState.conversationId = '554658dd-7e8d-41fb-8d30-74c4673458dc';
+    portalState.phase = 'IDLE';
+    await configStore.saveState();
+
+    const callHistory = [];
+    nextAgentBehavior = async (opts) => {
+      callHistory.push({
+        conversationId: opts.conversationId,
+        continueLatest: opts.continueLatest
+      });
+      if (opts.conversationId === '554658dd-7e8d-41fb-8d30-74c4673458dc') {
+        throw new Error(
+          'Agent finished with status ERROR: error: failed to send message: not_found: trajectory not found: 554658dd-7e8d-41fb-8d30-74c4673458dc: not found'
+        );
+      }
+      opts.onConversationId?.('cli-conv-recovered-999');
+      return {
+        conversationId: 'cli-conv-recovered-999',
+        response: 'Recovered seamlessly on a fresh CLI trajectory!'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Update Telegram UI in MAC OS'));
+    await controller.waitForBackgroundTasks();
+
+    // Must have attempted the old ID once, detected trajectory-not-found, cleared it, and retried cleanly with conversationId: null!
+    assert.deepEqual(callHistory, [
+      { conversationId: '554658dd-7e8d-41fb-8d30-74c4673458dc', continueLatest: false },
+      { conversationId: null, continueLatest: false }
+    ]);
+    assert.ok(!mockTg.sentMessages.some((m) => /Agent stopped\/failed/.test(m.text)));
+    assert.ok(
+      mockTg.sentMessages.some((m) => /Recovered seamlessly on a fresh CLI trajectory!/.test(m.text))
+    );
+    assert.equal(portalState.conversationId, 'cli-conv-recovered-999');
+
+    // Subsequent message in Same Chat uses the valid CLI trajectory ID
+    callHistory.length = 0;
+    await controller.handleUpdate(makeUserMsg('Follow-up message in Same Chat'));
+    await controller.waitForBackgroundTasks();
+    assert.deepEqual(callHistory, [
+      { conversationId: 'cli-conv-recovered-999', continueLatest: false }
+    ]);
   });
 
   it('polls getUpdates, honors 429 retry_after + fresh socket recovery, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {

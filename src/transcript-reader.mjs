@@ -113,6 +113,8 @@ export async function getLatestConversationMessages({
 
 /**
  * Discovers recent Antigravity conversations in `<brainDir>` whose transcript references `workspacePath`.
+ * When a sibling `conversations/` trajectory store directory exists (as in `~/.gemini/antigravity-cli`),
+ * only returns conversations that also have a corresponding `<conversationId>.db` trajectory file.
  */
 export async function discoverRecentWorkspaceConversations(
   brainDir,
@@ -120,22 +122,39 @@ export async function discoverRecentWorkspaceConversations(
   { maxScan = 25, maxResults = 5 } = {}
 ) {
   if (!brainDir || !workspacePath) return [];
+  const resolvedBrainDir = path.resolve(brainDir);
   const normalizedWs = path.resolve(workspacePath);
   const escapedWs = normalizedWs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const wsBoundaryRe = new RegExp(`${escapedWs}(?:[/\\\\"'\\s)|<>]|$)`);
 
   let entries;
   try {
-    entries = await fsp.readdir(brainDir, { withFileTypes: true });
+    entries = await fsp.readdir(resolvedBrainDir, { withFileTypes: true });
   } catch {
     return [];
+  }
+
+  const conversationsStoreDir = path.join(path.dirname(resolvedBrainDir), 'conversations');
+  let hasConversationsStoreDir = false;
+  try {
+    const storeStat = await fsp.stat(conversationsStoreDir);
+    hasConversationsStoreDir = storeStat.isDirectory();
+  } catch {
+    hasConversationsStoreDir = false;
   }
 
   const candidates = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    if (hasConversationsStoreDir) {
+      try {
+        await fsp.access(path.join(conversationsStoreDir, `${entry.name}.db`));
+      } catch {
+        continue;
+      }
+    }
     const transcriptPath = path.join(
-      brainDir,
+      resolvedBrainDir,
       entry.name,
       '.system_generated',
       'logs',

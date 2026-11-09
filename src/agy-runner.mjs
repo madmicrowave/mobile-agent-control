@@ -82,6 +82,18 @@ export function resolveDefaultAgyBin() {
 }
 
 /**
+ * Returns true when `agy` failed because the requested `--conversation` / trajectory ID
+ * does not exist in the CLI trajectory store (e.g. a Desktop IDE conversation ID, or a
+ * deleted/pruned CLI conversation).
+ */
+export function isMissingTrajectoryError(error) {
+  const msg = String(error?.message || error || '');
+  return /trajectory\s+[^\s:]+\s+not\s+found|trajectory\s+not\s+found|failed\s+to\s+load\s+trajectory|conversation\s+[^\s:]+\s+not\s+found/i.test(
+    msg
+  );
+}
+
+/**
  * Normalizes a user-configured `model` + `modelLevel` pair into the exact `--model` ID
  * and `--effort` level expected by the `agy` CLI.
  */

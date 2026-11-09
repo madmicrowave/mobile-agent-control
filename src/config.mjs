@@ -8,6 +8,19 @@ import { resolveDefaultAgyBin } from './agy-runner.mjs';
 export const INITIAL_WORKSPACES_SEED = [];
 
 /**
+ * Returns the default Antigravity CLI (`agy`) brain directory (`~/.gemini/antigravity-cli/brain`).
+ * Note: Desktop Antigravity IDE uses `~/.gemini/antigravity/brain`, whose trajectories are NOT in
+ * the headless `agy` CLI trajectory store (`~/.gemini/antigravity-cli/conversations/*.db`).
+ */
+export function resolveDefaultAgyBrainDir(homeDir = os.homedir()) {
+  return path.join(homeDir, '.gemini', 'antigravity-cli', 'brain');
+}
+
+export function resolveLegacyDesktopBrainDir(homeDir = os.homedir()) {
+  return path.join(homeDir, '.gemini', 'antigravity', 'brain');
+}
+
+/**
  * Expands leading `~` and strips surrounding quotes (e.g. when dragging folders into Terminal).
  */
 export function expandUserPath(rawInput) {
@@ -220,7 +233,8 @@ export class ConfigStore {
   }
 
   #normalizeConfigShape() {
-    const defaultBrainDir = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+    const defaultBrainDir = resolveDefaultAgyBrainDir();
+    const legacyDesktopBrainDir = resolveLegacyDesktopBrainDir();
 
     // Password is entered fresh on every `npm start` run and never stored on disk
     delete this.config.password;
@@ -248,8 +262,13 @@ export class ConfigStore {
     if (!this.config.agyBin) {
       this.config.agyBin = process.env.AGY_BIN || resolveDefaultAgyBin();
     }
-    if (!this.config.antigravityBrainDir) {
-      this.config.antigravityBrainDir = process.env.ANTIGRAVITY_BRAIN_DIR || defaultBrainDir;
+    if (process.env.ANTIGRAVITY_BRAIN_DIR) {
+      this.config.antigravityBrainDir = process.env.ANTIGRAVITY_BRAIN_DIR;
+    } else if (
+      !this.config.antigravityBrainDir ||
+      path.resolve(this.config.antigravityBrainDir) === path.resolve(legacyDesktopBrainDir)
+    ) {
+      this.config.antigravityBrainDir = defaultBrainDir;
     }
     if (typeof this.config.defaultModel !== 'string') {
       this.config.defaultModel = process.env.DEFAULT_AGENT_MODEL || '';
@@ -355,7 +374,7 @@ export class ConfigStore {
       this.config = null;
     }
 
-    const defaultBrainDir = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+    const defaultBrainDir = resolveDefaultAgyBrainDir();
 
     if (!this.config) {
       this.config = {
@@ -444,6 +463,12 @@ export class ConfigStore {
     }
 
     // Recover any transient running states if bot restarted mid-operation
+    // and clear any Desktop IDE conversation IDs that were cached before the CLI brain dir fix.
+    const cliBrainDir = resolveDefaultAgyBrainDir();
+    const legacyDesktopBrainDir = resolveLegacyDesktopBrainDir();
+    const isUsingDefaultCliBrain =
+      path.resolve(this.config.antigravityBrainDir) === path.resolve(cliBrainDir);
+
     for (const [, wsState] of Object.entries(this.state.workspaces)) {
       if (wsState.phase === 'RUNNING_AGENT') {
         wsState.phase = 'IDLE';
@@ -457,6 +482,20 @@ export class ConfigStore {
         wsState.lastError = 'Bot restarted during rollback Jenkins build. Choose whether to re-run Jenkins.';
       } else if (wsState.phase === 'AWAITING_DECISION') {
         wsState.phase = 'AWAITING_OK_OR_REVERT';
+      }
+
+      if (
+        isUsingDefaultCliBrain &&
+        typeof wsState.conversationId === 'string' &&
+        wsState.conversationId &&
+        !fs.existsSync(path.join(cliBrainDir, wsState.conversationId)) &&
+        fs.existsSync(path.join(legacyDesktopBrainDir, wsState.conversationId))
+      ) {
+        wsState.conversationId = null;
+        wsState.continueLatest = false;
+        if (wsState.lastError && /trajectory.*not found/i.test(wsState.lastError)) {
+          wsState.lastError = null;
+        }
       }
     }
     await this.saveState();
