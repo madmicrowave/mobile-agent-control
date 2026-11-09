@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/banner.svg" alt="Mobile Agent Control (mac.app / MAC) — Open-Source Native macOS Application to Control AI Coding Workspaces, Git &amp; Jenkins CI/CD via Telegram" width="100%" />
+<img src="./assets/banner.png" alt="Mobile Agent Control (mac.app / MAC) — Open-Source Native macOS Application to Control AI Coding Workspaces, Git &amp; Jenkins CI/CD via Telegram" width="100%" />
 
 # Mobile Agent Control (`mac.app` / `MAC`) — Native macOS App for Telegram AI Coding
 
