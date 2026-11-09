@@ -35,11 +35,10 @@ public enum MACBotRunStatus: Equatable {
 }
 
 public enum MACSettingsTab: String, CaseIterable, Identifiable {
-    case manageWorkspaces = "Manage Workspaces"
-    case addWorkspace = "Add Workspace"
-    case manageJenkins = "Manage Jenkins"
-    case telegramData = "Telegram Data"
+    case general = "General"
+    case workspaces = "Workspaces"
     case tutorial = "Tutorial"
+    case liveActivity = "Live Bot Activity"
 
     public var id: String { rawValue }
 }
@@ -56,7 +55,7 @@ public final class MACAppState: ObservableObject {
     @Published public var launchAtLogin: Bool = false {
         didSet { onStateChanged?() }
     }
-    @Published public var selectedTab: MACSettingsTab = .manageWorkspaces
+    @Published public var selectedTab: MACSettingsTab = .general
     @Published public var selectedWorkspaceId: String?
     @Published public var logLines: [String] = []
     @Published public var statusBannerMessage: String?
@@ -230,8 +229,8 @@ public final class MACAppState: ObservableObject {
         reloadConfigFromDisk()
         if config.telegramBotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             status = .error("Telegram Bot Token is not configured.")
-            appendLog("[MAC] ⚠️ Set your Telegram Bot Token in Settings → Telegram Data before starting.")
-            onRequestOpenSettings?(.telegramData)
+            appendLog("[MAC] ⚠️ Set your Telegram Bot Token in General → Telegram before starting.")
+            onRequestOpenSettings?(.general)
             return
         }
 

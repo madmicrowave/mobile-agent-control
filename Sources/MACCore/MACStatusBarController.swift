@@ -3,19 +3,23 @@ import SwiftUI
 
 @MainActor
 public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDelegate {
+    public static let domonkFactoryURL = URL(string: "https://domonk.com")!
+    public static let domonkFactoryName = "DOMONK Factory"
+
     public let appState: MACAppState
     public let statusItem: NSStatusItem
     public let menu: NSMenu
 
     public private(set) var statusHeaderItem: NSMenuItem!
+    public private(set) var openAppMenuItem: NSMenuItem!
     public private(set) var startMenuItem: NSMenuItem!
     public private(set) var restartMenuItem: NSMenuItem!
     public private(set) var stopMenuItem: NSMenuItem!
-    public private(set) var settingsMenuItem: NSMenuItem!
-    public private(set) var tutorialMenuItem: NSMenuItem!
     public private(set) var launchAtLoginMenuItem: NSMenuItem!
+    public private(set) var aboutMenuItem: NSMenuItem!
     public private(set) var quitMenuItem: NSMenuItem!
     public private(set) var settingsWindow: NSWindow?
+    public private(set) var aboutWindow: NSWindow?
 
     private let passwordProvider: @MainActor (Bool) -> String?
 
@@ -34,6 +38,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         self.menu.autoenablesItems = false
         self.menu.delegate = self
 
+        applyApplicationDockIcon()
         installStandardApplicationMenu()
         configureStatusBarButton()
         buildMenuItems()
@@ -43,8 +48,27 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             self?.refreshUI()
         }
         self.appState.onRequestOpenSettings = { [weak self] tab in
-            self?.openSettings(tab: tab)
+            self?.openApp(tab: tab)
         }
+    }
+
+    private func applyApplicationDockIcon() {
+        if let appIcon = loadAppIconImage() {
+            NSApp.applicationIconImage = appIcon
+        }
+    }
+
+    public func loadAppIconImage() -> NSImage? {
+        if let bundledURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let img = NSImage(contentsOf: bundledURL) {
+            return img
+        }
+        let repoIconPath = appState.runtimeRootURL.appendingPathComponent("Resources/AppIcon.icns").path
+        if FileManager.default.fileExists(atPath: repoIconPath),
+           let img = NSImage(contentsOfFile: repoIconPath) {
+            return img
+        }
+        return NSApp.applicationIconImage
     }
 
     private func configureStatusBarButton() {
@@ -82,6 +106,12 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
         menu.addItem(.separator())
 
+        openAppMenuItem = NSMenuItem(title: "Open App", action: #selector(handleOpenAppClicked), keyEquivalent: "")
+        openAppMenuItem.target = self
+        menu.addItem(openAppMenuItem)
+
+        menu.addItem(.separator())
+
         startMenuItem = NSMenuItem(title: "Start...", action: #selector(handleStartClicked), keyEquivalent: "")
         startMenuItem.target = self
         menu.addItem(startMenuItem)
@@ -96,14 +126,6 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
         menu.addItem(.separator())
 
-        settingsMenuItem = NSMenuItem(title: "Settings...", action: #selector(handleSettingsClicked), keyEquivalent: ",")
-        settingsMenuItem.target = self
-        menu.addItem(settingsMenuItem)
-
-        tutorialMenuItem = NSMenuItem(title: "Tutorial...", action: #selector(handleTutorialClicked), keyEquivalent: "")
-        tutorialMenuItem.target = self
-        menu.addItem(tutorialMenuItem)
-
         launchAtLoginMenuItem = NSMenuItem(
             title: "Start Automatically at Login",
             action: #selector(handleToggleLaunchAtLogin),
@@ -111,6 +133,10 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         )
         launchAtLoginMenuItem.target = self
         menu.addItem(launchAtLoginMenuItem)
+
+        aboutMenuItem = NSMenuItem(title: "About", action: #selector(handleAboutClicked), keyEquivalent: "")
+        aboutMenuItem.target = self
+        menu.addItem(aboutMenuItem)
 
         menu.addItem(.separator())
 
@@ -159,6 +185,10 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         }
     }
 
+    @objc public func handleOpenAppClicked() {
+        openApp(tab: nil)
+    }
+
     @objc public func handleStartClicked() {
         guard let password = passwordProvider(false) else { return }
         appState.startBot(sessionPassword: password)
@@ -173,16 +203,12 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         appState.stopBot()
     }
 
-    @objc public func handleSettingsClicked() {
-        openSettings(tab: nil)
-    }
-
-    @objc public func handleTutorialClicked() {
-        openSettings(tab: .tutorial)
-    }
-
     @objc public func handleToggleLaunchAtLogin() {
         appState.toggleLaunchAtLogin(!appState.launchAtLogin)
+    }
+
+    @objc public func handleAboutClicked() {
+        openAbout()
     }
 
     @objc public func handleQuitClicked() {
@@ -191,12 +217,21 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     }
 
     public func openSettings(tab: MACSettingsTab? = nil) {
+        openApp(tab: tab)
+    }
+
+    public func openApp(tab: MACSettingsTab? = nil) {
         if settingsWindow?.isVisible != true {
             appState.reloadConfigFromDisk()
         }
         if let tab = tab {
             appState.selectedTab = tab
         }
+
+        // Show MAC in the bottom macOS Dock while the main app window is open
+        applyApplicationDockIcon()
+        NSApp.setActivationPolicy(.regular)
+        installStandardApplicationMenu()
 
         if settingsWindow == nil {
             let rootView = MACSettingsRootView(
@@ -207,11 +242,11 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             )
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "MAC — Settings"
+            window.title = "MAC — Mobile Agent Control"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 980, height: 700))
             window.minSize = NSSize(width: 920, height: 640)
-            // Keep Settings window at floating level and never hide on deactivate
+            // Keep window at floating level and never hide on deactivate
             // (e.g. when taking macOS screenshots or copying tokens/paths from other apps)
             window.level = .floating
             window.hidesOnDeactivate = false
@@ -227,6 +262,70 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.orderFrontRegardless()
         settingsWindow?.makeKeyAndOrderFront(nil)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let win = self.settingsWindow, win.isVisible else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            win.orderFrontRegardless()
+            win.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Closes the main app window when 'x' (or Cmd+W) is clicked while keeping MAC running
+    /// in the top menu bar next to the clock with NO icon in the bottom Dock.
+    public func closeAppWindowToMenuBar() {
+        settingsWindow?.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    public func openAbout() {
+        if aboutWindow == nil {
+            let version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "3.2.0"
+            let aboutView = MACAboutView(
+                appIcon: loadAppIconImage(),
+                version: version,
+                onOpenWebsite: {
+                    NSWorkspace.shared.open(Self.domonkFactoryURL)
+                }
+            )
+            let hosting = NSHostingController(rootView: aboutView)
+            let win = NSWindow(contentViewController: hosting)
+            win.title = "About MAC — \(Self.domonkFactoryName)"
+            win.styleMask = [.titled, .closable]
+            win.setContentSize(NSSize(width: 400, height: 300))
+            win.level = .modalPanel
+            win.hidesOnDeactivate = false
+            win.isReleasedWhenClosed = false
+            win.delegate = self
+            win.center()
+            self.aboutWindow = win
+        } else {
+            aboutWindow?.center()
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        aboutWindow?.orderFrontRegardless()
+        aboutWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if sender === settingsWindow {
+            closeAppWindowToMenuBar()
+            return false
+        }
+        if sender === aboutWindow {
+            aboutWindow?.orderOut(nil)
+            return false
+        }
+        return true
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === settingsWindow {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     private func installStandardApplicationMenu() {
@@ -236,9 +335,13 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu(title: "MAC")
-        let prefsItem = NSMenuItem(title: "Settings...", action: #selector(handleSettingsClicked), keyEquivalent: ",")
-        prefsItem.target = self
-        appMenu.addItem(prefsItem)
+        let aboutItem = NSMenuItem(title: "About MAC", action: #selector(handleAboutClicked), keyEquivalent: "")
+        aboutItem.target = self
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(.separator())
+        let openItem = NSMenuItem(title: "Open App", action: #selector(handleOpenAppClicked), keyEquivalent: ",")
+        openItem.target = self
+        appMenu.addItem(openItem)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         appMenu.addItem(.separator())
@@ -247,7 +350,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
 
-        // 2. Edit Menu (essential so Cmd+C / Cmd+V / Cmd+A / Cmd+Z work in menu bar apps)
+        // 2. Edit Menu (essential so Cmd+C / Cmd+V / Cmd+A / Cmd+Z work in text fields)
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
@@ -261,5 +364,63 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         editMenuItem.submenu = editMenu
 
         NSApp.mainMenu = mainMenu
+    }
+}
+
+private struct MACAboutView: View {
+    let appIcon: NSImage?
+    let version: String
+    let onOpenWebsite: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if let appIcon {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 72, height: 72)
+                    .cornerRadius(16)
+            } else {
+                Image(systemName: "iphone.radiowaves.left.and.right")
+                    .font(.system(size: 46, weight: .bold))
+                    .foregroundColor(.accentColor)
+            }
+
+            VStack(spacing: 4) {
+                Text("MAC — Mobile Agent Control")
+                    .font(.system(size: 16, weight: .bold))
+                Text("Version \(version)")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Text("Control local AI coding Workspaces, Git & Jenkins CI/CD via Telegram")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Divider()
+
+            VStack(spacing: 8) {
+                Text("DOMONK Factory")
+                    .font(.system(size: 14, weight: .bold))
+
+                Button {
+                    onOpenWebsite()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                        Text(verbatim: "https://domonk.com")
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .font(.system(size: 12.5, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .fixedSize()
+            }
+        }
+        .padding(22)
+        .frame(width: 400, height: 300)
     }
 }

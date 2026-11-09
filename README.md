@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
 [![Powered by DOMONK Factory](https://img.shields.io/badge/Powered%20by-DOMONK%20Factory-7c3aed)](https://domonk.com)
 
-[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**Easy 2-Minute Setup**](#easy-2-minute-setup-no-cli-needed) • [**Menu Bar & Settings Tabs**](#menu-bar-controls--5-settings-tabs) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
+[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**Easy 2-Minute Setup**](#easy-2-minute-setup-no-cli-needed) • [**Menu Bar & App Tabs**](#menu-bar-controls--4-app-tabs) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
 
 </div>
 
@@ -46,35 +46,34 @@ No terminal windows, no `ngrok` or port forwarding, no uploading private source 
   ```
   `npm start` compiles **`mac.app`** natively with `swiftc` (zero external dependencies) and places the **`MAC`** icon next to your macOS clock.
 
-### 2. Configure Telegram & Workspaces in `MAC → Settings...`
+### 2. Configure Telegram, Jenkins & Workspaces in `MAC → Open App`
 
-<img src="./assets/settings-tabs-preview.svg" alt="mac.app Settings Window — Manage Workspaces, Add Workspace, Manage Jenkins, Telegram Data &amp; Built-In Tutorial" width="100%" />
+<img src="./assets/settings-tabs-preview.svg" alt="mac.app Window — General, Workspaces, Tutorial &amp; Live Bot Activity" width="100%" />
 
-1. **Open `Tutorial` or `Telegram Data` Tab**:
-   - Need a bot token? Click **Open `@BotFather`** inside the **Tutorial** tab, send `/newbot`, paste the token into **Telegram Data**, and click **Verify Token**.
-   - *(Optional)* Click **Open `@userinfobot`** to grab your numeric Telegram User ID and lock the bot strictly to your account.
-2. **Open `Add Workspace` Tab**:
-   - Enter a **Workspace Label** (e.g. `PAYMENT BOOK`, `CRYPTO FUSION`), click **Browse...** to select your folder, and click **Scan Git Repos**.
-   - Select the Workspace's default **AI Model & Effort Level** (`low` / `medium` / `high`).
-   - *(Optional)* Pick **Single** or **Multi (Staging → Production)** environment mode, paste your Jenkins job paths/URLs, and save your server credentials in **Manage Jenkins**.
+1. **Open `General` (or `Tutorial`) Tab**:
+   - Need a bot token? Click **Open `@BotFather`** inside **Tutorial**, send `/newbot`, paste the token into **General → Telegram**, and click **Verify Token**.
+   - *(Optional)* Add your numeric Telegram User ID (`@userinfobot`), **Jenkins** server credentials (`Test Jenkins Connection`), and **AGY** CLI path / default AI model, then click **Save General Settings**.
+2. **Open `Workspaces` Tab & Click `+`**:
+   - Click **`+`** in the left sidebar to add a new Workspace record, enter a **Workspace Label** (e.g. `PAYMENT BOOK`, `CRYPTO FUSION`), click **Browse...** to select your folder, and click **Scan Git Repos**.
+   - Select the Workspace's **AI Model & Effort Level** (`low` / `medium` / `high`), choose **Single** or **Multi (Staging → Production)** Jenkins jobs, and click **Create Workspace**.
 3. **Click `MAC` Next to Your Clock → `Start...`**:
    - Enter a fresh **session password** for this run (held strictly in RAM, never saved on disk).
    - Open your bot in Telegram, send `/start`, and reply once with that password (auto-deleted from chat). You're live!
 
 ---
 
-## Menu Bar Controls & 5 Settings Tabs
+## Menu Bar Controls & 4 App Tabs
 
 Clicking the **`MAC`** badge next to your macOS clock gives you instant control:
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
+| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Bot Activity**) and shows **MAC** in the bottom Dock while open. Clicking **`✕`** closes the window back to the menu bar with no Dock icon while keeping MAC running. |
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and allows your MacBook to sleep normally again. |
-| **`Settings...` (`⌘,`)** | Opens the 5-tab visual configuration window (**Manage Workspaces**, **Add Workspace**, **Manage Jenkins**, **Telegram Data**, **Tutorial**). |
-| **`Tutorial...`** | Jumps straight to the built-in 5-step onboarding & Telegram commands guide. |
 | **`Start Automatically at Login`** | Keeps `~/Library/LaunchAgents/com.domonk.mac.plist` enabled so `MAC` launches whenever macOS starts. |
+| **`About`** | Opens the **DOMONK Factory** About window with a direct link to [https://domonk.com](https://domonk.com). |
 
 ---
 

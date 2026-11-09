@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="mac.app Settings Window — 5 Visual Tabs for Easy Setup">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="mac.app Window — 4 Tabs: General, Workspaces, Tutorial &amp; Live Bot Activity">
   <defs>
     <linearGradient id="winBg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0b1222"/>
@@ -12,64 +12,53 @@
   <circle cx="26" cy="24" r="6" fill="#ef4444"/>
   <circle cx="46" cy="24" r="6" fill="#f59e0b"/>
   <circle cx="66" cy="24" r="6" fill="#22c55e"/>
-  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc">MAC — Settings (mac.app Visual Setup &amp; Built-In Tutorial)</text>
+  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc">MAC — Mobile Agent Control (mac.app Visual Setup &amp; Live Activity)</text>
   <line x1="0" y1="46" x2="1200" y2="46" stroke="#334155"/>
 
-  <!-- 5 Settings Tabs Showcase -->
+  <!-- 4 App Tabs Showcase -->
   <g transform="translate(28, 68)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
-    <!-- Tab 1 -->
-    <rect x="0" y="0" width="218" height="224" rx="14" fill="#131f38" stroke="#3b82f6" stroke-width="1.4"/>
-    <text x="18" y="32" font-size="14.5" font-weight="700" fill="#60a5fa">🗂 Manage Workspaces</text>
-    <text x="18" y="60" font-size="12.5" fill="#cbd5e1">• Edit labels &amp; folder paths</text>
-    <text x="18" y="84" font-size="12.5" fill="#cbd5e1">• Extra --add-dir folders</text>
-    <text x="18" y="108" font-size="12.5" fill="#cbd5e1">• Gemini &amp; Claude models</text>
-    <text x="18" y="132" font-size="12.5" fill="#cbd5e1">• Single / Multi Jenkins</text>
-    <text x="18" y="156" font-size="12.5" fill="#cbd5e1">• Per-repo Git mapping</text>
-    <rect x="18" y="178" width="182" height="28" rx="7" fill="#0f172a"/>
-    <text x="109" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#93c5fd">Hot-Reloads Live</text>
+    <!-- Tab 1: General -->
+    <rect x="0" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#3b82f6" stroke-width="1.4"/>
+    <text x="20" y="32" font-size="15" font-weight="700" fill="#60a5fa">⚙️ General</text>
+    <text x="20" y="60" font-size="12.5" fill="#cbd5e1">• Jenkins Server &amp; 1-Click Test</text>
+    <text x="20" y="84" font-size="12.5" fill="#cbd5e1">• Telegram Bot Token &amp; Verify</text>
+    <text x="20" y="108" font-size="12.5" fill="#cbd5e1">• Allowed User IDs &amp; History X</text>
+    <text x="20" y="132" font-size="12.5" fill="#cbd5e1">• AGY CLI Path &amp; Default Model</text>
+    <text x="20" y="156" font-size="12.5" fill="#cbd5e1">• Launch at Login &amp; Sleep Status</text>
+    <rect x="20" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
+    <text x="137" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#93c5fd">Jenkins · Telegram · AGY</text>
 
-    <!-- Tab 2 -->
-    <rect x="231" y="0" width="218" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="249" y="32" font-size="14.5" font-weight="700" fill="#38bdf8">➕ Add Workspace</text>
-    <text x="249" y="60" font-size="12.5" fill="#cbd5e1">• Native Folder Picker</text>
-    <text x="249" y="84" font-size="12.5" fill="#cbd5e1">• 1-Click Scan Git Repos</text>
-    <text x="249" y="108" font-size="12.5" fill="#cbd5e1">• Paste comma/URL job lists</text>
-    <text x="249" y="132" font-size="12.5" fill="#cbd5e1">• Staging &amp; Prod job pairing</text>
-    <text x="249" y="156" font-size="12.5" fill="#cbd5e1">• Pick default AI &amp; effort</text>
-    <rect x="249" y="178" width="182" height="28" rx="7" fill="#0f172a"/>
-    <text x="340" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">Monorepo Ready</text>
+    <!-- Tab 2: Workspaces -->
+    <rect x="290" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
+    <text x="310" y="32" font-size="15" font-weight="700" fill="#38bdf8">🗂 Workspaces (+)</text>
+    <text x="310" y="60" font-size="12.5" fill="#cbd5e1">• Click + to add new Workspace</text>
+    <text x="310" y="84" font-size="12.5" fill="#cbd5e1">• Folder picker &amp; --add-dir paths</text>
+    <text x="310" y="108" font-size="12.5" fill="#cbd5e1">• Gemini &amp; Claude AI models</text>
+    <text x="310" y="132" font-size="12.5" fill="#cbd5e1">• Single / Multi Staging → Prod</text>
+    <text x="310" y="156" font-size="12.5" fill="#cbd5e1">• 1-Click Scan Git Repositories</text>
+    <rect x="310" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
+    <text x="427" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">Hot-Reloads in Telegram</text>
 
-    <!-- Tab 3 -->
-    <rect x="462" y="0" width="218" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="480" y="32" font-size="14.5" font-weight="700" fill="#34d399">🚀 Manage Jenkins</text>
-    <text x="480" y="60" font-size="12.5" fill="#cbd5e1">• Jenkins Base URL</text>
-    <text x="480" y="84" font-size="12.5" fill="#cbd5e1">• Username &amp; API Token</text>
-    <text x="480" y="108" font-size="12.5" fill="#cbd5e1">• Folder prefix &amp; timeout</text>
-    <text x="480" y="132" font-size="12.5" fill="#cbd5e1">• Self-signed TLS support</text>
-    <text x="480" y="156" font-size="12.5" fill="#cbd5e1">• Live Connection Tester</text>
-    <rect x="480" y="178" width="182" height="28" rx="7" fill="#0f172a"/>
-    <text x="571" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#34d399">1-Click API Check</text>
+    <!-- Tab 3: Tutorial -->
+    <rect x="580" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
+    <text x="600" y="32" font-size="15" font-weight="700" fill="#fbbf24">📖 Tutorial</text>
+    <text x="600" y="60" font-size="12.5" fill="#cbd5e1">• 1-Click open @BotFather</text>
+    <text x="600" y="84" font-size="12.5" fill="#cbd5e1">• 1-Click open @userinfobot</text>
+    <text x="600" y="108" font-size="12.5" fill="#cbd5e1">• Workspace &amp; CI/CD setup</text>
+    <text x="600" y="132" font-size="12.5" fill="#cbd5e1">• RAM-only session password</text>
+    <text x="600" y="156" font-size="12.5" fill="#cbd5e1">• Slash commands cheat sheet</text>
+    <rect x="600" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
+    <text x="717" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#fcd34d">2-Minute Onboarding</text>
 
-    <!-- Tab 4 -->
-    <rect x="693" y="0" width="218" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="711" y="32" font-size="14.5" font-weight="700" fill="#a78bfa">✈️ Telegram Data</text>
-    <text x="711" y="60" font-size="12.5" fill="#cbd5e1">• @BotFather Token + Verify</text>
-    <text x="711" y="84" font-size="12.5" fill="#cbd5e1">• Allowed User IDs allowlist</text>
-    <text x="711" y="108" font-size="12.5" fill="#cbd5e1">• Latest X messages count</text>
-    <text x="711" y="132" font-size="12.5" fill="#cbd5e1">• Launch at Login toggle</text>
-    <text x="711" y="156" font-size="12.5" fill="#cbd5e1">• Live Activity Log viewer</text>
-    <rect x="711" y="178" width="182" height="28" rx="7" fill="#0f172a"/>
-    <text x="802" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#c4b5fd">0600 Local Storage</text>
-
-    <!-- Tab 5 -->
-    <rect x="924" y="0" width="220" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="942" y="32" font-size="14.5" font-weight="700" fill="#fbbf24">📖 Tutorial</text>
-    <text x="942" y="60" font-size="12.5" fill="#cbd5e1">• 1-Click open @BotFather</text>
-    <text x="942" y="84" font-size="12.5" fill="#cbd5e1">• 1-Click open @userinfobot</text>
-    <text x="942" y="108" font-size="12.5" fill="#cbd5e1">• Workspace &amp; CI/CD guide</text>
-    <text x="942" y="132" font-size="12.5" fill="#cbd5e1">• RAM password security</text>
-    <text x="942" y="156" font-size="12.5" fill="#cbd5e1">• Slash commands cheat sheet</text>
-    <rect x="942" y="178" width="184" height="28" rx="7" fill="#0f172a"/>
-    <text x="1034" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#fcd34d">Built-In Onboarding</text>
+    <!-- Tab 4: Live Bot Activity -->
+    <rect x="870" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
+    <text x="890" y="32" font-size="15" font-weight="700" fill="#34d399">🖥 Live Bot Activity</text>
+    <text x="890" y="60" font-size="12.5" fill="#cbd5e1">• Real-time bot polling stream</text>
+    <text x="890" y="84" font-size="12.5" fill="#cbd5e1">• Live Git &amp; Jenkins build logs</text>
+    <text x="890" y="108" font-size="12.5" fill="#cbd5e1">• Auto-scroll monospaced console</text>
+    <text x="890" y="132" font-size="12.5" fill="#cbd5e1">• Selectable text &amp; 1-Click Copy</text>
+    <text x="890" y="156" font-size="12.5" fill="#cbd5e1">• Instant Clear Logs control</text>
+    <rect x="890" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
+    <text x="1007" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#34d399">Live Activity Stream</text>
   </g>
 </svg>

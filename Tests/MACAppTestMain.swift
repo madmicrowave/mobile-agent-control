@@ -173,25 +173,44 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     )
 
     expect(MACSettingsTab.allCases.map(\.rawValue) == [
-        "Manage Workspaces",
-        "Add Workspace",
-        "Manage Jenkins",
-        "Telegram Data",
-        "Tutorial"
-    ], "Expected 5 Settings tabs including Telegram Data and Tutorial")
+        "General",
+        "Workspaces",
+        "Tutorial",
+        "Live Bot Activity"
+    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Live Bot Activity")
+    expect(appState.selectedTab == .general, "Expected General as default first tab")
+    expect(controller.openAppMenuItem.title == "Open App", "Menu has Open App")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")
     expect(controller.restartMenuItem.title == "Restart...", "Menu has Restart...")
     expect(controller.stopMenuItem.title == "Stop", "Menu has Stop")
-    expect(controller.settingsMenuItem.title == "Settings...", "Menu has Settings...")
-    expect(controller.tutorialMenuItem.title == "Tutorial...", "Menu has Tutorial...")
+    expect(controller.aboutMenuItem.title == "About", "Menu has About")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Initial menu enabled state")
+    expect(NSApp.activationPolicy() == .accessory, "Expected initial activationPolicy == .accessory (no Dock icon)")
 
-    // Verify Settings window stays at floating level and never hides on deactivate (e.g. during macOS screenshots)
-    controller.openSettings(tab: .manageWorkspaces)
-    expect(controller.settingsWindow != nil, "Settings window created")
-    expect(controller.settingsWindow?.level == .floating, "Expected Settings window level == .floating so it stays above normal apps during screenshots")
-    expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected Settings window hidesOnDeactivate == false")
-    controller.settingsWindow?.close()
+    // Verify Open App puts MAC in the bottom Dock (.regular), keeps window floating, and clicking 'x' returns to .accessory (no Dock icon)
+    controller.handleOpenAppClicked()
+    expect(controller.settingsWindow != nil, "Main app window created")
+    expect(controller.settingsWindow?.isVisible == true, "Main app window visible")
+    expect(NSApp.activationPolicy() == .regular, "Expected activationPolicy == .regular (shown in bottom Dock) when Open App is active")
+    expect(controller.settingsWindow?.level == .floating, "Expected window level == .floating so it stays above normal apps during screenshots")
+    expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected window hidesOnDeactivate == false")
+
+    if let win = controller.settingsWindow {
+        let shouldClose = controller.windowShouldClose(win)
+        expect(shouldClose == false, "windowShouldClose intercepts close to keep menu bar alive")
+    }
+    expect(controller.settingsWindow?.isVisible == false, "Main app window hidden after clicking 'x'")
+    expect(NSApp.activationPolicy() == .accessory, "Expected activationPolicy == .accessory (no Dock icon) after clicking 'x'")
+    expect(controller.statusItem.isVisible, "Expected menu bar icon next to clock to remain visible after clicking 'x'")
+
+    // Verify About opens DOMONK Factory window with https://domonk.com link
+    controller.handleAboutClicked()
+    expect(controller.aboutWindow != nil && controller.aboutWindow?.isVisible == true, "Expected About window to open")
+    expect(controller.aboutWindow?.title.contains("DOMONK Factory") == true, "Expected About window title to include DOMONK Factory")
+    expect(MACStatusBarController.domonkFactoryURL.absoluteString == "https://domonk.com", "Expected DOMONK Factory link https://domonk.com")
+    if let aboutWin = controller.aboutWindow {
+        _ = controller.windowShouldClose(aboutWin)
+    }
 
     // Trigger Start...
     controller.handleStartClicked()
@@ -207,6 +226,14 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(appState.isSleepPrevented, "Expected Mac sleep prevention active while running")
     expect(!controller.startMenuItem.isEnabled && controller.restartMenuItem.isEnabled && controller.stopMenuItem.isEnabled, "Running menu item states")
     expect(promptedPasswords.count == 1 && promptedPasswords[0].0 == false, "Start prompted for password")
+
+    // Verify opening and closing ('x') the app window while running keeps the bot turned on in menu bar with no Dock icon
+    controller.openApp(tab: .liveActivity)
+    expect(NSApp.activationPolicy() == .regular, "Dock icon shown while window open")
+    controller.closeAppWindowToMenuBar()
+    expect(NSApp.activationPolicy() == .accessory, "Dock icon removed when window closed")
+    expect(appState.status == .running(botUsername: "mac_unit_bot"), "Bot stays turned on in menu bar after window close")
+    expect(appState.isSleepPrevented, "Sleep prevention stays active after window close")
 
     // Trigger Restart...
     controller.handleRestartClicked()

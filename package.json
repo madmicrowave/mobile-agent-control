@@ -1,6 +1,6 @@
 {
   "name": "mobile-agent-control",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "Mobile Agent Control (mac.app / MAC) — Native macOS menu bar app to remotely control local AI coding Workspaces (Google Antigravity, Gemini & Claude), Git branches, and Staging-to-Prod Jenkins CI/CD via Telegram with 2-minute GUI setup",
   "type": "module",
   "license": "MIT",
