@@ -415,6 +415,7 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
   it('builds agy CLI arguments with attached photos, --add-dir, AI models (Gemini & Claude Opus 5.5), and 3 model levels (low/medium/high)', () => {
     assert.deepEqual(VALID_MODEL_LEVELS, ['low', 'medium', 'high']);
     assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'claude-opus-5-5'));
+    assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'gemini-4-carbon'));
 
     const resolved = resolveEffectiveModelAndLevel({ model: 'gemeni 3.8', modelLevel: 'high' });
     assert.equal(resolved.modelId, 'gemini-3.8-flash-high');
@@ -426,6 +427,30 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     });
     assert.equal(switchedTier.modelId, 'gemini-3.8-flash-low');
     assert.equal(switchedTier.effort, 'low');
+
+    const carbonLow = resolveEffectiveModelAndLevel({
+      model: 'gemini 4 carbon',
+      modelLevel: 'low'
+    });
+    assert.equal(carbonLow.modelId, 'gemini-4-carbon-low');
+    assert.equal(carbonLow.effort, 'low');
+    assert.equal(carbonLow.displayLabel, 'Gemini 4 Carbon (low)');
+
+    const carbonMed = resolveEffectiveModelAndLevel({
+      model: 'gemini-4-carbon',
+      modelLevel: 'medium'
+    });
+    assert.equal(carbonMed.modelId, 'gemini-4-carbon-medium');
+    assert.equal(carbonMed.effort, 'medium');
+    assert.equal(carbonMed.displayLabel, 'Gemini 4 Carbon (medium)');
+
+    const carbonHigh = resolveEffectiveModelAndLevel({
+      model: 'carbon',
+      modelLevel: 'high'
+    });
+    assert.equal(carbonHigh.modelId, 'gemini-4-carbon-high');
+    assert.equal(carbonHigh.effort, 'high');
+    assert.equal(carbonHigh.displayLabel, 'Gemini 4 Carbon (high)');
 
     const opusResolved = resolveEffectiveModelAndLevel({
       model: 'cloud opus 5.5',
@@ -1420,9 +1445,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     const flatModelBtns = cfgMsg.reply_markup.inline_keyboard.flat();
     const cbs = flatModelBtns.map((b) => b.callback_data);
-    // Must include Gemini 3.8 Flash, Gemini 4 Argon, and Claude Opus 5.5
+    // Must include Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, and Claude Opus 5.5
     assert.ok(cbs.includes('mdl:f:payments:g38'));
     assert.ok(cbs.includes('mdl:f:payments:g4'));
+    assert.ok(cbs.includes('mdl:f:payments:g4c'));
     assert.ok(cbs.includes('mdl:f:payments:co55'));
     // Must have ONLY 3 levels (low, medium, high) — NO xhigh or max, and NO Custom Model button!
     assert.ok(cbs.includes('mdl:l:payments:low'));
@@ -1446,13 +1472,32 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));
     await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
 
+    const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
+
+    // Switch `payments` to Gemini 4 Carbon with low, medium, and high levels
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g4c', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:low', cfgMsg.message_id));
+    assert.equal(paymentsWs.model, 'gemini-4-carbon-low');
+    assert.equal(paymentsWs.modelLevel, 'low');
+
+    await controller.handleUpdate(makeCallback('mdl:l:payments:medium', cfgMsg.message_id));
+    assert.equal(paymentsWs.model, 'gemini-4-carbon-medium');
+    assert.equal(paymentsWs.modelLevel, 'medium');
+
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
+    assert.equal(paymentsWs.model, 'gemini-4-carbon-high');
+    assert.equal(paymentsWs.modelLevel, 'high');
+
+    // Switch back to Gemini 3.8 Flash (high) for following assertions
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
+
     // Configure `portal` IDE independently -> Claude Opus 5.5 (medium) via Settings -> IDE card
     await controller.handleUpdate(makeCallback('ide:cfg:portal'));
     const portalCfgMsg = mockTg.lastSent();
     await controller.handleUpdate(makeCallback('mdl:f:portal:co55', portalCfgMsg.message_id));
     await controller.handleUpdate(makeCallback('mdl:l:portal:medium', portalCfgMsg.message_id));
 
-    const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
     const portalWs = configStore.config.workspaces.find((w) => w.id === 'portal');
     assert.equal(paymentsWs.model, 'gemini-3.8-flash-high');
     assert.equal(paymentsWs.modelLevel, 'high');

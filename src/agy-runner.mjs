@@ -33,6 +33,21 @@ export const GEMINI_MODEL_FAMILIES = [
     tieredLevels: ['low', 'medium', 'high']
   },
   {
+    shortCode: 'g4c',
+    family: 'gemini-4-carbon',
+    label: 'Gemini 4 Carbon',
+    aliases: [
+      'gemini-4-carbon',
+      'gemini 4 carbon',
+      'gemini-carbon',
+      'gemini carbon',
+      'carbon',
+      'gemeni-4-carbon',
+      'gemeni 4 carbon'
+    ],
+    tieredLevels: ['low', 'medium', 'high']
+  },
+  {
     shortCode: 'co55',
     family: 'claude-opus-5-5',
     label: 'Claude Opus 5.5',

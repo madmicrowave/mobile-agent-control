@@ -14,6 +14,7 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
     public static let allOptions: [MACModelOption] = [
         MACModelOption(id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tiered: true),
         MACModelOption(id: "gemini-4-argon", label: "Gemini 4 Argon", tiered: true),
+        MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true),
         MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true),
         MACModelOption(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", tiered: true),
         MACModelOption(id: "gpt-oss-120b-medium", label: "GPT-OSS 120B", tiered: false)
@@ -36,7 +37,8 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
             break
         }
 
-        if let opt = allOptions.first(where: { $0.id == baseFamily || $0.id == trimmedModel }) {
+        let hyphenated = baseFamily.replacingOccurrences(of: " ", with: "-")
+        if let opt = allOptions.first(where: { $0.id == baseFamily || $0.id == trimmedModel || $0.id == hyphenated }) {
             let effLevel = level.isEmpty ? "high" : level
             if opt.tiered {
                 let fullId = "\(opt.id)-\(effLevel)"

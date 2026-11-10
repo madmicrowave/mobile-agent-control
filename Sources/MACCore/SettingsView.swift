@@ -1740,7 +1740,7 @@ private struct TutorialTabView: View {
                     accent: .purple,
                     bullets: [
                         "Open the 'Workspaces' tab, click '+' in the left sidebar to create a new Workspace record, enter a Workspace Label, and click 'Browse...' to pick your project folder.",
-                        "Click 'Scan Git Repos' to auto-detect single or multi-repo Git folders, and choose the Workspace's AI Model (Gemini 3.8 Flash, Gemini 4 Argon, Claude Opus 5.5) and effort level (low / medium / high).",
+                        "Click 'Scan Git Repos' to auto-detect single or multi-repo Git folders, and choose the Workspace's AI Model (Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Claude Opus 5.5) and effort level (low / medium / high).",
                         "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, and save your server credentials in General → Jenkins."
                     ],
                     actionTitle: nil,
