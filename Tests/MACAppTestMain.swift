@@ -183,12 +183,16 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     var promptedPasswords: [(Bool, String)] = []
     let controller = MACStatusBarController(
         appState: appState,
+        isHeadlessTestMode: true,
         passwordProvider: { isRestart in
             let pw = isRestart ? "restart-pass-456" : "start-pass-123"
             promptedPasswords.append((isRestart, pw))
             return pw
         }
     )
+    defer {
+        controller.removeStatusItem()
+    }
 
     expect(MACSettingsTab.allCases.map(\.rawValue) == [
         "General",
@@ -203,13 +207,15 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(controller.stopMenuItem.title == "Stop", "Menu has Stop")
     expect(controller.aboutMenuItem.title == "About", "Menu has About")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Initial menu enabled state")
-    expect(NSApp.activationPolicy() == .accessory, "Expected initial activationPolicy == .accessory (no Dock icon)")
+    expect(controller.effectiveActivationPolicy == .accessory, "Expected initial effectiveActivationPolicy == .accessory (no Dock icon)")
+    expect(NSApp.activationPolicy() == .accessory, "Expected test runner NSApp.activationPolicy() == .accessory")
 
-    // Verify Open App puts MAC in the bottom Dock (.regular), keeps window floating, and clicking 'x' returns to .accessory (no Dock icon)
+    // Verify Open App tracks .regular for mac.app while NEVER promoting the bare MACAppTests binary into the macOS Dock!
     controller.handleOpenAppClicked()
     expect(controller.settingsWindow != nil, "Main app window created")
     expect(controller.settingsWindow?.isVisible == true, "Main app window visible")
-    expect(NSApp.activationPolicy() == .regular, "Expected activationPolicy == .regular (shown in bottom Dock) when Open App is active")
+    expect(controller.effectiveActivationPolicy == .regular, "Expected effectiveActivationPolicy == .regular when Open App is active")
+    expect(NSApp.activationPolicy() == .accessory, "Bare MACAppTests binary must NEVER appear in the macOS Dock")
     expect(controller.settingsWindow?.level == .floating, "Expected window level == .floating so it stays above normal apps during screenshots")
     expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected window hidesOnDeactivate == false")
 
@@ -218,7 +224,7 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         expect(shouldClose == false, "windowShouldClose intercepts close to keep menu bar alive")
     }
     expect(controller.settingsWindow?.isVisible == false, "Main app window hidden after clicking 'x'")
-    expect(NSApp.activationPolicy() == .accessory, "Expected activationPolicy == .accessory (no Dock icon) after clicking 'x'")
+    expect(controller.effectiveActivationPolicy == .accessory, "Expected effectiveActivationPolicy == .accessory (no Dock icon) after clicking 'x'")
     expect(controller.statusItem.isVisible, "Expected menu bar icon next to clock to remain visible after clicking 'x'")
 
     // Verify About opens DOMONK Factory window with https://domonk.com link
@@ -247,9 +253,10 @@ private func testMenuBarControllerAndBotLifecycle() throws {
 
     // Verify opening and closing ('x') the app window while running keeps the bot turned on in menu bar with no Dock icon
     controller.openApp(tab: .liveActivity)
-    expect(NSApp.activationPolicy() == .regular, "Dock icon shown while window open")
+    expect(controller.effectiveActivationPolicy == .regular, "Dock icon policy active while window open")
+    expect(NSApp.activationPolicy() == .accessory, "Bare MACAppTests binary stays hidden from macOS Dock")
     controller.closeAppWindowToMenuBar()
-    expect(NSApp.activationPolicy() == .accessory, "Dock icon removed when window closed")
+    expect(controller.effectiveActivationPolicy == .accessory, "Dock icon policy removed when window closed")
     expect(appState.status == .running(botUsername: "mac_unit_bot"), "Bot stays turned on in menu bar after window close")
     expect(appState.isSleepPrevented, "Sleep prevention stays active after window close")
 
@@ -277,6 +284,7 @@ private func testMenuBarControllerAndBotLifecycle() throws {
 struct MACAppTests {
     static func main() {
         setenv("MAC_DISABLE_AUTO_LAUNCH_AGENT", "1", 1)
+        setenv("MAC_HEADLESS_TEST", "1", 1)
         let _ = NSApplication.shared
         NSApplication.shared.setActivationPolicy(.accessory)
 

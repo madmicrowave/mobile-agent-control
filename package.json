@@ -1,6 +1,6 @@
 {
   "name": "mobile-agent-control",
-  "version": "3.2.3",
+  "version": "3.2.4",
   "description": "Mobile Agent Control (mac.app / MAC) — Free open-source native Swift & SwiftUI macOS menu bar + Dock application to remotely control local AI coding Workspaces (Google Antigravity, Gemini & Claude), Git monorepo pushes, and Single/Multi-Environment Jenkins CI/CD via Telegram",
   "type": "module",
   "license": "MIT",

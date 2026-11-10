@@ -20,14 +20,18 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     public private(set) var quitMenuItem: NSMenuItem!
     public private(set) var settingsWindow: NSWindow?
     public private(set) var aboutWindow: NSWindow?
+    public private(set) var effectiveActivationPolicy: NSApplication.ActivationPolicy = .accessory
+    public let isHeadlessTestMode: Bool
 
     private let passwordProvider: @MainActor (Bool) -> String?
 
     public init(
         appState: MACAppState,
+        isHeadlessTestMode: Bool = ProcessInfo.processInfo.environment["MAC_HEADLESS_TEST"] == "1",
         passwordProvider: (@MainActor (Bool) -> String?)? = nil
     ) {
         self.appState = appState
+        self.isHeadlessTestMode = isHeadlessTestMode
         self.passwordProvider = passwordProvider ?? { isRestart in
             PasswordPromptPanel.promptForSessionPassword(isRestart: isRestart)
         }
@@ -52,7 +56,26 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         }
     }
 
+    /// Only real `.app` bundles (`mac.app`) may promote `NSApp` to `.regular` in the macOS Dock.
+    /// Bare CLI / test executables (`MACAppTests`) must never call `NSApp.setActivationPolicy(.regular)`,
+    /// otherwise macOS Dock creates ghost `exec` tiles at the bottom of the screen.
+    private var canPromoteToRegularDockIcon: Bool {
+        !isHeadlessTestMode && Bundle.main.bundleURL.pathExtension.lowercased() == "app"
+    }
+
+    private func applyEffectiveActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        effectiveActivationPolicy = policy
+        if policy == .regular {
+            if canPromoteToRegularDockIcon {
+                NSApp.setActivationPolicy(.regular)
+            }
+        } else {
+            NSApp.setActivationPolicy(policy)
+        }
+    }
+
     private func applyApplicationDockIcon() {
+        guard !isHeadlessTestMode else { return }
         if let appIcon = loadAppIconImage() {
             NSApp.applicationIconImage = appIcon
         }
@@ -230,8 +253,10 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
         // Show MAC in the bottom macOS Dock while the main app window is open
         applyApplicationDockIcon()
-        NSApp.setActivationPolicy(.regular)
-        installStandardApplicationMenu()
+        applyEffectiveActivationPolicy(.regular)
+        if !isHeadlessTestMode {
+            installStandardApplicationMenu()
+        }
 
         if settingsWindow == nil {
             let rootView = MACSettingsRootView(
@@ -253,12 +278,21 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.isReleasedWhenClosed = false
             window.delegate = self
-            window.center()
+            if isHeadlessTestMode {
+                window.setFrameOrigin(NSPoint(x: -12000, y: -12000))
+            } else {
+                window.center()
+            }
             self.settingsWindow = window
         }
 
         settingsWindow?.level = .floating
         settingsWindow?.hidesOnDeactivate = false
+        if isHeadlessTestMode {
+            settingsWindow?.orderBack(nil)
+            return
+        }
+
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.orderFrontRegardless()
         settingsWindow?.makeKeyAndOrderFront(nil)
@@ -275,12 +309,12 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     /// in the top menu bar next to the clock with NO icon in the bottom Dock.
     public func closeAppWindowToMenuBar() {
         settingsWindow?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        applyEffectiveActivationPolicy(.accessory)
     }
 
     public func openAbout() {
         if aboutWindow == nil {
-            let version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "3.2.0"
+            let version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "3.2.4"
             let aboutView = MACAboutView(
                 appIcon: loadAppIconImage(),
                 version: version,
@@ -297,15 +331,28 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             win.hidesOnDeactivate = false
             win.isReleasedWhenClosed = false
             win.delegate = self
-            win.center()
+            if isHeadlessTestMode {
+                win.setFrameOrigin(NSPoint(x: -12000, y: -12000))
+            } else {
+                win.center()
+            }
             self.aboutWindow = win
-        } else {
+        } else if !isHeadlessTestMode {
             aboutWindow?.center()
+        }
+
+        if isHeadlessTestMode {
+            aboutWindow?.orderBack(nil)
+            return
         }
 
         NSApp.activate(ignoringOtherApps: true)
         aboutWindow?.orderFrontRegardless()
         aboutWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    public func removeStatusItem() {
+        NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     // MARK: - NSWindowDelegate
@@ -324,7 +371,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
     public func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSWindow) === settingsWindow {
-            NSApp.setActivationPolicy(.accessory)
+            applyEffectiveActivationPolicy(.accessory)
         }
     }
 
