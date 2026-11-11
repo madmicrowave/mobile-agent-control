@@ -1117,6 +1117,13 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('fix:err:')) {
+        const wsId = data.slice('fix:err:'.length);
+        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.handleFixJenkinsError(chatId, wsId);
+        return;
+      }
+
       if (data.startsWith('rjnk:yes:')) {
         const wsId = data.slice('rjnk:yes:'.length);
         await this.telegram.clearInlineButtons(chatId, messageId);
@@ -1722,16 +1729,26 @@ export class BotController {
     );
   }
 
-  async #executeAgentTurn(chatId, ws, st, attachedPhotos, statusMessageId) {
+  async #executeAgentTurn(
+    chatId,
+    ws,
+    st,
+    attachedPhotos,
+    statusMessageId,
+    { promptOverride = '', isAutoCommitFix = false, originalErrorLog = '' } = {}
+  ) {
     let lastProgressEditMs = 0;
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const effectiveModel = this.resolveWorkspaceModel(ws);
+    const effectivePrompt =
+      promptOverride ||
+      (st.activeTurn.prompt === '(Photo prompt)' ? '' : st.activeTurn.prompt);
     const runSingleAttempt = async (attemptConversationId) => {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
         workspacePath: ws.path,
-        prompt: st.activeTurn.prompt === '(Photo prompt)' ? '' : st.activeTurn.prompt,
+        prompt: effectivePrompt,
         imagePaths: attachedPhotos.map((p) => p.path),
         conversationId: attemptConversationId,
         // Never pass global `--continue` when a workspace has no conversationId yet,
@@ -1866,6 +1883,24 @@ export class BotController {
     }
 
     if (deltas.length === 0) {
+      if (isAutoCommitFix) {
+        st.phase = 'AWAITING_OK_OR_REVERT';
+        st.lastError = originalErrorLog || 'Jenkins build failed';
+        await this.configStore.saveState();
+
+        await this.telegram.sendMessage({
+          chatId,
+          text: `ℹ️ <b>No code changes were made by the agent to fix the Jenkins build error.</b>`
+        });
+        await this.sendJenkinsFailurePrompt(chatId, ws, {
+          jobName: st.activeTurn?.lastFailedJob || '',
+          buildNumber: st.activeTurn?.lastFailedBuildNumber,
+          result: 'FAILURE',
+          errorLog: st.lastError
+        });
+        return;
+      }
+
       st.history.push({
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
@@ -1884,6 +1919,85 @@ export class BotController {
         text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\n\nReady for your next message.`,
         replyMarkup: MAIN_REPLY_KEYBOARD
       });
+      return;
+    }
+
+    if (isAutoCommitFix) {
+      const commitMessage = buildAutoCommitMessage(`fix Jenkins build error in ${wsLabel}`);
+      const commits = [];
+      const branchToPush =
+        st.activeTurn?.targetBranch || st.activeTurn?.commits?.[0]?.branch || '';
+
+      try {
+        for (const repo of ws.repos || []) {
+          const freshDelta = await detectRepoChangesSinceSnapshot(
+            repo,
+            st.baselineSnapshots?.[repo.name]
+          );
+
+          if (freshDelta.changedFiles.length > 0) {
+            const rec = await commitAndPushRepoChanges(repo, freshDelta, commitMessage, {
+              push: this.gitPush,
+              customBranch: branchToPush
+            });
+            if (rec) commits.push(rec);
+          } else if (freshDelta.headAdvanced) {
+            const recs = await collectAgentCommitsAndPush(repo, freshDelta, { push: this.gitPush });
+            commits.push(...recs);
+          }
+        }
+      } catch (gitErr) {
+        if (gitErr.commitRecord) {
+          commits.push(gitErr.commitRecord);
+        } else if (Array.isArray(gitErr.commitRecords)) {
+          commits.push(...gitErr.commitRecords);
+        }
+        st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
+        st.lastError = gitErr.message;
+        st.phase = 'AWAITING_COMMIT_CHOICE';
+        await this.configStore.saveState();
+        await this.telegram.sendMessage({
+          chatId,
+          text: `❌ <b>Git commit/push failed during fix:</b>\n<code>${escapeHtml(gitErr.message)}</code>`
+        });
+        await this.sendCommitPrompt(chatId, ws, deltas);
+        return;
+      }
+
+      st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
+      st.pendingDeltas = [];
+      st.lastError = null;
+
+      const commitLines = commits.map(
+        (c) =>
+          `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+      );
+
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `✅ <b>Auto-committed &amp; pushed fix for Jenkins build failure</b>\n\n` +
+          `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
+          commitLines.join('\n')
+      });
+
+      const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
+      const allWsTargets = this.buildAllWorkspaceTargets(ws, commits);
+
+      if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+        st.phase = 'AWAITING_OK_OR_REVERT';
+        await this.configStore.saveState();
+        await this.sendIsItOkayPrompt(
+          chatId,
+          ws,
+          'ℹ️ No Jenkins job is mapped for the modified repository.'
+        );
+        return;
+      }
+
+      st.phase = 'AWAITING_JENKINS_CHOICE';
+      await this.configStore.saveState();
+      await this.sendRunJenkinsPrompt(chatId, ws, matchedTargets, { isAfterRevert: false });
       return;
     }
 
@@ -2485,24 +2599,14 @@ export class BotController {
 
       st.phase = 'AWAITING_OK_OR_REVERT';
       st.lastError = failedBuild.errorLog;
+      if (st.activeTurn) {
+        st.activeTurn.lastFailedJob = failedBuild.jobName;
+        st.activeTurn.lastFailedBuildNumber = failedBuild.buildNumber;
+        st.activeTurn.lastFailedBuild = failedBuild;
+      }
       await this.configStore.saveState();
 
-      await this.telegram.sendMessage({
-        chatId,
-        text:
-          `❌ <b>Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
-          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
-          `<b>Revert commit as bad or retry Jenkins?</b>`,
-        replyMarkup: {
-          inline_keyboard: [
-            [
-              { text: '↩️ Revert (Mark Bad)', callback_data: `ok:rev:${ws.id}` },
-              { text: '🔄 Retry Jenkins', callback_data: `jnk:yes:${ws.id}` }
-            ],
-            [{ text: '✅ Keep Commit Anyway', callback_data: `ok:yes:${ws.id}` }]
-          ]
-        }
-      });
+      await this.sendJenkinsFailurePrompt(chatId, ws, failedBuild);
       return;
     }
 
@@ -2561,6 +2665,29 @@ export class BotController {
     );
   }
 
+  async sendJenkinsFailurePrompt(chatId, ws, failedBuild) {
+    const logSnippet = truncateText(failedBuild?.errorLog || 'No console output available.', 2600);
+    const jobTitle = failedBuild?.jobName
+      ? `<code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result || 'FAILURE')})`
+      : 'Build failed';
+
+    await this.telegram.sendMessage({
+      chatId,
+      text:
+        `❌ <b>Jenkins Build Failed:</b> ${jobTitle}\n\n` +
+        `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+        `<b>Revert commit or fix error with AI?</b>`,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` },
+            { text: '🔧 Fix Error', callback_data: `fix:err:${ws.id}` }
+          ]
+        ]
+      }
+    });
+  }
+
   // ── STEP 4: Is It Okay? -> Yes (Prod / Skip Prod) / Revert ─────────────────
   async sendIsItOkayPrompt(chatId, ws, prefixHtml = '') {
     const st = this.configStore.getWorkspaceState(ws.id);
@@ -2589,7 +2716,7 @@ export class BotController {
             [{ text: '🚀 Yes, deploy on prod', callback_data: `ok:prod:${ws.id}` }],
             [
               { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
-              { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
+              { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
             ]
           ]
         }
@@ -2604,7 +2731,7 @@ export class BotController {
         inline_keyboard: [
           [
             { text: '✅ Yes (Confirm)', callback_data: `ok:yes:${ws.id}` },
-            { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
+            { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
           ]
         ]
       }
@@ -2620,6 +2747,16 @@ export class BotController {
 
     if (st.phase !== 'AWAITING_OK_OR_REVERT') {
       await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+      return;
+    }
+
+    if (st.lastError && (!st.activeTurn?.prodBuilds || st.activeTurn.prodBuilds.length === 0)) {
+      await this.sendJenkinsFailurePrompt(chatId, ws, st.activeTurn?.lastFailedBuild || {
+        jobName: st.activeTurn?.lastFailedJob || '',
+        buildNumber: st.activeTurn?.lastFailedBuildNumber,
+        result: 'FAILURE',
+        errorLog: st.lastError
+      });
       return;
     }
 
@@ -2780,7 +2917,7 @@ export class BotController {
             [{ text: '🔄 Retry Prod Deploy', callback_data: `ok:prod:${ws.id}` }],
             [
               { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
-              { text: '↩️ Revert (Bad Commit)', callback_data: `ok:rev:${ws.id}` }
+              { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
             ]
           ]
         }
@@ -2883,10 +3020,11 @@ export class BotController {
         return;
       }
 
-      // Ask: "Run Jenkins? -> Yes / No"
-      st.phase = 'AWAITING_REVERT_JENKINS_CHOICE';
-      await this.configStore.saveState();
-      await this.sendRunJenkinsPrompt(chatId, ws, matchedRevTargets, { isAfterRevert: true });
+      // Automatically trigger rollback Jenkins deploy without asking intermediate confirmation
+      await this.handleRunJenkinsChoice(chatId, ws.id, true, {
+        isAfterRevert: true,
+        mode: matchedRevTargets.length > 0 ? 'matched' : 'all'
+      });
     } catch (revErr) {
       st.lastError = revErr.message;
       await this.configStore.saveState();
@@ -2898,6 +3036,83 @@ export class BotController {
         }
       });
     }
+  }
+
+  async handleFixJenkinsError(chatId, wsId) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const st = this.configStore.getWorkspaceState(ws.id);
+
+    if (st.phase !== 'AWAITING_OK_OR_REVERT') {
+      await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+      return;
+    }
+
+    const errorLog =
+      st.lastError || st.activeTurn?.lastFailedBuild?.errorLog || 'Jenkins build failed';
+    const failedJob = st.activeTurn?.lastFailedJob || '';
+    const failedBuildNumber = st.activeTurn?.lastFailedBuildNumber;
+    const failedJobStr = failedJob
+      ? `${failedJob}${failedBuildNumber ? ` #${failedBuildNumber}` : ''}`
+      : 'Jenkins build';
+
+    const fixPrompt =
+      `The Jenkins CI build failed with the following error log:\n\n` +
+      `Job: ${failedJobStr}\n` +
+      `Error:\n` +
+      `\`\`\`\n${errorLog}\n\`\`\`\n\n` +
+      `Please investigate the error log above, identify the bug or missing/mismatched type/dependency/syntax/configuration, and fix the codebase to resolve this build error.`;
+
+    const baselineSnapshots = await snapshotWorkspaceRepos(ws.repos || []);
+    st.baselineSnapshots = baselineSnapshots;
+    st.phase = 'RUNNING_AGENT';
+    st.lastError = null;
+
+    if (!st.activeTurn) {
+      st.activeTurn = {
+        id: `turn_${Date.now()}`,
+        createdAt: this.nowProvider().toISOString(),
+        prompt: fixPrompt,
+        commits: []
+      };
+    } else {
+      st.activeTurn.fixPrompt = fixPrompt;
+    }
+    await this.configStore.saveState();
+
+    const statusMsg = await this.telegram.sendMessage({
+      chatId,
+      text:
+        `🔧 <b>Fixing Jenkins build error with AI…</b>\n` +
+        `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+        `<i>Analyzing failure log and applying fixes…</i>`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+      }
+    });
+
+    this.#trackAsync(
+      this.#executeAgentTurn(chatId, ws, st, [], statusMsg?.message_id, {
+        promptOverride: fixPrompt,
+        isAutoCommitFix: true,
+        originalErrorLog: errorLog
+      }).catch(async (err) => {
+        st.phase = 'AWAITING_OK_OR_REVERT';
+        st.lastError = err.message;
+        await this.configStore.saveState();
+        await this.telegram.sendMessage({
+          chatId,
+          text: `❌ Error fixing Jenkins error with agent: ${escapeHtml(err.message)}`
+        });
+        await this.sendJenkinsFailurePrompt(chatId, ws, {
+          jobName: failedJob,
+          buildNumber: failedBuildNumber,
+          result: 'ERROR',
+          errorLog: err.message
+        });
+      })
+    );
   }
 
   /**
@@ -2955,7 +3170,16 @@ export class BotController {
         });
         break;
       case 'AWAITING_OK_OR_REVERT':
-        await this.sendIsItOkayPrompt(chatId, ws, bannerHtml);
+        if (st.lastError && (!st.activeTurn?.prodBuilds || st.activeTurn.prodBuilds.length === 0)) {
+          await this.sendJenkinsFailurePrompt(chatId, ws, st.activeTurn?.lastFailedBuild || {
+            jobName: st.activeTurn?.lastFailedJob || '',
+            buildNumber: st.activeTurn?.lastFailedBuildNumber,
+            result: 'FAILURE',
+            errorLog: st.lastError
+          });
+        } else {
+          await this.sendIsItOkayPrompt(chatId, ws, bannerHtml);
+        }
         break;
       case 'AWAITING_REVERT_JENKINS_CHOICE': {
         if (bannerHtml) {

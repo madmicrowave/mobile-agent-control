@@ -1260,14 +1260,23 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(failMsg.text, /ERROR in src\/app\.js:1:23 Unexpected token ;/);
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
 
+    const failButtons = (failMsg.reply_markup?.inline_keyboard || [])
+      .flat()
+      .map((b) => ({ text: b.text, data: b.callback_data }));
+    assert.deepEqual(failButtons, [
+      { text: '↩️ Revert', data: 'ok:rev:payments' },
+      { text: '🔧 Fix Error', data: 'fix:err:payments' }
+    ]);
+
+    mockJenkins.setNextOutcome('SUCCESS', 'Redeployed reverted master cleanly!\nFinished: SUCCESS');
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ok:rev:payments', failMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
     assert.ok(!mockTg.sentMessages.some((m) => /Last action:/.test(m.text)));
     assert.ok(
       mockTg.sentMessages.some((m) => /Reverted last commit\(s\) as bad/.test(m.text))
     );
-    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_REVERT_JENKINS_CHOICE');
-    assert.match(mockTg.lastSent().text, /Run Jenkins to deploy reverted commit\(s\)\?/);
 
     const { stdout: lastSubject } = await runGit(coreRepo.cloneDir, ['log', '-1', '--pretty=%s']);
     assert.match(lastSubject.trim(), /^Revert ".*" \(bad commit\)$/);
@@ -1280,13 +1289,101 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const { stdout: remoteHead } = await runGit(coreRepo.bareDir, ['rev-parse', 'master']);
     assert.equal(localHead.trim(), remoteHead.trim());
 
-    mockJenkins.setNextOutcome('SUCCESS', 'Redeployed reverted master cleanly!\nFinished: SUCCESS');
-    mockTg.clearSent();
-    await controller.handleUpdate(makeCallback('rjnk:yes:payments'));
-    await controller.waitForBackgroundTasks();
-
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
     assert.match(mockTg.lastSent().text, /Rollback Jenkins Deploy Succeeded!/);
+  });
+
+  it('handles Fix Error flow on Jenkins failure with AI auto-commit and prompt to deploy', async () => {
+    // 1) Agent makes a breaking change
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(
+        path.join(coreRepo.cloneDir, 'src', 'app.js'),
+        'export const brokenSyntax = ;\n',
+        'utf8'
+      );
+      return {
+        conversationId: 'conv-fix-error-test',
+        response: 'Introduced syntax error.'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Introduce syntax error in payments'));
+    await controller.waitForBackgroundTasks();
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+
+    // 2) Jenkins fails with compilation error
+    const buildErrorLog = 'Compiling...\nSyntaxError: Unexpected token ;\nat src/app.js:1:30\nFinished: FAILURE';
+    mockJenkins.setNextOutcome('FAILURE', buildErrorLog);
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('jnk:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    const failMsg = mockTg.lastSent();
+    assert.match(failMsg.text, /Jenkins Build Failed/);
+    assert.match(failMsg.text, /SyntaxError: Unexpected token ;/);
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+
+    const failButtons = (failMsg.reply_markup?.inline_keyboard || [])
+      .flat()
+      .map((b) => ({ text: b.text, data: b.callback_data }));
+    assert.deepEqual(failButtons, [
+      { text: '↩️ Revert', data: 'ok:rev:payments' },
+      { text: '🔧 Fix Error', data: 'fix:err:payments' }
+    ]);
+
+    // 3) User clicks "Fix Error" -> Agent receives error log and applies fix
+    let receivedPrompt = '';
+    nextAgentBehavior = async (args) => {
+      receivedPrompt = args.prompt || '';
+      await fsp.writeFile(
+        path.join(coreRepo.cloneDir, 'src', 'app.js'),
+        'export const fixedSyntax = true;\n',
+        'utf8'
+      );
+      return {
+        conversationId: 'conv-fix-error-test',
+        response: 'Fixed syntax error in src/app.js.'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('fix:err:payments', failMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
+    // Verify agent received the failure log
+    assert.match(receivedPrompt, /SyntaxError: Unexpected token ;/);
+
+    // Verify AI auto-committed and pushed the fix
+    assert.ok(mockTg.sentMessages.some((m) => /Auto-committed &amp; pushed fix for Jenkins build failure/.test(m.text)));
+
+    // Verify phase transitioned to AWAITING_JENKINS_CHOICE with "Run Jenkins deploy?" prompt
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+    const deployPrompt = mockTg.lastSent();
+    assert.match(deployPrompt.text, /Run Jenkins deploy\?/);
+    const deployButtons = (deployPrompt.reply_markup?.inline_keyboard || [])
+      .flat()
+      .map((b) => b.callback_data);
+    assert.ok(deployButtons.includes('jnk:yes:payments'));
+    assert.ok(deployButtons.includes('jnk:no:payments'));
+
+    // 4) User clicks Run Jenkins -> Succeeds
+    mockJenkins.setNextOutcome('SUCCESS', 'Build succeeded cleanly!\nFinished: SUCCESS');
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('jnk:yes:payments', deployPrompt.message_id));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+    assert.match(mockTg.lastSent().text, /Is it okay\?/);
+
+    // 5) Confirm changes -> phase becomes IDLE
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+    assert.match(mockTg.lastSent().text, /Confirmed changes/);
   });
 
   it('locks down Telegram settings to AI models only, runs add-ide & update-jenkins in console, and preserves pending state across IDE switches', async () => {
@@ -1737,7 +1834,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       );
       assert.ok(
         okBtns.some(
-          (b) => b.callback_data === 'ok:rev:payments' && /Revert \(Bad Commit\)/i.test(b.text)
+          (b) => b.callback_data === 'ok:rev:payments' && /Revert/i.test(b.text)
         )
       );
 
