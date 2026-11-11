@@ -482,6 +482,8 @@ export class ConfigStore {
         wsState.lastError = 'Bot restarted during rollback Jenkins build. Choose whether to re-run Jenkins.';
       } else if (wsState.phase === 'AWAITING_DECISION') {
         wsState.phase = 'AWAITING_OK_OR_REVERT';
+      } else if (wsState.phase === 'AWAITING_FIX_PROMPT') {
+        wsState.phase = 'AWAITING_COMMIT_CHOICE';
       }
 
       if (

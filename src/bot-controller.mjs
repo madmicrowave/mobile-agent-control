@@ -502,6 +502,32 @@ export class BotController {
       return;
     }
 
+    // ── Add Fix Prompt Input (during AWAITING_FIX_PROMPT) ────────────────────
+    if (st.phase === 'AWAITING_FIX_PROMPT') {
+      const incomingAttachment = this.extractIncomingAttachment(msg);
+      if (incomingAttachment) {
+        try {
+          const saved = await this.downloadAttachment(incomingAttachment, ws.id);
+          if (saved && st.pendingPhotos.length < MAX_FILES_PER_TURN) {
+            st.pendingPhotos.push(saved);
+            await this.configStore.saveState();
+          }
+        } catch {}
+      }
+      if (!text && st.pendingPhotos.length === 0) {
+        await this.telegram.sendMessage({
+          chatId,
+          text: `➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
+          replyMarkup: {
+            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+          }
+        });
+        return;
+      }
+      await this.handleFixPromptSubmitted(chatId, ws, text);
+      return;
+    }
+
     // ── Block new agent messages if workspace is awaiting a step decision ────
     if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
       if (this.#shouldSuppressDuplicateGateNotice(ws.id, msg.media_group_id)) {
@@ -1039,6 +1065,13 @@ export class BotController {
         const wsId = data.slice('cmt:br:'.length);
         await this.telegram.clearInlineButtons(chatId, messageId);
         await this.promptForCustomBranch(chatId, wsId);
+        return;
+      }
+
+      if (data.startsWith('cmt:fix:')) {
+        const wsId = data.slice('cmt:fix:'.length);
+        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.promptForAddFix(chatId, wsId);
         return;
       }
 
@@ -1647,7 +1680,7 @@ export class BotController {
   }
 
   // ── STEP 1: Run Antigravity Agent (Text + Up to 5 File/Photo Attachments) ──
-  async startAgentTurn(chatId, ws, promptText, { extraNotice = '' } = {}) {
+  async startAgentTurn(chatId, ws, promptText, { extraNotice = '', isAddFix = false } = {}) {
     const st = this.configStore.getWorkspaceState(ws.id);
     const allQueuedFiles = [...(st.pendingPhotos || [])];
     const attachedPhotos = allQueuedFiles.slice(0, MAX_FILES_PER_TURN);
@@ -1662,24 +1695,37 @@ export class BotController {
       return;
     }
 
-    const baselineSnapshots = await snapshotWorkspaceRepos(ws.repos || []);
-    const turnId = `turn-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    if (!isAddFix || !st.baselineSnapshots) {
+      const baselineSnapshots = await snapshotWorkspaceRepos(ws.repos || []);
+      st.baselineSnapshots = baselineSnapshots;
+    }
+
+    const turnId = isAddFix && st.activeTurn?.id
+      ? st.activeTurn.id
+      : `turn-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
 
     st.phase = 'RUNNING_AGENT';
     st.lastError = null;
-    st.baselineSnapshots = baselineSnapshots;
     st.pendingDeltas = [];
-    st.activeTurn = {
-      id: turnId,
-      createdAt: this.nowProvider().toISOString(),
-      prompt: promptText || '(Photo prompt)',
-      photoCount: attachedPhotos.length,
-      agentResponse: '',
-      commits: [],
-      revertCommits: [],
-      builds: [],
-      rollbackBuilds: []
-    };
+
+    if (isAddFix && st.activeTurn) {
+      st.activeTurn.fixPrompt = promptText;
+      if (promptText) {
+        st.activeTurn.prompt = `${st.activeTurn.prompt}\n[Fix]: ${promptText}`;
+      }
+    } else {
+      st.activeTurn = {
+        id: turnId,
+        createdAt: this.nowProvider().toISOString(),
+        prompt: promptText || '(Photo prompt)',
+        photoCount: attachedPhotos.length,
+        agentResponse: '',
+        commits: [],
+        revertCommits: [],
+        builds: [],
+        rollbackBuilds: []
+      };
+    }
 
     st.messages.push({
       role: 'user',
@@ -1700,14 +1746,17 @@ export class BotController {
     const modelInfo = this.resolveWorkspaceModel(ws);
     const statusMsg = await this.telegram.sendMessage({
       chatId,
-      text:
-        `🤖 Antigravity working…\n` +
-        `<b>${escapeHtml(wsLabel)}</b>\n\n` +
-        `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
-        (attachedPhotos.length > 0
-          ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
-          : '') +
-        (combinedNotice ? `\n\n${escapeHtml(combinedNotice)}` : ''),
+      text: isAddFix
+        ? `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}…</b>\n\n` +
+          `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
+          `\n<i>Working on requested fixes in the same process…</i>`
+        : `🤖 Antigravity working…\n` +
+          `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+          `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
+          (attachedPhotos.length > 0
+            ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
+            : '') +
+          (combinedNotice ? `\n\n${escapeHtml(combinedNotice)}` : ''),
       replyMarkup: {
         inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
       }
@@ -1715,15 +1764,29 @@ export class BotController {
 
     // Run asynchronously so the bot keeps responding if the user switches IDEs!
     this.#trackAsync(
-      this.#executeAgentTurn(chatId, ws, st, attachedPhotos, statusMsg?.message_id).catch(
+      this.#executeAgentTurn(chatId, ws, st, attachedPhotos, statusMsg?.message_id, {
+        promptOverride: isAddFix ? promptText : '',
+        isAddFix
+      }).catch(
         async (err) => {
-          st.phase = 'IDLE';
+          st.phase = isAddFix ? 'AWAITING_COMMIT_CHOICE' : 'IDLE';
           st.lastError = err.message || String(err);
           await this.configStore.saveState();
           await this.telegram.sendMessage({
             chatId,
             text: `❌ Unexpected error in <b>${escapeHtml(wsLabel)}</b>: ${escapeHtml(st.lastError)}`
           });
+          if (isAddFix) {
+            const deltas = [];
+            for (const repo of ws.repos || []) {
+              const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
+              if (delta.changedFiles.length > 0 || delta.headAdvanced) {
+                deltas.push(delta);
+              }
+            }
+            st.pendingDeltas = deltas;
+            await this.sendCommitPrompt(chatId, ws, deltas);
+          }
         }
       )
     );
@@ -1735,7 +1798,7 @@ export class BotController {
     st,
     attachedPhotos,
     statusMessageId,
-    { promptOverride = '', isAutoCommitFix = false, originalErrorLog = '' } = {}
+    { promptOverride = '', isAutoCommitFix = false, isAddFix = false, originalErrorLog = '' } = {}
   ) {
     let lastProgressEditMs = 0;
 
@@ -1852,24 +1915,47 @@ export class BotController {
       if (statusMessageId) {
         await this.telegram.clearInlineButtons(chatId, statusMessageId);
       }
-      for (const repo of ws.repos || []) {
-        await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
-      }
-      st.phase = 'IDLE';
-      st.activeTurn = null;
-      st.baselineSnapshots = null;
-      st.pendingDeltas = [];
-      st.lastError = agentErr.message;
-      await this.configStore.saveState();
+      if (!isAddFix) {
+        for (const repo of ws.repos || []) {
+          await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
+        }
+        st.phase = 'IDLE';
+        st.activeTurn = null;
+        st.baselineSnapshots = null;
+        st.pendingDeltas = [];
+        st.lastError = agentErr.message;
+        await this.configStore.saveState();
 
-      await this.telegram.sendMessage({
-        chatId,
-        text:
-          `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
-          `${escapeHtml(agentErr.message)}\n\n` +
-          `Uncommitted edits from this run were cleaned up. Ready for your next message.`,
-        replyMarkup: MAIN_REPLY_KEYBOARD
-      });
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
+            `${escapeHtml(agentErr.message)}\n\n` +
+            `Uncommitted edits from this run were cleaned up. Ready for your next message.`,
+          replyMarkup: MAIN_REPLY_KEYBOARD
+        });
+      } else {
+        st.phase = 'AWAITING_COMMIT_CHOICE';
+        st.lastError = agentErr.message;
+        await this.configStore.saveState();
+
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Agent stopped/failed while applying fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
+            `${escapeHtml(agentErr.message)}\n\n` +
+            `Existing uncommitted edits are preserved.`
+        });
+        const deltas = [];
+        for (const repo of ws.repos || []) {
+          const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
+          if (delta.changedFiles.length > 0 || delta.headAdvanced) {
+            deltas.push(delta);
+          }
+        }
+        st.pendingDeltas = deltas;
+        await this.sendCommitPrompt(chatId, ws, deltas);
+      }
       return;
     }
 
@@ -2047,7 +2133,10 @@ export class BotController {
             { text: `✅ Yes (${defaultBranches})`, callback_data: `cmt:yes:${ws.id}` },
             { text: '🌿 Custom Branch', callback_data: `cmt:br:${ws.id}` }
           ],
-          [{ text: '❌ No (Discard Changes)', callback_data: `cmt:no:${ws.id}` }]
+          [
+            { text: '➕ Add Fix', callback_data: `cmt:fix:${ws.id}` },
+            { text: '❌ No (Discard Changes)', callback_data: `cmt:no:${ws.id}` }
+          ]
         ]
       }
     });
@@ -2060,7 +2149,11 @@ export class BotController {
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
-    if (st.phase !== 'AWAITING_COMMIT_CHOICE' && st.phase !== 'AWAITING_CUSTOM_BRANCH') {
+    if (
+      st.phase !== 'AWAITING_COMMIT_CHOICE' &&
+      st.phase !== 'AWAITING_CUSTOM_BRANCH' &&
+      st.phase !== 'AWAITING_FIX_PROMPT'
+    ) {
       await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
       return;
     }
@@ -2095,6 +2188,43 @@ export class BotController {
         `Ready for your next message!`,
       replyMarkup: MAIN_REPLY_KEYBOARD
     });
+  }
+
+  async promptForAddFix(chatId, wsId) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const st = this.configStore.getWorkspaceState(ws.id);
+
+    if (st.phase !== 'AWAITING_COMMIT_CHOICE') {
+      await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+      return;
+    }
+
+    st.phase = 'AWAITING_FIX_PROMPT';
+    await this.configStore.saveState();
+
+    await this.telegram.sendMessage({
+      chatId,
+      text:
+        `➕ <b>Add Fix in ${escapeHtml(wsLabel)}</b>\n\n` +
+        `Reply with what to fix or modify in the current process (your uncommitted changes are preserved):`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+      }
+    });
+  }
+
+  async handleFixPromptSubmitted(chatId, ws, promptText) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const st = this.configStore.getWorkspaceState(ws.id);
+
+    if (st.phase !== 'AWAITING_FIX_PROMPT') {
+      await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+      return;
+    }
+
+    await this.startAgentTurn(chatId, ws, promptText, { isAddFix: true });
   }
 
   async promptForCustomBranch(chatId, wsId) {
@@ -2144,7 +2274,11 @@ export class BotController {
     if (!ws) return;
     const st = this.configStore.getWorkspaceState(ws.id);
 
-    if (st.phase !== 'AWAITING_COMMIT_CHOICE' && st.phase !== 'AWAITING_CUSTOM_BRANCH') {
+    if (
+      st.phase !== 'AWAITING_COMMIT_CHOICE' &&
+      st.phase !== 'AWAITING_CUSTOM_BRANCH' &&
+      st.phase !== 'AWAITING_FIX_PROMPT'
+    ) {
       await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
       return;
     }
@@ -3143,6 +3277,15 @@ export class BotController {
         await this.telegram.sendMessage({
           chatId,
           text: `${prefix}🌿 Reply with the custom branch name for <b>${escapeHtml(wsLabel)}</b>:`,
+          replyMarkup: {
+            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+          }
+        });
+        break;
+      case 'AWAITING_FIX_PROMPT':
+        await this.telegram.sendMessage({
+          chatId,
+          text: `${prefix}➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }

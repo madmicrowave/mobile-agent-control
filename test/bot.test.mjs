@@ -1115,6 +1115,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const commitCbs = commitAsk.reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
     assert.ok(commitCbs.includes('cmt:yes:payments'));
     assert.ok(commitCbs.includes('cmt:br:payments'));
+    assert.ok(commitCbs.includes('cmt:fix:payments'));
     assert.ok(commitCbs.includes('cmt:no:payments'));
 
     mockTg.clearSent();
@@ -1133,6 +1134,98 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await assert.rejects(() => fsp.access(path.join(coreRepo.cloneDir, 'src', 'photo-widget.js')));
     assert.equal(await fsp.readFile(manualWipFile, 'utf8'), 'keep my manual notes\n');
     await fsp.rm(manualWipFile, { force: true });
+  });
+
+  it('supports Add Fix in commit prompt to provide follow-up fix in the same process', async () => {
+    // 1) Initial agent turn: creates src/first-fix.js
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(
+        path.join(coreRepo.cloneDir, 'src', 'first-fix.js'),
+        'export const step1 = true;\n',
+        'utf8'
+      );
+      return {
+        conversationId: 'conv-add-fix-proc',
+        response: 'Created first-fix.js'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Create step 1'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    const commitAsk = mockTg.lastSent();
+    assert.match(commitAsk.text, /Commit &amp; push these changes\?/);
+    assert.match(commitAsk.text, /src\/first-fix\.js/);
+
+    const commitButtons = commitAsk.reply_markup.inline_keyboard.flat();
+    const fixBtn = commitButtons.find((b) => b.callback_data === 'cmt:fix:payments');
+    assert.ok(fixBtn, '➕ Add Fix button must be present in commit prompt');
+    assert.match(fixBtn.text, /Add Fix/);
+
+    // 2) User taps ➕ Add Fix -> must ask for fix prompt
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:fix:payments', commitAsk.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_FIX_PROMPT');
+    assert.match(mockTg.lastSent().text, /Add Fix in/);
+    assert.match(mockTg.lastSent().text, /Reply with what to fix or modify in the current process/);
+
+    // 2b) Test back button works: ↩️ Back to Commit Options returns to AWAITING_COMMIT_CHOICE
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:back:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    assert.match(mockTg.lastSent().text, /Commit &amp; push these changes\?/);
+
+    // Click ➕ Add Fix again to proceed
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:fix:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_FIX_PROMPT');
+
+    // 3) User replies with fix message -> agent runs in same process and creates src/second-fix.js
+    let fixCalledOpts = null;
+    nextAgentBehavior = async (opts) => {
+      fixCalledOpts = opts;
+      await fsp.writeFile(
+        path.join(coreRepo.cloneDir, 'src', 'second-fix.js'),
+        'export const step2 = true;\n',
+        'utf8'
+      );
+      return {
+        conversationId: 'conv-add-fix-proc',
+        response: 'Added second-fix.js in same process'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Also create step 2'));
+    await controller.waitForBackgroundTasks();
+
+    // Verify same conversation ID and prompt passed
+    assert.equal(fixCalledOpts.conversationId, 'conv-add-fix-proc');
+    assert.equal(fixCalledOpts.prompt, 'Also create step 2');
+
+    // 4) Verify commit prompt reappears showing BOTH uncommitted changes
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    const updatedCommitAsk = mockTg.lastSent();
+    assert.match(updatedCommitAsk.text, /Commit &amp; push these changes\?/);
+    assert.match(updatedCommitAsk.text, /src\/first-fix\.js/);
+    assert.match(updatedCommitAsk.text, /src\/second-fix\.js/);
+
+    // 5) Commit both changes together
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+
+    // Verify both files committed in single git commit
+    const { stdout: filesOut } = await runGit(coreRepo.cloneDir, ['show', '--name-only', '--pretty=']);
+    assert.match(filesOut, /src\/first-fix\.js/);
+    assert.match(filesOut, /src\/second-fix\.js/);
+
+    // Cleanup: skip Jenkins and confirm
+    await controller.handleUpdate(makeCallback('jnk:no:payments'));
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 
   it('commits & pushes to a Custom Branch, triggers Jenkins with VERSION=<branch>, and confirms Is it okay -> Yes', async () => {
