@@ -189,7 +189,7 @@ let macBannerHTML = """
     line-height: 1;
     display: inline-flex;
     align-items: center;
-    transform: translateY(-0.5px);
+    transform: translateY(-4.5px);
   }
   .mac-badge-lg .mac-text {
     line-height: 1;
@@ -262,7 +262,7 @@ let macBannerHTML = """
     margin-right: 2px;
     display: inline-flex;
     align-items: center;
-    transform: translateY(-0.5px);
+    transform: translateY(-1.5px);
   }
   .strip-caption {
     display: flex;
@@ -638,7 +638,7 @@ let macBannerHTML = """
         <div class="macos-menubar">
           <div class="menubar-left">
             <strong></strong>
-            <strong><small style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px; display: inline-flex; align-items: center; transform: translateY(-0.5px);">AI</small>MAC</strong>
+            <strong><small style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px; display: inline-flex; align-items: center; transform: translateY(-1.5px);">AI</small>MAC</strong>
             <span>File</span>
             <span>Edit</span>
           </div>
@@ -656,7 +656,7 @@ let macBannerHTML = """
       <div class="steps-grid">
         <div class="step-box">
           <h4>1. Open mac.app</h4>
-          <p>Lives next to clock as <b><small style="font-size: 0.75em; color: #38bdf8; display: inline-flex; align-items: center; transform: translateY(-0.5px);">AI</small> MAC</b>; Open App appears in Dock.</p>
+          <p>Lives next to clock as <b><small style="font-size: 0.75em; color: #38bdf8; display: inline-flex; align-items: center; transform: translateY(-1.5px);">AI</small> MAC</b>; Open App appears in Dock.</p>
         </div>
         <div class="step-box">
           <h4>2. Add Workspaces</h4>
@@ -697,10 +697,10 @@ let macBannerHTML = """
               <div class="tg-header">
                 <div class="tg-back">‹</div>
                 <div class="tg-title-pill">
-                  <div class="name">Mobile Agent Control (<small style="font-size:0.75em;color:#38bdf8;display:inline-flex;align-items:center;transform:translateY(-0.5px);">AI</small> MAC)</div>
+                  <div class="name">Mobile Agent Control (<small style="font-size:0.75em;color:#38bdf8;display:inline-flex;align-items:center;transform:translateY(-1.5px);">AI</small> MAC)</div>
                   <div class="sub">bot</div>
                 </div>
-                <div class="tg-avatar"><small style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;display:inline-flex;align-items:center;transform:translateY(-0.5px);">AI</small>M</div>
+                <div class="tg-avatar"><small style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;display:inline-flex;align-items:center;transform:translateY(-1.2px);">AI</small>M</div>
               </div>
             </div>
 
