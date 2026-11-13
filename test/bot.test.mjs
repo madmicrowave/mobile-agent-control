@@ -1292,6 +1292,70 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('chat:new:payments'));
   });
 
+  it('reloads settings without duplicating on double-click/refresh, and cleans up between workspaces and settings menus', async () => {
+    // 1. Initial invocation of /settings
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeUserMsg('/settings'));
+    const firstSettings = mockTg.lastSent();
+    assert.match(firstSettings.text, /AI Model Settings/);
+    const firstSettingsMsgId = firstSettings.message_id;
+    assert.ok(firstSettingsMsgId);
+
+    // 2. Double-click or click "⚙️ Settings" again while already in settings -> must delete previous settings message and reload cleanly (no duplicates)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SETTINGS));
+    const secondSettings = mockTg.lastSent();
+    assert.match(secondSettings.text, /AI Model Settings/);
+    const secondSettingsMsgId = secondSettings.message_id;
+    assert.notEqual(firstSettingsMsgId, secondSettingsMsgId);
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === firstSettingsMsgId),
+      'Expected first settings message to be deleted on refresh'
+    );
+
+    // 3. Click "🔀 Workspace" while in Settings -> must delete the settings message and display workspaces
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE));
+    const wsMenu = mockTg.lastSent();
+    assert.match(wsMenu.text, /Select a Workspace/);
+    const wsMenuMsgId = wsMenu.message_id;
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === secondSettingsMsgId),
+      'Expected settings message to be deleted when switching to Workspaces'
+    );
+
+    // 4. Click "⚙️ Settings" while in Workspaces -> must delete the workspace message and display settings
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SETTINGS));
+    const thirdSettings = mockTg.lastSent();
+    assert.match(thirdSettings.text, /AI Model Settings/);
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === wsMenuMsgId),
+      'Expected workspace menu to be deleted when switching to Settings'
+    );
+
+    // 5. Rapid repeated clicks on Workspaces -> serialized by lock, leaves only 1 active workspace menu
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await Promise.all([
+      controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE)),
+      controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE)),
+      controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE))
+    ]);
+    const wsSent = mockTg.sentMessages.filter((m) => /Select a Workspace/.test(m.text));
+    assert.equal(wsSent.length, 3);
+    // The first 2 menus sent during the 3 rapid clicks must have been deleted
+    assert.ok(mockTg.deletedMessages.some((d) => d.messageId === wsSent[0].message_id));
+    assert.ok(mockTg.deletedMessages.some((d) => d.messageId === wsSent[1].message_id));
+    // The final menu must NOT be deleted
+    assert.ok(!mockTg.deletedMessages.some((d) => d.messageId === wsSent[2].message_id));
+
+    // Reset back to workspace
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+  });
+
   it('handles photo + text prompt, lists changed files, and discards cleanly on Commit -> No', async () => {
     const manualWipFile = path.join(coreRepo.cloneDir, 'manual-wip.txt');
     await fsp.writeFile(manualWipFile, 'keep my manual notes\n', 'utf8');

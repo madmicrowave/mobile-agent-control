@@ -701,7 +701,9 @@ export class ConfigStore {
         inputTargetWsId: null,
         currentView: null,
         lastWorkspaceMenuMessageId: null,
-        lastWorkspaceMenuChatId: null
+        lastWorkspaceMenuChatId: null,
+        lastSettingsMenuMessageId: null,
+        lastSettingsMenuChatId: null
       };
     }
     const sess = this.state.userSessions[key];
@@ -736,6 +738,8 @@ export class ConfigStore {
     sess.currentView = null;
     sess.lastWorkspaceMenuMessageId = null;
     sess.lastWorkspaceMenuChatId = null;
+    sess.lastSettingsMenuMessageId = null;
+    sess.lastSettingsMenuChatId = null;
   }
 
   verifyPassword(candidate) {

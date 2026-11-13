@@ -111,6 +111,12 @@ export class BotController {
     /** @type {Map<string, { messageId: number, userId: string | number }>} */
     this.lastWorkspaceMenuByChat = new Map();
 
+    /** @type {Map<string, { messageId: number, userId: string | number }>} */
+    this.lastSettingsMenuByChat = new Map();
+
+    /** @type {Map<string, Promise<unknown>>} */
+    this.menuDispatchLocks = new Map();
+
     /** @type {Set<Promise<unknown>>} */
     this.activePromises = new Set();
   }
@@ -126,6 +132,25 @@ export class BotController {
   async waitForBackgroundTasks() {
     while (this.activePromises.size > 0) {
       await Promise.allSettled([...this.activePromises]);
+    }
+  }
+
+  async runWithMenuLock(chatId, task) {
+    const key = String(chatId);
+    const prev = this.menuDispatchLocks.get(key) || Promise.resolve();
+    let release;
+    const current = new Promise((resolve) => {
+      release = resolve;
+    });
+    this.menuDispatchLocks.set(key, prev.then(() => current));
+    try {
+      await prev;
+      return await task();
+    } finally {
+      release();
+      if (this.menuDispatchLocks.get(key) === current) {
+        this.menuDispatchLocks.delete(key);
+      }
     }
   }
 
@@ -418,6 +443,7 @@ export class BotController {
     if (text === '/lock') {
       this.configStore.lockUser(userId);
       this.lastWorkspaceMenuByChat.delete(chatId);
+      this.lastSettingsMenuByChat.delete(chatId);
       await this.configStore.saveState();
       await this.telegram.sendMessage({
         chatId,
@@ -458,6 +484,8 @@ export class BotController {
       sess.currentView = 'MODEL';
       sess.lastWorkspaceMenuMessageId = null;
       this.lastWorkspaceMenuByChat.delete(chatId);
+      sess.lastSettingsMenuMessageId = null;
+      this.lastSettingsMenuByChat.delete(chatId);
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
         await this.sendSettingsAndRegisterMenu(chatId, userId);
         return;
@@ -482,6 +510,8 @@ export class BotController {
       sess.currentView = 'HISTORY';
       sess.lastWorkspaceMenuMessageId = null;
       this.lastWorkspaceMenuByChat.delete(chatId);
+      sess.lastSettingsMenuMessageId = null;
+      this.lastSettingsMenuByChat.delete(chatId);
       await this.sendLatestMessagesForWorkspace(chatId, sess.selectedWorkspaceId);
       return;
     }
@@ -494,6 +524,8 @@ export class BotController {
       sess.currentView = 'NEW_CHAT';
       sess.lastWorkspaceMenuMessageId = null;
       this.lastWorkspaceMenuByChat.delete(chatId);
+      sess.lastSettingsMenuMessageId = null;
+      this.lastSettingsMenuByChat.delete(chatId);
       await this.activateNewChat(chatId, sess.selectedWorkspaceId);
       return;
     }
@@ -507,6 +539,8 @@ export class BotController {
     sess.currentView = 'CHAT';
     sess.lastWorkspaceMenuMessageId = null;
     this.lastWorkspaceMenuByChat.delete(chatId);
+    sess.lastSettingsMenuMessageId = null;
+    this.lastSettingsMenuByChat.delete(chatId);
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
@@ -1235,106 +1269,164 @@ export class BotController {
 
   // ── Menus: Select / Switch Workspaces & Per-Workspace AI Model Settings ────
   async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select a Workspace:</b>') {
-    const sess = this.configStore.getUserSession(userId);
+    return this.runWithMenuLock(chatId, async () => {
+      const sess = this.configStore.getUserSession(userId);
 
-    const prevMenuMessageId =
-      sess.lastWorkspaceMenuMessageId || this.lastWorkspaceMenuByChat.get(chatId)?.messageId;
-    const isAlreadyInWorkspaces = sess.currentView === 'WORKSPACES' && Boolean(prevMenuMessageId);
-
-    if (isAlreadyInWorkspaces) {
-      const delChatId = sess.lastWorkspaceMenuChatId || chatId;
-      sess.lastWorkspaceMenuMessageId = null;
-      this.lastWorkspaceMenuByChat.delete(chatId);
-      try {
-        await this.telegram.deleteMessage(delChatId, prevMenuMessageId);
-      } catch {
-        // Ignore if already deleted or expired
+      // Clean up any existing Settings menu when switching to Workspaces
+      const prevSettingsMessageId =
+        sess.lastSettingsMenuMessageId || this.lastSettingsMenuByChat.get(chatId)?.messageId;
+      if (prevSettingsMessageId) {
+        const delSettingsChatId = sess.lastSettingsMenuChatId || chatId;
+        sess.lastSettingsMenuMessageId = null;
+        sess.lastSettingsMenuChatId = null;
+        this.lastSettingsMenuByChat.delete(chatId);
+        try {
+          await this.telegram.deleteMessage(delSettingsChatId, prevSettingsMessageId);
+        } catch {
+          // Ignore if already deleted or expired
+        }
       }
-    }
 
-    const rows = [];
-    const workspaces = this.configStore.config.workspaces || [];
+      const prevMenuMessageId =
+        sess.lastWorkspaceMenuMessageId || this.lastWorkspaceMenuByChat.get(chatId)?.messageId;
+      const isAlreadyInWorkspaces = sess.currentView === 'WORKSPACES' && Boolean(prevMenuMessageId);
 
-    for (let i = 0; i < workspaces.length; i += 2) {
-      const row = [];
-      for (const ws of workspaces.slice(i, i + 2)) {
-        const st = this.configStore.getWorkspaceState(ws.id);
-        const activeMark = sess.selectedWorkspaceId === ws.id ? ' •' : '';
-        const wsLabel = this.getWorkspaceLabel(ws);
-        row.push({
-          text: `${phaseIcon(st.phase)} ${wsLabel}${activeMark}`,
-          callback_data: `ide:sel:${ws.id}`
-        });
+      if (isAlreadyInWorkspaces) {
+        const delChatId = sess.lastWorkspaceMenuChatId || chatId;
+        sess.lastWorkspaceMenuMessageId = null;
+        sess.lastWorkspaceMenuChatId = null;
+        this.lastWorkspaceMenuByChat.delete(chatId);
+        try {
+          await this.telegram.deleteMessage(delChatId, prevMenuMessageId);
+        } catch {
+          // Ignore if already deleted or expired
+        }
       }
-      rows.push(row);
-    }
 
-    const settingsBtn = { text: '⚙️ Settings', callback_data: 'cfg:menu' };
-    if (rows.length > 0 && rows[rows.length - 1].length === 1) {
-      rows[rows.length - 1].push(settingsBtn);
-    } else {
-      rows.push([settingsBtn]);
-    }
+      const rows = [];
+      const workspaces = this.configStore.config.workspaces || [];
 
-    const sent = await this.telegram.sendMessage({
-      chatId,
-      text:
-        workspaces.length > 0
-          ? `${heading}\n\n🟢 <i>Ready</i>\n⏳ <i>Running</i>\n🟣 <i>Waiting for your Yes/No</i>`
-          : `No Workspaces configured yet.\n\nOpen <b>MAC → Settings</b> in your macOS menu bar to add a Workspace.`,
-      replyMarkup: { inline_keyboard: rows }
+      for (let i = 0; i < workspaces.length; i += 2) {
+        const row = [];
+        for (const ws of workspaces.slice(i, i + 2)) {
+          const st = this.configStore.getWorkspaceState(ws.id);
+          const activeMark = sess.selectedWorkspaceId === ws.id ? ' •' : '';
+          const wsLabel = this.getWorkspaceLabel(ws);
+          row.push({
+            text: `${phaseIcon(st.phase)} ${wsLabel}${activeMark}`,
+            callback_data: `ide:sel:${ws.id}`
+          });
+        }
+        rows.push(row);
+      }
+
+      const settingsBtn = { text: '⚙️ Settings', callback_data: 'cfg:menu' };
+      if (rows.length > 0 && rows[rows.length - 1].length === 1) {
+        rows[rows.length - 1].push(settingsBtn);
+      } else {
+        rows.push([settingsBtn]);
+      }
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          workspaces.length > 0
+            ? `${heading}\n\n🟢 <i>Ready</i>\n⏳ <i>Running</i>\n🟣 <i>Waiting for your Yes/No</i>`
+            : `No Workspaces configured yet.\n\nOpen <b>MAC → Settings</b> in your macOS menu bar to add a Workspace.`,
+        replyMarkup: { inline_keyboard: rows }
+      });
+
+      if (sent?.message_id) {
+        sess.currentView = 'WORKSPACES';
+        sess.lastWorkspaceMenuMessageId = sent.message_id;
+        sess.lastWorkspaceMenuChatId = chatId;
+        this.lastWorkspaceMenuByChat.set(chatId, { messageId: sent.message_id, userId });
+        await this.configStore.saveState();
+      }
     });
-
-    if (sent?.message_id) {
-      sess.currentView = 'WORKSPACES';
-      sess.lastWorkspaceMenuMessageId = sent.message_id;
-      sess.lastWorkspaceMenuChatId = chatId;
-      this.lastWorkspaceMenuByChat.set(chatId, { messageId: sent.message_id, userId });
-      await this.configStore.saveState();
-    }
   }
 
   async sendSettingsAndRegisterMenu(chatId, userId) {
-    const sess = this.configStore.getUserSession(userId);
-    sess.currentView = 'SETTINGS';
-    sess.lastWorkspaceMenuMessageId = null;
-    this.lastWorkspaceMenuByChat.delete(chatId);
-    const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
-    const allWorkspaces = this.configStore.config.workspaces || [];
+    return this.runWithMenuLock(chatId, async () => {
+      const sess = this.configStore.getUserSession(userId);
 
-    const rows = [];
-
-    // Dedicated AI Model configuration button for EACH configured Workspace
-    for (const item of allWorkspaces) {
-      const mInfo = this.resolveWorkspaceModel(item);
-      const activeBadge = ws && ws.id === item.id ? ' •' : '';
-      const itemLabel = this.getWorkspaceLabel(item);
-      rows.push([
-        {
-          text: `🧠 ${itemLabel}${activeBadge}: ${mInfo.displayLabel}`,
-          callback_data: `ide:cfg:${item.id}`
+      // Clean up any existing Workspace menu when switching to Settings
+      const prevWorkspaceMessageId =
+        sess.lastWorkspaceMenuMessageId || this.lastWorkspaceMenuByChat.get(chatId)?.messageId;
+      if (prevWorkspaceMessageId) {
+        const delWorkspaceChatId = sess.lastWorkspaceMenuChatId || chatId;
+        sess.lastWorkspaceMenuMessageId = null;
+        sess.lastWorkspaceMenuChatId = null;
+        this.lastWorkspaceMenuByChat.delete(chatId);
+        try {
+          await this.telegram.deleteMessage(delWorkspaceChatId, prevWorkspaceMessageId);
+        } catch {
+          // Ignore if already deleted or expired
         }
-      ]);
-    }
+      }
 
-    const ideModelsSummary =
-      allWorkspaces.length > 0
-        ? allWorkspaces
-            .map((item) => {
-              const mInfo = this.resolveWorkspaceModel(item);
-              const activeTag = ws && ws.id === item.id ? ' <i>(active)</i>' : '';
-              const itemLabel = this.getWorkspaceLabel(item);
-              return `  • <code>${escapeHtml(itemLabel)}</code> → <code>${escapeHtml(mInfo.displayLabel)}</code>${activeTag}`;
-            })
-            .join('\n')
-        : '  <i>(No Workspaces configured — open <b>MAC → Settings</b> in your macOS menu bar)</i>';
+      // If already in SETTINGS or previous settings menu exists, delete it so we reload without duplicates
+      const prevSettingsMessageId =
+        sess.lastSettingsMenuMessageId || this.lastSettingsMenuByChat.get(chatId)?.messageId;
+      const isAlreadyInSettings = sess.currentView === 'SETTINGS' && Boolean(prevSettingsMessageId);
 
-    await this.telegram.sendMessage({
-      chatId,
-      text:
-        `⚙️ <b>AI Model Settings</b>\n\n` +
-        `Select a Workspace below to change its AI model:\n\n${ideModelsSummary}`,
-      replyMarkup: { inline_keyboard: rows }
+      if (isAlreadyInSettings || prevSettingsMessageId) {
+        const delSettingsChatId = sess.lastSettingsMenuChatId || chatId;
+        sess.lastSettingsMenuMessageId = null;
+        sess.lastSettingsMenuChatId = null;
+        this.lastSettingsMenuByChat.delete(chatId);
+        try {
+          await this.telegram.deleteMessage(delSettingsChatId, prevSettingsMessageId);
+        } catch {
+          // Ignore if already deleted or expired
+        }
+      }
+
+      const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
+      const allWorkspaces = this.configStore.config.workspaces || [];
+
+      const rows = [];
+
+      // Dedicated AI Model configuration button for EACH configured Workspace
+      for (const item of allWorkspaces) {
+        const mInfo = this.resolveWorkspaceModel(item);
+        const activeBadge = ws && ws.id === item.id ? ' •' : '';
+        const itemLabel = this.getWorkspaceLabel(item);
+        rows.push([
+          {
+            text: `🧠 ${itemLabel}${activeBadge}: ${mInfo.displayLabel}`,
+            callback_data: `ide:cfg:${item.id}`
+          }
+        ]);
+      }
+
+      const ideModelsSummary =
+        allWorkspaces.length > 0
+          ? allWorkspaces
+              .map((item) => {
+                const mInfo = this.resolveWorkspaceModel(item);
+                const activeTag = ws && ws.id === item.id ? ' <i>(active)</i>' : '';
+                const itemLabel = this.getWorkspaceLabel(item);
+                return `  • <code>${escapeHtml(itemLabel)}</code> → <code>${escapeHtml(mInfo.displayLabel)}</code>${activeTag}`;
+              })
+              .join('\n')
+          : '  <i>(No Workspaces configured — open <b>MAC → Settings</b> in your macOS menu bar)</i>';
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `⚙️ <b>AI Model Settings</b>\n\n` +
+          `Select a Workspace below to change its AI model:\n\n${ideModelsSummary}`,
+        replyMarkup: { inline_keyboard: rows }
+      });
+
+      if (sent?.message_id) {
+        sess.currentView = 'SETTINGS';
+        sess.lastSettingsMenuMessageId = sent.message_id;
+        sess.lastSettingsMenuChatId = chatId;
+        this.lastSettingsMenuByChat.set(chatId, { messageId: sent.message_id, userId });
+        await this.configStore.saveState();
+      }
     });
   }
 
