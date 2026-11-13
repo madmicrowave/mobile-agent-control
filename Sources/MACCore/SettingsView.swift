@@ -2592,7 +2592,7 @@ private struct WorkspaceEditorFormView: View {
                                     }
 
                                     HStack(spacing: 8) {
-                                        TextField("Branch (default = current)", text: $repo.branch)
+                                        TextField("master (default)", text: $repo.branch)
                                             .textFieldStyle(.roundedBorder)
                                             .frame(width: 155)
 
