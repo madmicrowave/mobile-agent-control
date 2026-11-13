@@ -15,6 +15,8 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         MACModelOption(id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tiered: true),
         MACModelOption(id: "gemini-4-argon", label: "Gemini 4 Argon", tiered: true),
         MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true),
+        MACModelOption(id: "google-cloud-code", label: "Google Cloud Code", tiered: true),
+        MACModelOption(id: "openai-codex", label: "OpenAI Codex", tiered: false),
         MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true),
         MACModelOption(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", tiered: true),
         MACModelOption(id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet", tiered: false),

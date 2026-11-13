@@ -288,8 +288,14 @@ export function runDirectApiTurn({
           { role: 'system', content: systemPrompt },
           ...history
         ];
+        let effectiveModel = model || (provider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o');
+        if (effectiveModel.includes('codex')) {
+          effectiveModel = 'gpt-4o'; // OpenAI primary coding agent model
+        } else if (effectiveModel.includes('cloud-code') || effectiveModel.includes('cloudcode')) {
+          effectiveModel = 'gemini-2.0-flash';
+        }
         reqBody = JSON.stringify({
-          model: model || (provider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o'),
+          model: effectiveModel,
           messages: apiMessages,
           tools: AGENT_TOOLS_SPEC
         });
@@ -593,11 +599,11 @@ export function runUnifiedAgentTurn({
 
   // Determine provider by model identifier
   const isDeepSeek = normModel.includes('deepseek');
-  const isOpenAI = normModel.includes('gpt-') || normModel.includes('o3-mini') || normModel === 'o1';
+  const isOpenAI = normModel.includes('gpt-') || normModel.includes('o3-mini') || normModel === 'o1' || normModel.includes('codex');
   const isAnthropicClaude = normModel.includes('claude-3-') || normModel.includes('claude-3.');
   const isQwen = normModel.includes('qwen');
   const isNativeAgyClaude = normModel.includes('claude-opus-5-5') || normModel.includes('claude-sonnet-5-5');
-  const isGemini = normModel.includes('gemini') || (!isDeepSeek && !isOpenAI && !isAnthropicClaude && !isQwen && !normModel.includes('claude'));
+  const isGemini = normModel.includes('gemini') || normModel.includes('cloud-code') || normModel.includes('cloudcode') || (!isDeepSeek && !isOpenAI && !isAnthropicClaude && !isQwen && !normModel.includes('claude'));
 
   // 1. Explicit Engine Selection
   if (agentEngine === 'aider') {

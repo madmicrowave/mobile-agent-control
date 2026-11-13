@@ -70,6 +70,33 @@ export const GEMINI_MODEL_FAMILIES = [
 export const DEFAULT_AGENT_MODEL_FAMILIES = [
   ...GEMINI_MODEL_FAMILIES,
   {
+    shortCode: 'gcc',
+    family: 'google-cloud-code',
+    label: 'Google Cloud Code',
+    aliases: [
+      'google-cloud-code',
+      'google cloud code',
+      'cloud-code',
+      'cloud code',
+      'cloudcode',
+      'gemini-code-assist'
+    ],
+    tieredLevels: ['low', 'medium', 'high']
+  },
+  {
+    shortCode: 'cdx',
+    family: 'openai-codex',
+    label: 'OpenAI Codex',
+    aliases: [
+      'openai-codex',
+      'openai codex',
+      'codex',
+      'codex-control',
+      'code-davinci'
+    ],
+    tieredLevels: []
+  },
+  {
     shortCode: 'cs55',
     family: 'claude-sonnet-5-5',
     label: 'Claude Sonnet 5.5',
@@ -449,7 +476,14 @@ export function buildAgyArgs({
 
   const resolvedModel = resolveEffectiveModelAndLevel({ model, modelLevel });
   if (resolvedModel.modelId) {
-    args.push('--model', resolvedModel.modelId);
+    let agyModel = resolvedModel.modelId;
+    if (agyModel.startsWith('google-cloud-code')) {
+      const tier = resolvedModel.effort || 'high';
+      agyModel = `gemini-3.8-flash-${tier}`;
+    } else if (agyModel.startsWith('openai-codex')) {
+      agyModel = 'gpt-oss-120b-medium';
+    }
+    args.push('--model', agyModel);
   }
   if (resolvedModel.effort) {
     args.push('--effort', resolvedModel.effort);
