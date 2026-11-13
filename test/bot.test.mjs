@@ -222,6 +222,12 @@ async function startMockTelegramServer() {
     lastSent() {
       return sentMessages[sentMessages.length - 1] || null;
     },
+    lastEdited() {
+      return editedMessages[editedMessages.length - 1] || null;
+    },
+    lastSentOrEdited() {
+      return editedMessages[editedMessages.length - 1] || sentMessages[sentMessages.length - 1] || null;
+    },
     close: () => new Promise((resolve) => server.close(resolve))
   };
 }
@@ -1922,32 +1928,58 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/model'));
-    const cfgMsg = mockTg.lastSent();
-    assert.match(cfgMsg.text, /AI Model:/);
-    assert.match(cfgMsg.text, /Model Level:/);
+    const step1Msg = mockTg.lastSent();
+    assert.match(step1Msg.text, /Step 1 of 2/i);
+    assert.match(step1Msg.text, /AI Engine:/);
+    assert.match(step1Msg.text, /AI Model:/);
+    assert.match(step1Msg.text, /Model Level:/);
 
-    const flatModelBtns = cfgMsg.reply_markup.inline_keyboard.flat();
+    // Step 1: Only configured engines are shown (AGY CLI only in default test environment)
+    const step1Btns = step1Msg.reply_markup.inline_keyboard.flat();
+    const step1Cbs = step1Btns.map((b) => b.callback_data);
+    assert.ok(step1Cbs.includes('eng:payments:agy'));
+    assert.ok(!step1Cbs.includes('eng:payments:aider'));
+    assert.ok(!step1Cbs.includes('eng:payments:codex'));
+    assert.ok(!step1Cbs.includes('eng:payments:cloudcode'));
+    assert.ok(!step1Cbs.includes('eng:payments:direct-api'));
+
+    // Step 1 -> Step 2: Click AGY CLI engine
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:payments:agy', step1Msg.message_id));
+    const step2Msg = mockTg.lastSentOrEdited();
+    assert.match(step2Msg.text, /Step 2 of 2/i);
+    assert.match(step2Msg.text, /AI Engine:/);
+    assert.match(step2Msg.text, /AI Model:/);
+    assert.match(step2Msg.text, /Model Level:/);
+
+    const flatModelBtns = step2Msg.reply_markup.inline_keyboard.flat();
     const cbs = flatModelBtns.map((b) => b.callback_data);
-    // Must include Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Claude Opus 5.5, DeepSeek, OpenAI, Qwen
+    // AGY engine must show ONLY AGY-available models: Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B
     assert.ok(cbs.includes('mdl:f:payments:g38'));
     assert.ok(cbs.includes('mdl:f:payments:g4'));
     assert.ok(cbs.includes('mdl:f:payments:g4c'));
     assert.ok(cbs.includes('mdl:f:payments:co55'));
-    assert.ok(cbs.includes('mdl:f:payments:c37s'));
-    assert.ok(cbs.includes('mdl:f:payments:dsk'));
-    assert.ok(cbs.includes('mdl:f:payments:dsr'));
-    assert.ok(cbs.includes('mdl:f:payments:g4o'));
-    assert.ok(cbs.includes('mdl:f:payments:q25c'));
+    assert.ok(cbs.includes('mdl:f:payments:cs55'));
+    assert.ok(cbs.includes('mdl:f:payments:gpt120'));
+
+    // Non-AGY models (DeepSeek, OpenAI Codex, Qwen, Claude 3.7 direct) must NOT be shown under AGY engine
+    assert.ok(!cbs.includes('mdl:f:payments:dsk'));
+    assert.ok(!cbs.includes('mdl:f:payments:dsr'));
+    assert.ok(!cbs.includes('mdl:f:payments:g4o'));
+    assert.ok(!cbs.includes('mdl:f:payments:cdx'));
+    assert.ok(!cbs.includes('mdl:f:payments:q25c'));
+
     // Must have ONLY 3 levels (low, medium, high) — NO xhigh or max, and NO Custom Model button!
     assert.ok(cbs.includes('mdl:l:payments:low'));
     assert.ok(cbs.includes('mdl:l:payments:medium'));
     assert.ok(cbs.includes('mdl:l:payments:high'));
     assert.ok(!cbs.some((c) => c.endsWith(':xhigh') || c.endsWith(':max')));
     assert.ok(!cbs.some((c) => c.startsWith('mdl:custom:')));
+    assert.ok(cbs.includes('eng:menu:payments')); // Back to Step 1
     assert.ok(cbs.includes('chat:hist:payments'));
     assert.ok(!flatModelBtns.some((b) => /All IDEs/i.test(b.text)));
 
-    const rows = cfgMsg.reply_markup.inline_keyboard;
+    const rows = step2Msg.reply_markup.inline_keyboard;
     const actionRow = rows[rows.length - 2];
     assert.equal(actionRow.length, 2);
     assert.match(actionRow[0].text, /Last Messages/);
@@ -1957,40 +1989,82 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.deepEqual(backRow, [{ text: '< BACK', callback_data: 'cfg:menu' }]);
 
     // Configure `payments` IDE -> Gemini 3.8 Flash (high)
-    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));
-    await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', step2Msg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', step2Msg.message_id));
 
     const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
 
     // Switch `payments` to Gemini 4 Carbon with low, medium, and high levels
-    await controller.handleUpdate(makeCallback('mdl:f:payments:g4c', cfgMsg.message_id));
-    await controller.handleUpdate(makeCallback('mdl:l:payments:low', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g4c', step2Msg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:low', step2Msg.message_id));
     assert.equal(paymentsWs.model, 'gemini-4-carbon-low');
     assert.equal(paymentsWs.modelLevel, 'low');
 
-    await controller.handleUpdate(makeCallback('mdl:l:payments:medium', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:medium', step2Msg.message_id));
     assert.equal(paymentsWs.model, 'gemini-4-carbon-medium');
     assert.equal(paymentsWs.modelLevel, 'medium');
 
-    await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', step2Msg.message_id));
     assert.equal(paymentsWs.model, 'gemini-4-carbon-high');
     assert.equal(paymentsWs.modelLevel, 'high');
 
     // Switch back to Gemini 3.8 Flash (high) for following assertions
-    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', cfgMsg.message_id));
-    await controller.handleUpdate(makeCallback('mdl:l:payments:high', cfgMsg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', step2Msg.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', step2Msg.message_id));
 
-    // Configure `portal` IDE independently -> Claude Opus 5.5 (medium) via Settings -> IDE card
+    // Configure `portal` IDE independently -> Claude Opus 5.5 (medium) via Settings -> IDE card -> Step 1 -> Step 2
+    mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:cfg:portal'));
-    const portalCfgMsg = mockTg.lastSent();
-    await controller.handleUpdate(makeCallback('mdl:f:portal:co55', portalCfgMsg.message_id));
-    await controller.handleUpdate(makeCallback('mdl:l:portal:medium', portalCfgMsg.message_id));
+    const portalStep1 = mockTg.lastSent();
+    assert.match(portalStep1.text, /Step 1/i);
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:portal:agy', portalStep1.message_id));
+    const portalStep2 = mockTg.lastSentOrEdited();
+    assert.match(portalStep2.text, /Step 2/i);
+
+    await controller.handleUpdate(makeCallback('mdl:f:portal:co55', portalStep2.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:portal:medium', portalStep2.message_id));
 
     const portalWs = configStore.config.workspaces.find((w) => w.id === 'portal');
     assert.equal(paymentsWs.model, 'gemini-3.8-flash-high');
     assert.equal(paymentsWs.modelLevel, 'high');
     assert.equal(portalWs.model, 'claude-opus-5-5-medium');
     assert.equal(portalWs.modelLevel, 'medium');
+
+    // Verify navigating back to Step 1 via '↩️ Change Engine' button
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:menu:portal', portalStep2.message_id));
+    const backToStep1 = mockTg.lastSentOrEdited();
+    assert.match(backToStep1.text, /Step 1/i);
+
+    // Verify dynamic engine configuration & filtering: configure OpenAI API Key
+    configStore.config.openaiApiKey = 'sk-test-key-123';
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:menu:payments', step2Msg.message_id));
+    const dynStep1 = mockTg.lastSentOrEdited();
+    const dynStep1Cbs = dynStep1.reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+    assert.ok(dynStep1Cbs.includes('eng:payments:agy'));
+    assert.ok(dynStep1Cbs.includes('eng:payments:direct-api'));
+    assert.ok(!dynStep1Cbs.includes('eng:payments:aider'));
+    assert.ok(!dynStep1Cbs.includes('eng:payments:codex'));
+
+    // Switch to Direct API engine -> Step 2 displays ONLY OpenAI models
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:payments:direct-api', dynStep1.message_id));
+    const directApiStep2 = mockTg.lastSentOrEdited();
+    const directApiCbs = directApiStep2.reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+    assert.ok(directApiCbs.includes('mdl:f:payments:g4o'));
+    assert.ok(directApiCbs.includes('mdl:f:payments:o3m'));
+    assert.ok(directApiCbs.includes('mdl:f:payments:o1'));
+    assert.ok(!directApiCbs.includes('mdl:f:payments:dsk')); // deepseek key not set
+    assert.ok(!directApiCbs.includes('mdl:f:payments:c37s')); // anthropic key not set
+    assert.ok(!directApiCbs.includes('mdl:f:payments:g38')); // agy gemini not in direct-api
+
+    // Clean up direct API key and switch back to AGY engine
+    configStore.config.openaiApiKey = '';
+    await controller.handleUpdate(makeCallback('eng:payments:agy', directApiStep2.message_id));
+    await controller.handleUpdate(makeCallback('mdl:f:payments:g38', directApiStep2.message_id));
+    await controller.handleUpdate(makeCallback('mdl:l:payments:high', directApiStep2.message_id));
 
     nextAgentBehavior = async () => ({
       conversationId: 'conv-model-check',

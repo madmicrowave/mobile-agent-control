@@ -19,9 +19,16 @@ import {
   VALID_MODEL_LEVELS,
   isMissingTrajectoryError,
   resolveEffectiveModelAndLevel,
+  resolveDefaultAgyBin,
   runAgyTurn
 } from './agy-runner.mjs';
-import { runUnifiedAgentTurn } from './agent-runner.mjs';
+import {
+  runUnifiedAgentTurn,
+  isExecutableFile,
+  resolveDefaultAiderBin,
+  resolveDefaultCodexBin,
+  resolveDefaultCloudCodeBin
+} from './agent-runner.mjs';
 import {
   getLatestConversationMessages,
   discoverRecentWorkspaceConversations
@@ -974,7 +981,7 @@ export class BotController {
 
       if (data.startsWith('ide:cfg:')) {
         const wsId = data.slice('ide:cfg:'.length);
-        await this.sendWorkspaceRepoInfo(chatId, wsId);
+        await this.sendWorkspaceEngineSelect(chatId, wsId);
         return;
       }
 
@@ -985,7 +992,12 @@ export class BotController {
       }
 
       if (data.startsWith('eng:')) {
-        const [, wsId, eng] = data.split(':');
+        const parts = data.split(':');
+        if (parts[1] === 'menu' || parts[1] === 'step1') {
+          await this.sendWorkspaceEngineSelect(chatId, parts[2], messageId);
+          return;
+        }
+        const [, wsId, eng] = parts;
         await this.handleUpdateWorkspaceEngine(chatId, wsId, eng, messageId);
         return;
       }
@@ -998,7 +1010,7 @@ export class BotController {
 
       if (data.startsWith('mdl:custom:')) {
         const wsId = data.slice('mdl:custom:'.length);
-        await this.sendWorkspaceRepoInfo(chatId, wsId, messageId);
+        await this.sendWorkspaceEngineSelect(chatId, wsId, messageId);
         return;
       }
 
@@ -1436,65 +1448,222 @@ export class BotController {
     });
   }
 
-  async sendWorkspaceRepoInfo(chatId, wsId, editMessageId = null) {
+  getEngineLabel(engine) {
+    const norm = String(engine || '').toLowerCase();
+    switch (norm) {
+      case 'aider':
+        return 'Aider CLI';
+      case 'codex':
+        return 'OpenAI Codex';
+      case 'cloudcode':
+      case 'cloud-code':
+        return 'Google Cloud Code';
+      case 'direct-api':
+      case 'api':
+        return 'Direct API';
+      case 'agy':
+      default:
+        return 'AGY CLI';
+    }
+  }
+
+  getConfiguredEngines(ws = null) {
+    const list = [];
+    const cfg = this.configStore.config;
+
+    // 1. AGY CLI: configured if binary exists on disk or resolvable
+    const agyBin = cfg.agyBin || resolveDefaultAgyBin();
+    if (isExecutableFile(agyBin) || agyBin === 'agy') {
+      list.push({ id: 'agy', label: 'AGY CLI' });
+    }
+
+    // 2. Aider CLI: configured if binary path is set and executable
+    const aiderCandidate = cfg.aiderBin || resolveDefaultAiderBin();
+    if (aiderCandidate && isExecutableFile(aiderCandidate)) {
+      list.push({ id: 'aider', label: 'Aider CLI' });
+    }
+
+    // 3. OpenAI Codex CLI: configured if binary path is set and executable
+    const codexCandidate = cfg.codexBin || resolveDefaultCodexBin();
+    if (codexCandidate && isExecutableFile(codexCandidate)) {
+      list.push({ id: 'codex', label: 'OpenAI Codex' });
+    }
+
+    // 4. Google Cloud Code CLI: configured if binary path is set and executable
+    const cloudCodeCandidate = cfg.cloudCodeBin || resolveDefaultCloudCodeBin();
+    if (cloudCodeCandidate && isExecutableFile(cloudCodeCandidate)) {
+      list.push({ id: 'cloudcode', label: 'Google Cloud Code' });
+    }
+
+    // 5. Direct API: configured if any API key or custom endpoint is configured
+    const hasDirectApiKey = Boolean(
+      cfg.openaiApiKey ||
+      cfg.anthropicApiKey ||
+      cfg.deepseekApiKey ||
+      cfg.qwenApiKey ||
+      cfg.customApiBaseUrl
+    );
+    if (hasDirectApiKey) {
+      list.push({ id: 'direct-api', label: 'Direct API' });
+    }
+
+    // If workspace already has an engine explicitly set, retain it
+    if (ws?.engine && !list.some((e) => e.id === ws.engine)) {
+      list.push({ id: ws.engine, label: this.getEngineLabel(ws.engine) });
+    }
+
+    // Fallback: If no engine was detected, default to 'agy' so menu is never empty
+    if (list.length === 0) {
+      list.push({ id: 'agy', label: 'AGY CLI' });
+    }
+
+    return list;
+  }
+
+  getAvailableModelsForEngine(engine = 'agy') {
+    const normEngine = String(engine || '').toLowerCase();
+    const cfg = this.configStore.config;
+
+    if (normEngine === 'agy') {
+      const agyFamilies = [
+        ...GEMINI_MODEL_FAMILIES,
+        ...DEFAULT_AGENT_MODEL_FAMILIES.filter(
+          (fam) =>
+            fam.family === 'claude-opus-5-5' ||
+            fam.family === 'claude-sonnet-5-5' ||
+            fam.family === 'gpt-oss-120b-medium'
+        )
+      ];
+      const seen = new Set();
+      return agyFamilies.filter((f) => {
+        if (seen.has(f.shortCode)) return false;
+        seen.add(f.shortCode);
+        return true;
+      });
+    }
+
+    if (normEngine === 'cloudcode' || normEngine === 'cloud-code') {
+      return DEFAULT_AGENT_MODEL_FAMILIES.filter(
+        (fam) =>
+          fam.family === 'google-cloud-code' ||
+          fam.family === 'gemini-3.8-flash' ||
+          fam.family === 'gemini-4-carbon'
+      );
+    }
+
+    if (normEngine === 'codex') {
+      return DEFAULT_AGENT_MODEL_FAMILIES.filter(
+        (fam) =>
+          fam.family === 'openai-codex' ||
+          fam.family === 'gpt-4o' ||
+          fam.family === 'o3-mini' ||
+          fam.family === 'o1'
+      );
+    }
+
+    if (normEngine === 'aider') {
+      const hasSpecificKeys = Boolean(
+        cfg.anthropicApiKey || cfg.openaiApiKey || cfg.deepseekApiKey || cfg.qwenApiKey
+      );
+      if (!hasSpecificKeys) {
+        return DEFAULT_AGENT_MODEL_FAMILIES.filter(
+          (fam) =>
+            fam.family === 'claude-3-7-sonnet' ||
+            fam.family === 'claude-3-5-sonnet' ||
+            fam.family === 'gpt-4o' ||
+            fam.family === 'o3-mini' ||
+            fam.family === 'deepseek-chat' ||
+            fam.family === 'deepseek-reasoner' ||
+            fam.family === 'qwen-2.5-coder-32b'
+        );
+      }
+      return DEFAULT_AGENT_MODEL_FAMILIES.filter((fam) => {
+        if (cfg.anthropicApiKey && fam.family.startsWith('claude-3')) return true;
+        if (
+          cfg.openaiApiKey &&
+          (fam.family.startsWith('gpt-4') || fam.family.startsWith('o3') || fam.family === 'o1')
+        )
+          return true;
+        if (cfg.deepseekApiKey && fam.family.startsWith('deepseek')) return true;
+        if (cfg.qwenApiKey && fam.family.startsWith('qwen')) return true;
+        return false;
+      });
+    }
+
+    if (normEngine === 'direct-api') {
+      const hasAnyKey = Boolean(
+        cfg.deepseekApiKey ||
+        cfg.openaiApiKey ||
+        cfg.anthropicApiKey ||
+        cfg.qwenApiKey ||
+        cfg.customApiBaseUrl
+      );
+      if (!hasAnyKey) {
+        return DEFAULT_AGENT_MODEL_FAMILIES.filter(
+          (fam) =>
+            fam.family.startsWith('deepseek') ||
+            fam.family.startsWith('gpt-4') ||
+            fam.family.startsWith('o3') ||
+            fam.family === 'o1' ||
+            fam.family.startsWith('claude-3') ||
+            fam.family.startsWith('qwen') ||
+            fam.family === 'gpt-oss-120b-medium'
+        );
+      }
+      return DEFAULT_AGENT_MODEL_FAMILIES.filter((fam) => {
+        if (cfg.deepseekApiKey && fam.family.startsWith('deepseek')) return true;
+        if (
+          cfg.openaiApiKey &&
+          (fam.family.startsWith('gpt-4') || fam.family.startsWith('o3') || fam.family === 'o1')
+        )
+          return true;
+        if (cfg.anthropicApiKey && fam.family.startsWith('claude-3')) return true;
+        if (cfg.qwenApiKey && fam.family.startsWith('qwen')) return true;
+        if (cfg.customApiBaseUrl && fam.family === 'gpt-oss-120b-medium') return true;
+        return false;
+      });
+    }
+
+    return [...GEMINI_MODEL_FAMILIES];
+  }
+
+  // ── Step 1: Select AI Execution Engine ─────────────────────────────────────
+  async sendWorkspaceEngineSelect(chatId, wsId, editMessageId = null) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
 
     const wsLabel = this.getWorkspaceLabel(ws);
+    const configuredEngines = this.getConfiguredEngines(ws);
+    let currentEngine = ws.engine || 'agy';
+    if (!configuredEngines.some((e) => e.id === currentEngine)) {
+      currentEngine = configuredEngines[0].id;
+      ws.engine = currentEngine;
+      await this.configStore.saveConfig();
+    }
+    const engineLabel = this.getEngineLabel(currentEngine);
     const modelInfo = this.resolveWorkspaceModel(ws);
 
-    const familyButtons = DEFAULT_AGENT_MODEL_FAMILIES.map((fam) => {
-      const isSelected = modelInfo.family === fam.family;
-      return {
-        text: `${isSelected ? '✅ ' : '🧠 '}${fam.label}`,
-        callback_data: `mdl:f:${ws.id}:${fam.shortCode}`
-      };
+    const engineButtons = configuredEngines.map((eng) => {
+      const isSelected = currentEngine === eng.id;
+      return [
+        {
+          text: `${isSelected ? '✅ ' : '⚡ '}${eng.label}`,
+          callback_data: `eng:${ws.id}:${eng.id}`
+        }
+      ];
     });
-
-    const familyRows = [];
-    for (let i = 0; i < familyButtons.length; i += 2) {
-      familyRows.push(familyButtons.slice(i, i + 2));
-    }
-
-    const levelButtons = VALID_MODEL_LEVELS.map((lvl) => {
-      const isSelected = modelInfo.effort === lvl;
-      return {
-        text: `${isSelected ? '✅ ' : ''}${lvl}`,
-        callback_data: `mdl:l:${ws.id}:${lvl}`
-      };
-    });
-
-    const currentEngine = ws.engine || 'agy';
-    const engineLabel =
-      currentEngine === 'aider'
-        ? 'Aider CLI'
-        : currentEngine === 'codex'
-          ? 'Codex CLI'
-          : currentEngine === 'cloudcode' || currentEngine === 'cloud-code'
-            ? 'Cloud Code'
-            : currentEngine === 'direct-api'
-              ? 'Direct API'
-              : 'AGY CLI';
-
-    const engineRow = [
-      { text: `${currentEngine === 'agy' ? '✅ ' : ''}AGY`, callback_data: `eng:${ws.id}:agy` },
-      { text: `${currentEngine === 'aider' ? '✅ ' : ''}Aider`, callback_data: `eng:${ws.id}:aider` },
-      { text: `${currentEngine === 'codex' ? '✅ ' : ''}Codex`, callback_data: `eng:${ws.id}:codex` },
-      { text: `${currentEngine === 'cloudcode' || currentEngine === 'cloud-code' ? '✅ ' : ''}CloudCode`, callback_data: `eng:${ws.id}:cloudcode` },
-      { text: `${currentEngine === 'direct-api' ? '✅ ' : ''}API`, callback_data: `eng:${ws.id}:direct-api` }
-    ];
 
     const text =
-      `🧠 <b>AI Model & Engine — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `🧠 <b>Select AI Engine — ${escapeHtml(wsLabel)}</b>\n\n` +
       `• <b>AI Engine:</b> <code>${escapeHtml(engineLabel)}</code>\n` +
       `• <b>AI Model:</b> <code>${escapeHtml(modelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
-      `• <b>Model Level:</b> <code>${escapeHtml(modelInfo.effort || 'high')}</code>`;
+      `• <b>Model Level:</b> <code>${escapeHtml(modelInfo.effort || 'high')}</code>\n\n` +
+      `<b>Step 1 of 2: Select AI Engine</b>\n` +
+      `Choose an engine for this workspace:`;
 
     const replyMarkup = {
       inline_keyboard: [
-        engineRow,
-        ...familyRows,
-        levelButtons,
+        ...engineButtons,
         [
           { text: '📜 Last Messages', callback_data: `chat:hist:${ws.id}` },
           { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
@@ -1524,6 +1693,107 @@ export class BotController {
     });
   }
 
+  // ── Step 2: Select AI Model & Level ────────────────────────────────────────
+  async sendWorkspaceModelSelect(chatId, wsId, editMessageId = null) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const configuredEngines = this.getConfiguredEngines(ws);
+    let currentEngine = ws.engine || 'agy';
+    if (!configuredEngines.some((e) => e.id === currentEngine)) {
+      currentEngine = configuredEngines[0].id;
+      ws.engine = currentEngine;
+      await this.configStore.saveConfig();
+    }
+    const engineLabel = this.getEngineLabel(currentEngine);
+    const modelInfo = this.resolveWorkspaceModel(ws);
+
+    const availableFamilies = this.getAvailableModelsForEngine(currentEngine);
+
+    // If current selected family isn't in availableFamilies, reset to first available
+    let activeFamily = modelInfo.family;
+    if (!availableFamilies.some((f) => f.family === activeFamily) && availableFamilies.length > 0) {
+      activeFamily = availableFamilies[0].family;
+      const nextLevel = VALID_MODEL_LEVELS.includes(ws.modelLevel) ? ws.modelLevel : 'high';
+      const resolved = resolveEffectiveModelAndLevel({
+        model: activeFamily,
+        modelLevel: nextLevel
+      });
+      ws.model = resolved.modelId || activeFamily;
+      ws.modelLevel = resolved.effort || nextLevel;
+      await this.configStore.saveConfig();
+    }
+
+    const updatedModelInfo = this.resolveWorkspaceModel(ws);
+
+    const familyButtons = availableFamilies.map((fam) => {
+      const isSelected = updatedModelInfo.family === fam.family;
+      return {
+        text: `${isSelected ? '✅ ' : '🧠 '}${fam.label}`,
+        callback_data: `mdl:f:${ws.id}:${fam.shortCode}`
+      };
+    });
+
+    const familyRows = [];
+    for (let i = 0; i < familyButtons.length; i += 2) {
+      familyRows.push(familyButtons.slice(i, i + 2));
+    }
+
+    const levelButtons = VALID_MODEL_LEVELS.map((lvl) => {
+      const isSelected = updatedModelInfo.effort === lvl;
+      return {
+        text: `${isSelected ? '✅ ' : ''}${lvl.toUpperCase()}`,
+        callback_data: `mdl:l:${ws.id}:${lvl}`
+      };
+    });
+
+    const text =
+      `🧠 <b>Select AI Model & Level — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `• <b>AI Engine:</b> <code>${escapeHtml(engineLabel)}</code>\n` +
+      `• <b>AI Model:</b> <code>${escapeHtml(updatedModelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
+      `• <b>Model Level:</b> <code>${escapeHtml(updatedModelInfo.effort || 'high')}</code>\n\n` +
+      `<b>Step 2 of 2: Select Model & Level</b>\n` +
+      `Choose a model and effort level for <b>${escapeHtml(engineLabel)}</b>:`;
+
+    const replyMarkup = {
+      inline_keyboard: [
+        ...familyRows,
+        levelButtons,
+        [{ text: '↩️ Change Engine', callback_data: `eng:menu:${ws.id}` }],
+        [
+          { text: '📜 Last Messages', callback_data: `chat:hist:${ws.id}` },
+          { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
+        ],
+        [{ text: '< BACK', callback_data: 'cfg:menu' }]
+      ]
+    };
+
+    if (editMessageId) {
+      await this.telegram
+        .editMessageText({
+          chatId,
+          messageId: editMessageId,
+          text,
+          replyMarkup
+        })
+        .catch(async () => {
+          await this.telegram.sendMessage({ chatId, text, replyMarkup });
+        });
+      return;
+    }
+
+    await this.telegram.sendMessage({
+      chatId,
+      text,
+      replyMarkup
+    });
+  }
+
+  async sendWorkspaceRepoInfo(chatId, wsId, editMessageId = null) {
+    return this.sendWorkspaceEngineSelect(chatId, wsId, editMessageId);
+  }
+
   async handleUpdateWorkspaceModelFamily(chatId, wsId, shortCode, editMessageId = null) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
@@ -1542,7 +1812,7 @@ export class BotController {
     ws.model = resolved.modelId || fam.family;
     ws.modelLevel = resolved.effort || nextLevel;
     await this.configStore.saveConfig();
-    await this.sendWorkspaceRepoInfo(chatId, ws.id, editMessageId);
+    await this.sendWorkspaceModelSelect(chatId, ws.id, editMessageId);
   }
 
   async handleUpdateWorkspaceModelLevel(chatId, wsId, level, editMessageId = null) {
@@ -1560,7 +1830,7 @@ export class BotController {
     ws.model = resolved.modelId || baseModel;
     ws.modelLevel = resolved.effort || level;
     await this.configStore.saveConfig();
-    await this.sendWorkspaceRepoInfo(chatId, ws.id, editMessageId);
+    await this.sendWorkspaceModelSelect(chatId, ws.id, editMessageId);
   }
 
   async handleUpdateWorkspaceEngine(chatId, wsId, eng, editMessageId = null) {
@@ -1568,8 +1838,25 @@ export class BotController {
     if (!ws) return;
     const norm = String(eng || '').toLowerCase();
     ws.engine = ['agy', 'aider', 'codex', 'cloudcode', 'direct-api'].includes(norm) ? norm : 'agy';
+
+    // Verify current model is supported by new engine; if not, switch to first available
+    const available = this.getAvailableModelsForEngine(ws.engine);
+    const hasCurrentModel = available.some(
+      (m) => m.family === ws.model || ws.model?.startsWith(m.family)
+    );
+    if (!hasCurrentModel && available.length > 0) {
+      const defaultForEng = available[0];
+      const nextLevel = VALID_MODEL_LEVELS.includes(ws.modelLevel) ? ws.modelLevel : 'high';
+      const resolved = resolveEffectiveModelAndLevel({
+        model: defaultForEng.family,
+        modelLevel: nextLevel
+      });
+      ws.model = resolved.modelId || defaultForEng.family;
+      ws.modelLevel = resolved.effort || nextLevel;
+    }
+
     await this.configStore.saveConfig();
-    await this.sendWorkspaceRepoInfo(chatId, ws.id, editMessageId);
+    await this.sendWorkspaceModelSelect(chatId, ws.id, editMessageId);
   }
 
   async handleSetModelCommand(chatId, wsId, rawArgs) {
