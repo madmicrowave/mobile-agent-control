@@ -134,7 +134,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
 
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
-1. **Click `MAC` Next to Your Clock → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
+1. **Click `MAC` Next to Your Clock → `Settings`** *(shows `mac.app` in your bottom Dock while open)*:
    - In the **`General`** tab (organized into 3 clear cards):
      - **1. AI Engines & Models**:
        - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
@@ -160,7 +160,7 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
-| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Bot Activity**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `MAC` running in the background. |
+| **`Settings`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Bot Activity**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `MAC` running in the background. |
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts outbound Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot process, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and releases the macOS sleep assertion so your Mac sleeps normally again. |
@@ -301,9 +301,9 @@ No. <code>mac.app</code> uses outbound HTTPS long-polling (<code>getUpdates</cod
 </details>
 
 <details>
-<summary><b>What happens when I click <code>Open App</code> vs closing the window with <code>✕</code>?</b></summary>
+<summary><b>What happens when I click <code>Settings</code> vs closing the window with <code>✕</code>?</b></summary>
 <br />
-Clicking <b>Open App</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running next to your macOS clock.
+Clicking <b>Settings</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running next to your macOS clock.
 </details>
 
 <details>

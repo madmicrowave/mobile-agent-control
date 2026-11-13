@@ -201,7 +201,7 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         "Live Bot Activity"
     ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Live Bot Activity")
     expect(appState.selectedTab == .general, "Expected General as default first tab")
-    expect(controller.openAppMenuItem.title == "Open App", "Menu has Open App")
+    expect(controller.openAppMenuItem.title == "Settings", "Menu has Settings")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")
     expect(controller.restartMenuItem.title == "Restart...", "Menu has Restart...")
     expect(controller.stopMenuItem.title == "Stop", "Menu has Stop")
@@ -210,11 +210,11 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(controller.effectiveActivationPolicy == .accessory, "Expected initial effectiveActivationPolicy == .accessory (no Dock icon)")
     expect(NSApp.activationPolicy() == .accessory, "Expected test runner NSApp.activationPolicy() == .accessory")
 
-    // Verify Open App tracks .regular for mac.app while NEVER promoting the bare MACAppTests binary into the macOS Dock!
+    // Verify Settings tracks .regular for mac.app while NEVER promoting the bare MACAppTests binary into the macOS Dock!
     controller.handleOpenAppClicked()
     expect(controller.settingsWindow != nil, "Main app window created")
     expect(controller.settingsWindow?.isVisible == true, "Main app window visible")
-    expect(controller.effectiveActivationPolicy == .regular, "Expected effectiveActivationPolicy == .regular when Open App is active")
+    expect(controller.effectiveActivationPolicy == .regular, "Expected effectiveActivationPolicy == .regular when Settings is active")
     expect(NSApp.activationPolicy() == .accessory, "Bare MACAppTests binary must NEVER appear in the macOS Dock")
     expect(controller.settingsWindow?.level == .normal, "Expected window level == .normal so it behaves as a regular application and goes under when other apps are focused")
     expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected window hidesOnDeactivate == false")

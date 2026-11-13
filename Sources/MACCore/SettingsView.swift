@@ -1815,9 +1815,10 @@ private struct WorkspacesTabView: View {
         let eng = normalized.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         normalized.engine = (eng.isEmpty || eng == "auto") ? "agy" : eng
 
-        let rawSlug = MACPathUtils.slugifyWorkspaceId(
-            normalized.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? normalized.label : normalized.id
-        )
+        let slugSource = !normalized.label.isEmpty
+            ? normalized.label
+            : (!normalized.id.isEmpty ? normalized.id : (normalized.path.isEmpty ? "workspace" : URL(fileURLWithPath: normalized.path).lastPathComponent))
+        let rawSlug = MACPathUtils.slugifyWorkspaceId(slugSource)
         var uniqueId = rawSlug
         var counter = 2
         while appState.config.workspaces.contains(where: { $0.id == uniqueId && $0.id != originalId }) {
@@ -1928,6 +1929,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
     @Published var prodJobInput: String = ""
     @Published var extraDirInput: String = ""
     @Published var showDeleteConfirm: Bool = false
+    @Published var lastSelectedCiProvider: String = "jenkins"
 }
 
 private struct WorkspaceEditorFormView: View {
@@ -1963,11 +1965,29 @@ private struct WorkspaceEditorFormView: View {
 
     private var ciProviderOptions: [MACSegmentedOption<String>] {
         [
-            MACSegmentedOption(id: "none", title: "Git-only", value: "none"),
             MACSegmentedOption(id: "jenkins", title: "Jenkins", value: "jenkins"),
             MACSegmentedOption(id: "github", title: "GitHub", value: "github"),
             MACSegmentedOption(id: "google", title: "Google Cloud", value: "google")
         ]
+    }
+
+    private var isGitOnlyBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: {
+                draft.ciProvider == "none"
+            },
+            set: { isGitOnly in
+                if isGitOnly {
+                    if draft.ciProvider != "none" {
+                        vm.lastSelectedCiProvider = draft.ciProvider
+                    }
+                    draft.ciProvider = "none"
+                } else {
+                    let restore = (vm.lastSelectedCiProvider.isEmpty || vm.lastSelectedCiProvider == "none") ? "jenkins" : vm.lastSelectedCiProvider
+                    draft.ciProvider = restore
+                }
+            }
+        )
     }
 
     private var isCompletelyEmptyUnsaved: Bool {
@@ -1981,31 +2001,20 @@ private struct WorkspaceEditorFormView: View {
             VStack(alignment: .leading, spacing: 14) {
                 // 1. Identity & Paths
                 MACSectionCard(title: "Workspace Name & Paths", systemImage: "folder.fill") {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Workspace Label (shown in Telegram)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("e.g. CRYPTO FUSION", text: $draft.label)
-                                .textFieldStyle(.roundedBorder)
-                                .onChange(of: draft.label) { _, newVal in
-                                    if isNewWorkspace {
-                                        let trimmed = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        draft.id = trimmed.isEmpty ? "" : MACPathUtils.slugifyWorkspaceId(trimmed)
-                                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Workspace Label (shown in Telegram)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("e.g. CRYPTO FUSION", text: $draft.label)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: draft.label) { _, newVal in
+                                let trimmed = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if isNewWorkspace || draft.id.isEmpty {
+                                    draft.id = trimmed.isEmpty ? "" : MACPathUtils.slugifyWorkspaceId(trimmed)
                                 }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Workspace ID")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("e.g. crypto-fusion", text: $draft.id)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        .frame(width: 190, alignment: .leading)
+                            }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Workspace Root Folder Path")
@@ -2020,7 +2029,7 @@ private struct WorkspaceEditorFormView: View {
                                     if draft.label.trimmingCharacters(in: .whitespaces).isEmpty {
                                         let base = URL(fileURLWithPath: chosen).lastPathComponent
                                         draft.label = base.uppercased()
-                                        if isNewWorkspace {
+                                        if isNewWorkspace || draft.id.isEmpty {
                                             draft.id = MACPathUtils.slugifyWorkspaceId(base)
                                         }
                                     }
@@ -2205,17 +2214,31 @@ private struct WorkspaceEditorFormView: View {
 
                 // 3. Environments & CI/CD Deployment
                 MACSectionCard(title: "Environments & CI/CD Deployment", systemImage: "shippingbox.fill") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("CI/CD Provider")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    Toggle("Git-only", isOn: isGitOnlyBinding)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                } content: {
+                    if draft.ciProvider == "none" {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle")
+                                .foregroundColor(.accentColor)
+                            Text("Git-only mode: changes are committed and pushed directly to Git remotes without external CI runner dispatches.")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("CI/CD Provider")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
 
-                        MACSegmentedPicker(options: ciProviderOptions, selection: $draft.ciProvider)
-                            .frame(maxWidth: 520, alignment: .leading)
-                    }
+                            MACSegmentedPicker(options: ciProviderOptions, selection: $draft.ciProvider)
+                                .frame(maxWidth: 420, alignment: .leading)
+                        }
 
-                    if draft.ciProvider != "none" {
                         Divider()
+
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Environment Mode")
                                 .font(.caption)
@@ -2224,7 +2247,6 @@ private struct WorkspaceEditorFormView: View {
                             MACSegmentedPicker(options: envModeOptions, selection: $draft.environmentMode)
                                 .frame(maxWidth: 440, alignment: .leading)
                         }
-                    }
 
                     if draft.ciProvider == "jenkins" {
                         Divider()
@@ -2383,22 +2405,13 @@ private struct WorkspaceEditorFormView: View {
                                 }
                             }
                         }
-                    } else {
-                        Divider()
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle")
-                                .foregroundColor(.accentColor)
-                            Text("Git-only mode: changes are committed and pushed directly to Git remotes without external CI runner dispatches.")
-                                .font(.system(size: 11.5))
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
                     }
                 }
+            }
 
                 // 4. Per-Repository Mapping
                 MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
-                    Button("Re-Scan Folder") {
+                    Button("Re-Scan") {
                         rescanRepos()
                     }
                     .controlSize(.small)
@@ -2557,6 +2570,9 @@ private struct WorkspaceEditorFormView: View {
         vm.selectedModelLevel = norm.level
         draft.model = norm.modelId
         draft.modelLevel = norm.level
+        if draft.ciProvider != "none" && !draft.ciProvider.isEmpty {
+            vm.lastSelectedCiProvider = draft.ciProvider
+        }
     }
 
     private func syncModelFields() {
@@ -2670,7 +2686,7 @@ private struct TutorialTabView: View {
                     ],
                     actionTitle: "Open @BotFather",
                     actionURL: "https://t.me/BotFather",
-                    secondaryTitle: "General",
+                    secondaryTitle: "General →",
                     secondaryAction: { appState.selectedTab = .general }
                 )
 
@@ -2704,7 +2720,7 @@ private struct TutorialTabView: View {
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Workspaces",
+                    secondaryTitle: "Workspaces →",
                     secondaryAction: { appState.selectedTab = .workspaces }
                 )
 
@@ -2714,7 +2730,7 @@ private struct TutorialTabView: View {
                     icon: "menubar.rectangle",
                     accent: .green,
                     bullets: [
-                        "Click the bold 'MAC' badge next to your macOS menu bar clock and choose 'Start...' (or 'Open App' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
+                        "Click the bold 'MAC' badge next to your macOS menu bar clock and choose 'Start...' (or 'Settings' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
                         "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
                         "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live Bot Activity' tab."
                     ],
@@ -2787,8 +2803,10 @@ private struct TutorialTabView: View {
                 Spacer(minLength: 8)
 
                 if let actionTitle = actionTitle, let urlStr = actionURL, let url = URL(string: urlStr) {
-                    Button(actionTitle) {
+                    Button {
                         NSWorkspace.shared.open(url)
+                    } label: {
+                        Label(actionTitle, systemImage: "link")
                     }
                     .controlSize(.small)
                     .fixedSize()
@@ -2875,7 +2893,7 @@ private struct LiveActivityTabView: View {
                     pb.clearContents()
                     pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
                 } label: {
-                    Label("Copy Logs", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
                 .controlSize(.small)
                 .disabled(appState.logLines.isEmpty)
@@ -2884,7 +2902,7 @@ private struct LiveActivityTabView: View {
                 Button {
                     appState.clearLogs()
                 } label: {
-                    Label("Clear Logs", systemImage: "trash")
+                    Label("Clear", systemImage: "trash")
                 }
                 .controlSize(.small)
                 .disabled(appState.logLines.isEmpty)
