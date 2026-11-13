@@ -53,11 +53,11 @@
       <text x="122" y="14" text-anchor="middle" font-size="9.5" font-weight="600" fill="#94a3b8">Subtabs: DeepSeek · OpenAI · Anthropic · Qwen</text>
     </g>
 
-    <text x="18" y="116" font-size="12" fill="#cbd5e1">• Jenkins &amp; 1-Click Connection Test</text>
-    <text x="18" y="138" font-size="12" fill="#cbd5e1">• Telegram Bot Token &amp; Verification</text>
-    <text x="18" y="160" font-size="12" fill="#cbd5e1">• Engine Tabs with Live Checkmarks (✓)</text>
-    <text x="18" y="182" font-size="12" fill="#cbd5e1">• API Key Fields &amp; Local CLI Paths</text>
-    <text x="18" y="204" font-size="12" fill="#cbd5e1">• Global Default Model &amp; Effort Level</text>
+    <text x="18" y="116" font-size="12" fill="#cbd5e1">• 1. AI Engines &amp; Models (Tabs &amp; ✓)</text>
+    <text x="18" y="138" font-size="12" fill="#cbd5e1">• 2. Telegram Bot Token &amp; Verify</text>
+    <text x="18" y="160" font-size="12" fill="#cbd5e1">• 3. Jenkins Server &amp; 1-Click Test</text>
+    <text x="18" y="182" font-size="12" fill="#cbd5e1">• Default Model &amp; CLI/API Keys</text>
+    <text x="18" y="204" font-size="12" fill="#cbd5e1">• Allowed User IDs &amp; History X</text>
     <text x="18" y="226" font-size="12" fill="#cbd5e1">• Login Item &amp; Sleep Assertion</text>
 
     <rect x="16" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>

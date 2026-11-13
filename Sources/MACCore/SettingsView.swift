@@ -446,14 +446,14 @@ private struct GeneralTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // Section 1: Jenkins
-                jenkinsSectionCard
+                // Section 1: AI Engines & Models
+                aiEnginesSectionCard
 
                 // Section 2: Telegram
                 telegramSectionCard
 
-                // Section 3: AI Engines & Models (Option 1: CLI Binaries, Option 2: Direct API Keys)
-                aiEnginesSectionCard
+                // Section 3: Jenkins
+                jenkinsSectionCard
 
                 // Unified Save Row
                 HStack {
@@ -689,55 +689,6 @@ private struct GeneralTabView: View {
             }
             .fixedSize()
         } content: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("AI Engine Tabs")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 6) {
-                    MACEngineTabButton(
-                        title: "AGY CLI",
-                        systemImage: "terminal.fill",
-                        isSelected: vm.selectedEngineTab == "agy",
-                        isConfigured: vm.isAgyConfigured
-                    ) {
-                        vm.selectedEngineTab = "agy"
-                        vm.agentEngine = "agy"
-                    }
-
-                    MACEngineTabButton(
-                        title: "Aider CLI",
-                        systemImage: "chevron.left.forwardslash.chevron.right",
-                        isSelected: vm.selectedEngineTab == "aider",
-                        isConfigured: vm.isAiderConfigured
-                    ) {
-                        vm.selectedEngineTab = "aider"
-                        vm.agentEngine = "aider"
-                    }
-
-                    MACEngineTabButton(
-                        title: "Direct API",
-                        systemImage: "key.fill",
-                        isSelected: vm.selectedEngineTab == "direct-api",
-                        isConfigured: vm.isDirectApiConfigured
-                    ) {
-                        vm.selectedEngineTab = "direct-api"
-                        vm.agentEngine = "direct-api"
-                    }
-                }
-            }
-
-            switch vm.selectedEngineTab {
-            case "agy":
-                agyTabContent
-            case "aider":
-                aiderTabContent
-            default:
-                directApiTabContent
-            }
-
-            Divider()
-
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Default AI Model Family (for new Workspaces)")
@@ -790,6 +741,55 @@ private struct GeneralTabView: View {
                     MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("AI Engine Tabs")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 6) {
+                    MACEngineTabButton(
+                        title: "AGY CLI",
+                        systemImage: "terminal.fill",
+                        isSelected: vm.selectedEngineTab == "agy",
+                        isConfigured: vm.isAgyConfigured
+                    ) {
+                        vm.selectedEngineTab = "agy"
+                        vm.agentEngine = "agy"
+                    }
+
+                    MACEngineTabButton(
+                        title: "Aider CLI",
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        isSelected: vm.selectedEngineTab == "aider",
+                        isConfigured: vm.isAiderConfigured
+                    ) {
+                        vm.selectedEngineTab = "aider"
+                        vm.agentEngine = "aider"
+                    }
+
+                    MACEngineTabButton(
+                        title: "Direct API",
+                        systemImage: "key.fill",
+                        isSelected: vm.selectedEngineTab == "direct-api",
+                        isConfigured: vm.isDirectApiConfigured
+                    ) {
+                        vm.selectedEngineTab = "direct-api"
+                        vm.agentEngine = "direct-api"
+                    }
+                }
+            }
+
+            switch vm.selectedEngineTab {
+            case "agy":
+                agyTabContent
+            case "aider":
+                aiderTabContent
+            default:
+                directApiTabContent
             }
 
             Divider()
