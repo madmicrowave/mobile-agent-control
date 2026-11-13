@@ -542,6 +542,7 @@ export class ConfigStore {
             path: seed.path,
             extraDirs: seed.extraDirs || [],
             liveUrl: seed.liveUrl || '',
+            prodLiveUrl: seed.prodLiveUrl || seed.prodUrl || seed.productionUrl || '',
             environmentMode:
               seed.environmentMode === 'multi' || prodJenkinsJobs.length > 0 ? 'multi' : 'single',
             jenkinsJobs: seed.jenkinsJobs ? [...seed.jenkinsJobs] : [],

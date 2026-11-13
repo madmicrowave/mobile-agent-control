@@ -3019,7 +3019,8 @@ export class BotController {
     const deployHeading = hasProd
       ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
       : '✅ <b>Jenkins Deploy Succeeded!</b>';
-    const liveLinkLine = ws.liveUrl ? `\n\n🌐 Live: ${escapeHtml(ws.liveUrl)}` : '';
+    const liveLinkTitle = hasProd ? '🌐 Staging Live' : '🌐 Live';
+    const liveLinkLine = ws.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(ws.liveUrl)}` : '';
     await this.sendIsItOkayPrompt(
       chatId,
       ws,
@@ -3314,10 +3315,13 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
+    const prodUrl = ws.prodLiveUrl || (ws.environmentMode !== 'multi' ? ws.liveUrl : '');
+    const prodLiveLinkLine = prodUrl ? `\n\n🌐 Production Live: ${escapeHtml(prodUrl)}` : '';
+
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Production Jenkins Deploy Succeeded!</b>\n\n${buildSummary}\n\n` +
+        `✅ <b>Production Jenkins Deploy Succeeded!</b>\n\n${buildSummary}${prodLiveLinkLine}\n\n` +
         `Confirmed &amp; deployed to production in <b>${escapeHtml(wsLabel)}</b>.\n\nReady for your next message!`,
       replyMarkup: MAIN_REPLY_KEYBOARD
     });

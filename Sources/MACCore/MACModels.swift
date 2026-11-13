@@ -139,6 +139,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     public var path: String
     public var extraDirs: [String]
     public var liveUrl: String
+    public var prodLiveUrl: String
     public var model: String
     public var modelLevel: String
     public var engine: String // "agy", "aider", "direct-api"
@@ -159,6 +160,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         path: String = "",
         extraDirs: [String] = [],
         liveUrl: String = "",
+        prodLiveUrl: String = "",
         model: String = "gemini-3.8-flash-high",
         modelLevel: String = "high",
         engine: String = "agy",
@@ -178,6 +180,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.path = path
         self.extraDirs = extraDirs
         self.liveUrl = liveUrl
+        self.prodLiveUrl = prodLiveUrl
         self.model = model
         self.modelLevel = modelLevel
         self.engine = engine.isEmpty ? "agy" : engine
@@ -206,7 +209,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, label, name, path, extraDirs, liveUrl, model, modelLevel, engine, environmentMode
+        case id, label, name, path, extraDirs, liveUrl, prodLiveUrl, model, modelLevel, engine, environmentMode
         case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
         case jenkinsJobs, prodJenkinsJobs, repos
     }
@@ -226,6 +229,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.path = wsPath
         self.extraDirs = try c.decodeIfPresent([String].self, forKey: .extraDirs) ?? []
         self.liveUrl = try c.decodeIfPresent(String.self, forKey: .liveUrl) ?? ""
+        self.prodLiveUrl = try c.decodeIfPresent(String.self, forKey: .prodLiveUrl) ?? ""
         self.model = try c.decodeIfPresent(String.self, forKey: .model) ?? "gemini-3.8-flash-high"
         self.modelLevel = try c.decodeIfPresent(String.self, forKey: .modelLevel) ?? "high"
         let decodedEngine = (try c.decodeIfPresent(String.self, forKey: .engine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -267,6 +271,11 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         try c.encode(path, forKey: .path)
         try c.encode(extraDirs, forKey: .extraDirs)
         try c.encode(liveUrl, forKey: .liveUrl)
+        if environmentMode == "multi" && !prodLiveUrl.isEmpty {
+            try c.encode(prodLiveUrl, forKey: .prodLiveUrl)
+        } else if !prodLiveUrl.isEmpty {
+            try c.encode(prodLiveUrl, forKey: .prodLiveUrl)
+        }
         try c.encode(model, forKey: .model)
         try c.encode(modelLevel, forKey: .modelLevel)
         try c.encode(engine, forKey: .engine)

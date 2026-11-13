@@ -1710,6 +1710,7 @@ private final class WorkspacesTabVM: ObservableObject {
             path: "",
             extraDirs: [],
             liveUrl: "",
+            prodLiveUrl: "",
             model: norm.modelId,
             modelLevel: norm.level,
             environmentMode: "single",
@@ -2240,12 +2241,34 @@ private struct WorkspaceEditorFormView: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Live Staging URL (optional, shown after Jenkins build)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
-                            .textFieldStyle(.roundedBorder)
+                    if draft.environmentMode == "multi" {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Staging URL")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Production URL")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField(text: $draft.prodLiveUrl, prompt: Text(verbatim: "https://example.com")) {}
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Staging URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
                 }
 

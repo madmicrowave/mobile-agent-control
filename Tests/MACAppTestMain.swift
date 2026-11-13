@@ -57,6 +57,7 @@ private func testConfigStoreRoundTrip() throws {
                 path: "/Users/test/code/payment_book",
                 extraDirs: ["/Users/test/code/shared"],
                 liveUrl: "https://staging.payment-book.com",
+                prodLiveUrl: "https://payment-book.com",
                 model: "gemini-3.8-flash-medium",
                 modelLevel: "medium",
                 environmentMode: "multi",
@@ -82,6 +83,7 @@ private func testConfigStoreRoundTrip() throws {
     expect(reloaded.workspaces.count == 1, "Workspace count round-trip")
     expect(reloaded.workspaces[0].environmentMode == "multi", "Multi environment mode preserved")
     expect(reloaded.workspaces[0].prodJenkinsJobs == ["PROD/pb/gate"], "Prod Jenkins jobs preserved")
+    expect(reloaded.workspaces[0].prodLiveUrl == "https://payment-book.com", "Prod Live URL preserved")
     expect(reloaded.workspaces[0].extraDirs == ["/Users/test/code/shared"], "Extra paths preserved")
 
     // Switching to single mode clears prodJenkinsJobs on encode

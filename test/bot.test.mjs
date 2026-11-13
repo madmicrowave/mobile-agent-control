@@ -769,9 +769,10 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
         'My Stack',                   // Workspace display label
         'gemini 3.8',                 // Gemini model
         'high',                       // Model level
-        'https://app.example.com',    // Live URL
+        'https://app.example.com',    // Staging URL
         '-',                          // Extra --add-dir paths
         'multi',                      // Deployment environments: multi (staging + prod)
+        'https://prod.example.com',   // Production URL (optional)
         // Repo 1: api-service
         'y',                          // Include repo?
         '',                           // Repo path (keep default)
@@ -828,6 +829,7 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       assert.equal(ws.model, 'gemini-3.8-flash-high');
       assert.equal(ws.modelLevel, 'high');
       assert.equal(ws.liveUrl, 'https://app.example.com');
+      assert.equal(ws.prodLiveUrl, 'https://prod.example.com');
       assert.equal(ws.environmentMode, 'multi');
       assert.deepEqual(ws.jenkinsJobs, [
         'Staging/MyStack/api-service',

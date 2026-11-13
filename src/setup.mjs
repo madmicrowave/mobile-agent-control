@@ -1041,7 +1041,7 @@ export async function runWorkspacesWizard({
 
     const defaultLiveUrl = existingWs?.liveUrl || 'none';
     const liveUrlAns = (
-      await ask(`Live URL (optional, "-" for none) [${defaultLiveUrl}]: `)
+      await ask(`Staging URL (optional, "-" for none) [${defaultLiveUrl}]: `)
     ).trim();
     const wsLiveUrl =
       liveUrlAns === '-' || liveUrlAns.toLowerCase() === 'none'
@@ -1072,6 +1072,18 @@ export async function runWorkspacesWizard({
       )
     ).trim();
     const wsEnvironmentMode = parseEnvironmentMode(envModeAns, defaultEnvMode);
+
+    let wsProdLiveUrl = '';
+    if (wsEnvironmentMode === 'multi') {
+      const defaultProdLiveUrl = existingWs?.prodLiveUrl || 'none';
+      const prodLiveUrlAns = (
+        await ask(`Production URL (optional, "-" for none) [${defaultProdLiveUrl}]: `)
+      ).trim();
+      wsProdLiveUrl =
+        prodLiveUrlAns === '-' || prodLiveUrlAns.toLowerCase() === 'none'
+          ? ''
+          : prodLiveUrlAns || existingWs?.prodLiveUrl || '';
+    }
 
     log(`\nScanning folders inside ${targetPath} ...`);
     const { gitRepos, nonGitFolders } = await scanWorkspaceDirectoryForSetup(targetPath);
@@ -1294,6 +1306,7 @@ export async function runWorkspacesWizard({
       path: targetPath,
       extraDirs: wsExtraDirs,
       liveUrl: wsLiveUrl,
+      prodLiveUrl: wsEnvironmentMode === 'multi' ? wsProdLiveUrl : '',
       environmentMode: wsEnvironmentMode,
       jenkinsJobs: combinedJenkinsJobs,
       prodJenkinsJobs: wsEnvironmentMode === 'multi' ? combinedProdJenkinsJobs : [],
