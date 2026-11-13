@@ -185,11 +185,9 @@ private struct MACSubtabButton: View {
     }
 }
 
-// MARK: - Live Inline Validation Primitives
+// MARK: - Live Inline Validation Primitives (Errors & Warnings Only)
 
 private enum MACValidationSeverity: Equatable {
-    case info
-    case success
     case warning
     case error
 }
@@ -204,8 +202,6 @@ private struct MACValidationMessage: View {
 
     var iconName: String {
         switch status.severity {
-        case .info: return "info.circle"
-        case .success: return "checkmark.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
         case .error: return "xmark.circle.fill"
         }
@@ -213,8 +209,6 @@ private struct MACValidationMessage: View {
 
     var tintColor: Color {
         switch status.severity {
-        case .info: return .secondary
-        case .success: return .green
         case .warning: return .orange
         case .error: return .red
         }
@@ -245,7 +239,7 @@ private enum MACValidationUtils {
         return nil
     }
 
-    static func validateTelegramToken(_ token: String) -> MACValidationStatus {
+    static func validateTelegramToken(_ token: String) -> MACValidationStatus? {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return MACValidationStatus(message: "Telegram bot token is required to start the bot", severity: .warning)
@@ -254,19 +248,19 @@ private enum MACValidationUtils {
         if parts.count != 2 || Int64(parts[0]) == nil || parts[1].count < 20 {
             return MACValidationStatus(message: "Invalid format (expected <bot_id>:<token>, e.g. 123456789:AAHxId...)", severity: .error)
         }
-        return MACValidationStatus(message: "Token format valid", severity: .success)
+        return nil
     }
 
-    static func validateExecutablePath(_ path: String, binaryName: String) -> MACValidationStatus {
+    static func validateExecutablePath(_ path: String, binaryName: String) -> MACValidationStatus? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return MACValidationStatus(message: "Leave empty if not installed or not configured", severity: .info)
+            return nil
         }
         let expanded = MACPathUtils.expandPath(trimmed)
         var isDir: ObjCBool = false
         if !FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
             if !trimmed.contains("/") && MACPathUtils.findExecutableInPath(trimmed) != nil {
-                return MACValidationStatus(message: "Found '\(trimmed)' in system PATH", severity: .success)
+                return nil
             }
             return MACValidationStatus(message: "File not found on disk at '\(expanded)'", severity: .error)
         }
@@ -276,7 +270,7 @@ private enum MACValidationUtils {
         if !FileManager.default.isExecutableFile(atPath: expanded) {
             return MACValidationStatus(message: "File exists but lacks executable permission (chmod +x required)", severity: .error)
         }
-        return MACValidationStatus(message: "Executable verified on disk", severity: .success)
+        return nil
     }
 
     static func validateWorkspaceLabel(_ label: String) -> MACValidationStatus? {
@@ -287,7 +281,7 @@ private enum MACValidationUtils {
         return nil
     }
 
-    static func validateFolderPath(_ path: String) -> MACValidationStatus {
+    static func validateFolderPath(_ path: String) -> MACValidationStatus? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return MACValidationStatus(message: "Workspace root folder path is required", severity: .error)
@@ -302,7 +296,7 @@ private enum MACValidationUtils {
         }
         let gitDir = URL(fileURLWithPath: expanded).appendingPathComponent(".git").path
         if FileManager.default.fileExists(atPath: gitDir) {
-            return MACValidationStatus(message: "Git repository verified on disk", severity: .success)
+            return nil
         } else {
             return MACValidationStatus(message: "Folder exists, but no .git repository detected", severity: .warning)
         }
@@ -1005,7 +999,9 @@ private struct GeneralTabView: View {
                     .disabled(vm.isVerifyingToken || vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .fixedSize()
                 }
-                MACValidationMessage(status: MACValidationUtils.validateTelegramToken(vm.botToken))
+                if let status = MACValidationUtils.validateTelegramToken(vm.botToken) {
+                    MACValidationMessage(status: status)
+                }
             }
 
             if let msg = vm.tokenCheckMessage {
@@ -1251,7 +1247,9 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
-                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.agyBinPath, binaryName: "agy"))
+                if let status = MACValidationUtils.validateExecutablePath(vm.agyBinPath, binaryName: "agy") {
+                    MACValidationMessage(status: status)
+                }
             }
         }
         .padding(12)
@@ -1292,7 +1290,9 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
-                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.aiderBinPath, binaryName: "aider"))
+                if let status = MACValidationUtils.validateExecutablePath(vm.aiderBinPath, binaryName: "aider") {
+                    MACValidationMessage(status: status)
+                }
             }
         }
         .padding(12)
@@ -1333,7 +1333,9 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
-                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.codexBinPath, binaryName: "codex"))
+                if let status = MACValidationUtils.validateExecutablePath(vm.codexBinPath, binaryName: "codex") {
+                    MACValidationMessage(status: status)
+                }
             }
         }
         .padding(12)
@@ -1374,7 +1376,9 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
-                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.cloudCodeBinPath, binaryName: "cloud-code"))
+                if let status = MACValidationUtils.validateExecutablePath(vm.cloudCodeBinPath, binaryName: "cloud-code") {
+                    MACValidationMessage(status: status)
+                }
             }
         }
         .padding(12)
@@ -2354,7 +2358,9 @@ private struct WorkspaceEditorFormView: View {
                             }
                             .fixedSize()
                         }
-                        MACValidationMessage(status: MACValidationUtils.validateFolderPath(draft.path))
+                        if let status = MACValidationUtils.validateFolderPath(draft.path) {
+                            MACValidationMessage(status: status)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -2890,7 +2896,7 @@ private struct WorkspaceEditorFormView: View {
                     HStack(spacing: 5) {
                         let isLabelEmpty = draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         let isPathEmpty = draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let isFolderError = MACValidationUtils.validateFolderPath(draft.path).severity == .error
+                        let isFolderError = MACValidationUtils.validateFolderPath(draft.path)?.severity == .error
 
                         if isLabelEmpty || isPathEmpty {
                             Image(systemName: "exclamationmark.circle")
