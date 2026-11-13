@@ -1801,7 +1801,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // Also verify per-IDE model screen has NO unregister button and NO Jenkins paths
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:cfg:payments'));
-    const ideModelMsg = mockTg.lastSent();
+    const ideModelMsg = mockTg.lastSentOrEdited();
     const ideModelCallbacks = (ideModelMsg.reply_markup?.inline_keyboard || [])
       .flat()
       .map((b) => b.callback_data);
@@ -2015,7 +2015,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // Configure `portal` IDE independently -> Claude Opus 5.5 (medium) via Settings -> IDE card -> Step 1 -> Step 2
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:cfg:portal'));
-    const portalStep1 = mockTg.lastSent();
+    const portalStep1 = mockTg.lastSentOrEdited();
     assert.match(portalStep1.text, /Step 1/i);
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('eng:portal:agy', portalStep1.message_id));
@@ -2036,6 +2036,15 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('eng:menu:portal', portalStep2.message_id));
     const backToStep1 = mockTg.lastSentOrEdited();
     assert.match(backToStep1.text, /Step 1/i);
+
+    // Verify '< BACK' replaces current message in place and does NOT add a new message
+    mockTg.clearSent();
+    mockTg.editedMessages.length = 0;
+    await controller.handleUpdate(makeCallback('cfg:menu', backToStep1.message_id));
+    assert.equal(mockTg.sentMessages.length, 0, 'Must not send a new message on < BACK');
+    assert.equal(mockTg.editedMessages.length, 1, 'Must replace current message in place on < BACK');
+    const backSettingsMsg = mockTg.lastEdited();
+    assert.match(backSettingsMsg.text, /AI Model Settings/);
 
     // Verify dynamic engine configuration & filtering: configure OpenAI API Key
     configStore.config.openaiApiKey = 'sk-test-key-123';

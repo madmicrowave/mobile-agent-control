@@ -981,7 +981,7 @@ export class BotController {
 
       if (data.startsWith('ide:cfg:')) {
         const wsId = data.slice('ide:cfg:'.length);
-        await this.sendWorkspaceEngineSelect(chatId, wsId);
+        await this.sendWorkspaceEngineSelect(chatId, wsId, messageId);
         return;
       }
 
@@ -1274,7 +1274,7 @@ export class BotController {
       }
 
       if (data === 'cfg:menu') {
-        await this.sendSettingsAndRegisterMenu(chatId, userId);
+        await this.sendSettingsAndRegisterMenu(chatId, userId, messageId);
         return;
       }
     } catch (err) {
@@ -1364,14 +1364,14 @@ export class BotController {
     });
   }
 
-  async sendSettingsAndRegisterMenu(chatId, userId) {
+  async sendSettingsAndRegisterMenu(chatId, userId, editMessageId = null) {
     return this.runWithMenuLock(chatId, async () => {
       const sess = this.configStore.getUserSession(userId);
 
       // Clean up any existing Workspace menu when switching to Settings
       const prevWorkspaceMessageId =
         sess.lastWorkspaceMenuMessageId || this.lastWorkspaceMenuByChat.get(chatId)?.messageId;
-      if (prevWorkspaceMessageId) {
+      if (prevWorkspaceMessageId && prevWorkspaceMessageId !== editMessageId) {
         const delWorkspaceChatId = sess.lastWorkspaceMenuChatId || chatId;
         sess.lastWorkspaceMenuMessageId = null;
         sess.lastWorkspaceMenuChatId = null;
@@ -1388,7 +1388,7 @@ export class BotController {
         sess.lastSettingsMenuMessageId || this.lastSettingsMenuByChat.get(chatId)?.messageId;
       const isAlreadyInSettings = sess.currentView === 'SETTINGS' && Boolean(prevSettingsMessageId);
 
-      if (isAlreadyInSettings || prevSettingsMessageId) {
+      if ((isAlreadyInSettings || prevSettingsMessageId) && prevSettingsMessageId !== editMessageId) {
         const delSettingsChatId = sess.lastSettingsMenuChatId || chatId;
         sess.lastSettingsMenuMessageId = null;
         sess.lastSettingsMenuChatId = null;
@@ -1430,12 +1430,34 @@ export class BotController {
               .join('\n')
           : '  <i>(No Workspaces configured — open <b>MAC → Settings</b> in your macOS menu bar)</i>';
 
+      const text =
+        `⚙️ <b>AI Model Settings</b>\n\n` +
+        `Select a Workspace below to change its AI model:\n\n${ideModelsSummary}`;
+      const replyMarkup = { inline_keyboard: rows };
+
+      if (editMessageId) {
+        try {
+          await this.telegram.editMessageText({
+            chatId,
+            messageId: editMessageId,
+            text,
+            replyMarkup
+          });
+          sess.currentView = 'SETTINGS';
+          sess.lastSettingsMenuMessageId = editMessageId;
+          sess.lastSettingsMenuChatId = chatId;
+          this.lastSettingsMenuByChat.set(chatId, { messageId: editMessageId, userId });
+          await this.configStore.saveState();
+          return;
+        } catch {
+          // Fallback to sendMessage if edit fails
+        }
+      }
+
       const sent = await this.telegram.sendMessage({
         chatId,
-        text:
-          `⚙️ <b>AI Model Settings</b>\n\n` +
-          `Select a Workspace below to change its AI model:\n\n${ideModelsSummary}`,
-        replyMarkup: { inline_keyboard: rows }
+        text,
+        replyMarkup
       });
 
       if (sent?.message_id) {
