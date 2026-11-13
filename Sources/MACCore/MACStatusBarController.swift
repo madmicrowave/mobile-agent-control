@@ -163,7 +163,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
         menu.addItem(.separator())
 
-        quitMenuItem = NSMenuItem(title: "Quit MAC", action: #selector(handleQuitClicked), keyEquivalent: "q")
+        quitMenuItem = NSMenuItem(title: "Quit AI MAC", action: #selector(handleQuitClicked), keyEquivalent: "q")
         quitMenuItem.target = self
         menu.addItem(quitMenuItem)
 
@@ -384,7 +384,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit MAC", action: #selector(handleQuitClicked), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit AI MAC", action: #selector(handleQuitClicked), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu

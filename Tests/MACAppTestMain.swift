@@ -198,8 +198,8 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         "General",
         "Workspaces",
         "Tutorial",
-        "Live App Logs"
-    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Live App Logs")
+        "Live Logs"
+    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Live Logs")
     expect(appState.selectedTab == .general, "Expected General as default first tab")
     expect(controller.openAppMenuItem.title == "Open App", "Menu has Open App")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")

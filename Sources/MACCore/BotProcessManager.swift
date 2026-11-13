@@ -38,7 +38,7 @@ public enum MACSettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case workspaces = "Workspaces"
     case tutorial = "Tutorial"
-    case liveActivity = "Live App Logs"
+    case liveActivity = "Live Logs"
 
     public var id: String { rawValue }
 }

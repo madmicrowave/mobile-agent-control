@@ -185,7 +185,7 @@ private struct MACSubtabButton: View {
     }
 }
 
-// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live App Logs)
+// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live Logs)
 
 public struct MACSettingsRootView: View {
     @ObservedObject public var appState: MACAppState
@@ -255,7 +255,7 @@ public struct MACSettingsRootView: View {
             tabItemButton(.general, title: "General", icon: "gearshape.2.fill")
             tabItemButton(.workspaces, title: "Workspaces", icon: "folder.badge.gearshape")
             tabItemButton(.tutorial, title: "Tutorial", icon: "book.fill")
-            tabItemButton(.liveActivity, title: "Live App Logs", icon: "terminal.fill")
+            tabItemButton(.liveActivity, title: "Live Logs", icon: "terminal.fill")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
@@ -2739,11 +2739,11 @@ private struct TutorialTabView: View {
                     bullets: [
                         "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Open App' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
                         "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
-                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live App Logs' tab."
+                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live Logs' tab."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Live App Logs →",
+                    secondaryTitle: "Live Logs →",
                     secondaryAction: { appState.selectedTab = .liveActivity }
                 )
 
@@ -2870,7 +2870,7 @@ private struct TutorialTabView: View {
     }
 }
 
-// MARK: - Tab 4: Live App Logs (Real-Time Colored Telemetry, Process Loaders & Stages)
+// MARK: - Tab 4: Live Logs (Real-Time Colored Telemetry, Process Loaders & Stages)
 
 private enum MACLogCategory: String, CaseIterable, Identifiable {
     case all = "All"
@@ -3007,7 +3007,7 @@ private struct LiveActivityTabView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.accentColor)
 
-            Text("Live App Logs")
+            Text("Live Logs")
                 .font(.system(size: 14.5, weight: .bold))
 
             Menu {
