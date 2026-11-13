@@ -31,6 +31,34 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         MACModelOption(id: "gpt-oss-120b-medium", label: "GPT-OSS 120B", tiered: false)
     ]
 
+    public static func options(forEngine engine: String) -> [MACModelOption] {
+        let norm = engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch norm {
+        case "agy", "auto", "":
+            return allOptions.filter {
+                ["gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "claude-opus-5-5", "claude-sonnet-5-5"].contains($0.id)
+            }
+        case "cloudcode", "cloud-code":
+            return allOptions.filter {
+                ["google-cloud-code", "gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"].contains($0.id)
+            }
+        case "codex":
+            return allOptions.filter {
+                ["openai-codex", "gpt-4o", "o3-mini", "o1"].contains($0.id)
+            }
+        case "aider":
+            return allOptions.filter {
+                ["claude-3-7-sonnet", "claude-3-5-sonnet", "gpt-4o", "o3-mini", "o1", "deepseek-chat", "deepseek-reasoner", "qwen-2.5-coder-32b"].contains($0.id)
+            }
+        case "direct-api", "api":
+            return allOptions.filter {
+                ["deepseek-chat", "deepseek-reasoner", "gpt-4o", "o3-mini", "o1", "claude-3-7-sonnet", "claude-3-5-sonnet", "qwen-2.5-coder-32b", "qwen-2.5-72b", "gpt-oss-120b-medium"].contains($0.id)
+            }
+        default:
+            return allOptions
+        }
+    }
+
     public static let validLevels: [String] = ["low", "medium", "high"]
 
     public static func normalizeFamilyAndLevel(rawModel: String, rawLevel: String) -> (family: String, level: String, modelId: String, displayLabel: String) {
@@ -514,6 +542,50 @@ public struct MACConfig: Codable, Equatable {
             self.antigravityBrainDir = MACPathUtils.defaultBrainDir()
         } else {
             self.antigravityBrainDir = decodedBrainDir
+        }
+    }
+}
+
+extension MACConfig {
+    public var isAgyConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(agyBin)
+    }
+
+    public var isAiderConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(aiderBin)
+    }
+
+    public var isCodexConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(codexBin)
+    }
+
+    public var isCloudCodeConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(cloudCodeBin)
+    }
+
+    public var isDirectApiConfigured: Bool {
+        !deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !anthropicApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !qwenApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !customApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !customApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public func isEngineConfigured(_ engine: String) -> Bool {
+        switch engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "agy", "auto", "":
+            return isAgyConfigured
+        case "cloudcode", "cloud-code":
+            return isCloudCodeConfigured
+        case "codex":
+            return isCodexConfigured
+        case "aider":
+            return isAiderConfigured
+        case "direct-api", "api":
+            return isDirectApiConfigured
+        default:
+            return true
         }
     }
 }

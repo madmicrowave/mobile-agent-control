@@ -68,6 +68,16 @@ private struct MACSegmentedOption<Value: Equatable>: Identifiable {
     let id: String
     let title: String
     let value: Value
+    var isEnabled: Bool = true
+    var disabledReason: String? = nil
+
+    init(id: String, title: String, value: Value, isEnabled: Bool = true, disabledReason: String? = nil) {
+        self.id = id
+        self.title = title
+        self.value = value
+        self.isEnabled = isEnabled
+        self.disabledReason = disabledReason
+    }
 }
 
 private struct MACSegmentedPicker<Value: Equatable>: View {
@@ -78,23 +88,33 @@ private struct MACSegmentedPicker<Value: Equatable>: View {
         HStack(spacing: 3) {
             ForEach(options) { option in
                 let isSelected = (selection == option.value)
+                let enabled = option.isEnabled
                 Button {
-                    selection = option.value
+                    if enabled {
+                        selection = option.value
+                    }
                 } label: {
-                    Text(option.title)
-                        .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundColor(isSelected ? .white : .primary)
-                        .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(isSelected ? Color.accentColor : Color.clear)
-                        )
-                        .contentShape(Rectangle())
+                    HStack(spacing: 4) {
+                        if !enabled {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 8.5))
+                        }
+                        Text(option.title)
+                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(isSelected ? (enabled ? .white : Color.white.opacity(0.75)) : (enabled ? .primary : Color.secondary.opacity(0.40)))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(isSelected ? (enabled ? Color.accentColor : Color.secondary.opacity(0.35)) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(enabled ? "" : (option.disabledReason ?? "Cannot select until configured in General → AI Engines & Models"))
             }
         }
         .padding(3)
@@ -1960,6 +1980,7 @@ private struct WorkspacesTabView: View {
                     WorkspaceEditorFormView(
                         draft: $vm.entries[idx].draft,
                         isNewWorkspace: entry.isNewUnsaved,
+                        config: appState.config,
                         onAutoSave: {
                             saveWorkspaceEntry(at: idx, silent: true)
                         },
@@ -2245,13 +2266,20 @@ private final class WorkspaceEditorFormVM: ObservableObject {
 private struct WorkspaceEditorFormView: View {
     @Binding var draft: MACWorkspace
     let isNewWorkspace: Bool
+    let config: MACConfig
     let onAutoSave: () -> Void
     let onDelete: (() -> Void)?
 
     @StateObject private var vm = WorkspaceEditorFormVM()
 
+    private var availableModelOptions: [MACModelOption] {
+        MACModelOption.options(forEngine: draft.engine)
+    }
+
     private var selectedModelDisplayTitle: String {
-        MACModelOption.allOptions.first(where: { $0.id == vm.selectedModelFamily })?.label ?? vm.selectedModelFamily
+        availableModelOptions.first(where: { $0.id == vm.selectedModelFamily })?.label
+            ?? MACModelOption.allOptions.first(where: { $0.id == vm.selectedModelFamily })?.label
+            ?? vm.selectedModelFamily
     }
 
     private var levelOptions: [MACSegmentedOption<String>] {
@@ -2260,11 +2288,41 @@ private struct WorkspaceEditorFormView: View {
 
     private var workspaceEngineOptions: [MACSegmentedOption<String>] {
         [
-            MACSegmentedOption(id: "agy", title: "AGY CLI", value: "agy"),
-            MACSegmentedOption(id: "cloudcode", title: "Cloud Code", value: "cloudcode"),
-            MACSegmentedOption(id: "codex", title: "Codex CLI", value: "codex"),
-            MACSegmentedOption(id: "direct-api", title: "Direct API", value: "direct-api"),
-            MACSegmentedOption(id: "aider", title: "Aider CLI", value: "aider")
+            MACSegmentedOption(
+                id: "agy",
+                title: "AGY CLI",
+                value: "agy",
+                isEnabled: config.isAgyConfigured,
+                disabledReason: "Cannot select until AGY CLI is configured in General → AI Engines & Models"
+            ),
+            MACSegmentedOption(
+                id: "cloudcode",
+                title: "Cloud Code",
+                value: "cloudcode",
+                isEnabled: config.isCloudCodeConfigured,
+                disabledReason: "Cannot select until Cloud Code is configured in General → AI Engines & Models"
+            ),
+            MACSegmentedOption(
+                id: "codex",
+                title: "Codex CLI",
+                value: "codex",
+                isEnabled: config.isCodexConfigured,
+                disabledReason: "Cannot select until Codex CLI is configured in General → AI Engines & Models"
+            ),
+            MACSegmentedOption(
+                id: "direct-api",
+                title: "Direct API",
+                value: "direct-api",
+                isEnabled: config.isDirectApiConfigured,
+                disabledReason: "Cannot select until Direct API keys are configured in General → AI Engines & Models"
+            ),
+            MACSegmentedOption(
+                id: "aider",
+                title: "Aider CLI",
+                value: "aider",
+                isEnabled: config.isAiderConfigured,
+                disabledReason: "Cannot select until Aider CLI is configured in General → AI Engines & Models"
+            )
         ]
     }
 
@@ -2492,7 +2550,16 @@ private struct WorkspaceEditorFormView: View {
                                         let eng = draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                                         return (eng.isEmpty || eng == "auto") ? "agy" : eng
                                     },
-                                    set: { draft.engine = $0 }
+                                    set: { newEngine in
+                                        draft.engine = newEngine
+                                        let available = MACModelOption.options(forEngine: newEngine)
+                                        if !available.contains(where: { $0.id == vm.selectedModelFamily }) {
+                                            if let first = available.first {
+                                                vm.selectedModelFamily = first.id
+                                                syncModelFields()
+                                            }
+                                        }
+                                    }
                                 )
                             )
                             .frame(maxWidth: 580, alignment: .leading)
@@ -2502,12 +2569,12 @@ private struct WorkspaceEditorFormView: View {
 
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("AI Model Family")
+                                Text("AI Model")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
 
                                 Menu {
-                                    ForEach(MACModelOption.allOptions) { opt in
+                                    ForEach(availableModelOptions) { opt in
                                         Button {
                                             vm.selectedModelFamily = opt.id
                                             syncModelFields()
@@ -2935,6 +3002,15 @@ private struct WorkspaceEditorFormView: View {
             syncModelFields()
             onAutoSave()
         }
+        .onChange(of: draft.engine) { _, newEngine in
+            let available = MACModelOption.options(forEngine: newEngine)
+            if !available.contains(where: { $0.id == vm.selectedModelFamily }) {
+                if let first = available.first {
+                    vm.selectedModelFamily = first.id
+                    syncModelFields()
+                }
+            }
+        }
         .onChange(of: vm.selectedModelFamily) { _, _ in
             syncModelFields()
             onAutoSave()
@@ -2951,11 +3027,24 @@ private struct WorkspaceEditorFormView: View {
     }
 
     private func loadFromDraft() {
+        let eng = draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var resolvedEngine = (eng.isEmpty || eng == "auto") ? "agy" : eng
+        if draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let firstConfigured = workspaceEngineOptions.first(where: { $0.isEnabled })?.value {
+                resolvedEngine = firstConfigured
+                draft.engine = firstConfigured
+            }
+        }
+        let available = MACModelOption.options(forEngine: resolvedEngine)
+
         let norm = MACModelOption.normalizeFamilyAndLevel(rawModel: draft.model, rawLevel: draft.modelLevel)
-        vm.selectedModelFamily = MACModelOption.allOptions.contains(where: { $0.id == norm.family }) ? norm.family : "gemini-3.8-flash"
+        if available.contains(where: { $0.id == norm.family }) {
+            vm.selectedModelFamily = norm.family
+        } else {
+            vm.selectedModelFamily = available.first?.id ?? "gemini-3.8-flash"
+        }
         vm.selectedModelLevel = norm.level
-        draft.model = norm.modelId
-        draft.modelLevel = norm.level
+        syncModelFields()
         if draft.ciProvider != "none" && !draft.ciProvider.isEmpty {
             vm.lastSelectedCiProvider = draft.ciProvider
         }

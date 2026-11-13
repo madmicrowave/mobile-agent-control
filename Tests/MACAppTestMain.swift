@@ -145,6 +145,40 @@ private func testConfigStoreRoundTrip() throws {
     print("✓ MACConfigFileStore atomic 0600 save/load round-trip & CLI brain dir migration passed")
 }
 
+private func testEngineModelFilteringAndEngineConfiguration() throws {
+    let agyModels = MACModelOption.options(forEngine: "agy").map(\.id)
+    expect(agyModels.contains("gemini-3.8-flash"), "AGY supports gemini-3.8-flash")
+    expect(agyModels.contains("claude-opus-5-5"), "AGY supports claude-opus-5-5")
+    expect(!agyModels.contains("openai-codex"), "AGY must not list openai-codex")
+    expect(!agyModels.contains("gpt-oss-120b-medium"), "AGY must not list gpt-oss-120b-medium")
+
+    let codexModels = MACModelOption.options(forEngine: "codex").map(\.id)
+    expect(codexModels.contains("openai-codex"), "Codex supports openai-codex")
+    expect(codexModels.contains("o3-mini"), "Codex supports o3-mini")
+    expect(!codexModels.contains("gemini-3.8-flash"), "Codex must not list gemini-3.8-flash")
+
+    let aiderModels = MACModelOption.options(forEngine: "aider").map(\.id)
+    expect(aiderModels.contains("claude-3-7-sonnet"), "Aider supports claude-3-7-sonnet")
+    expect(aiderModels.contains("deepseek-reasoner"), "Aider supports deepseek-reasoner")
+    expect(!aiderModels.contains("gemini-3.8-flash"), "Aider must not list gemini-3.8-flash")
+
+    let directApiModels = MACModelOption.options(forEngine: "direct-api").map(\.id)
+    expect(directApiModels.contains("deepseek-chat"), "Direct API supports deepseek-chat")
+    expect(directApiModels.contains("gpt-oss-120b-medium"), "Direct API supports gpt-oss-120b-medium")
+    expect(!directApiModels.contains("gemini-3.8-flash"), "Direct API must not list gemini-3.8-flash")
+
+    var cfg = MACConfig()
+    cfg.deepseekApiKey = "sk-test"
+    expect(cfg.isDirectApiConfigured, "isDirectApiConfigured true when deepseekApiKey is set")
+    expect(cfg.isEngineConfigured("direct-api"), "isEngineConfigured true for direct-api")
+
+    cfg.deepseekApiKey = ""
+    expect(!cfg.isDirectApiConfigured, "isDirectApiConfigured false when no keys are set")
+    expect(!cfg.isEngineConfigured("direct-api"), "isEngineConfigured false for direct-api")
+
+    print("✓ Execution Engine model filtering and engine configuration checks passed")
+}
+
 private func testSleepPreventerAndLaunchAgent() throws {
     let preventer = SleepPreventer()
     expect(!preventer.isPreventingSleep, "Initially not preventing sleep")
@@ -333,6 +367,7 @@ struct MACAppTests {
         do {
             try testJobParsingAndRepoDiscovery()
             try testConfigStoreRoundTrip()
+            try testEngineModelFilteringAndEngineConfiguration()
             try testSleepPreventerAndLaunchAgent()
             try MainActor.assumeIsolated {
                 try testMenuBarControllerAndBotLifecycle()
