@@ -899,23 +899,9 @@ private struct GeneralTabView: View {
 
     private var aiEnginesSectionCard: some View {
         MACSectionCard(title: "AI Engines & Models", systemImage: "cpu.fill") {
-            HStack(spacing: 6) {
-                Text("Default ID:")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                Text(vm.effectiveDefaultModelId)
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.14))
-                    .cornerRadius(5)
-            }
-            .fixedSize()
-        } content: {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Default AI Model Family (for new Workspaces)")
+                    Text("Default AI Model")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -959,7 +945,7 @@ private struct GeneralTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Default Effort Level (for tiered models)")
+                    Text("Default Effort")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)

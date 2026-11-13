@@ -678,7 +678,7 @@ export async function runConfigureAiEnginesWizard({
   // 1. Default Model
   const curModel = cfg.defaultModel || 'gemini-3.8-flash';
   const modelAns = (
-    await ask(`${p(0, 'Default AI Model Family')} [${curModel}]: `)
+    await ask(`${p(0, 'Default AI Model')} [${curModel}]: `)
   ).trim();
   if (modelAns) {
     cfg.defaultModel = modelAns;
@@ -687,7 +687,7 @@ export async function runConfigureAiEnginesWizard({
   // 2. Default Effort Level
   const curLevel = cfg.defaultModelLevel || 'high';
   const levelAns = (
-    await ask(`${p(1, 'Default Effort Level (low / medium / high)')} [${curLevel}]: `)
+    await ask(`${p(1, 'Default Effort (low / medium / high)')} [${curLevel}]: `)
   ).trim().toLowerCase();
   if (['low', 'medium', 'high'].includes(levelAns)) {
     cfg.defaultModelLevel = levelAns;

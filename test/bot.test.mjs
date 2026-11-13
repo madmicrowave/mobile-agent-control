@@ -757,8 +757,8 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
         'my-gcp-project',             // 9. Google Cloud Project ID
         '-',                          // 10. Service Account Key JSON
         'us-central1',                // 11. Google Cloud Region
-        'gemini-3.8-flash',           // 12. Default AI Model Family
-        'high',                       // 13. Default Effort Level
+        'gemini-3.8-flash',           // 12. Default AI Model
+        'high',                       // 13. Default Effort
         '1',                          // 14. AI Execution Engine (1: agy)
         '',                           // 15. Antigravity CLI path (keep default)
         '',                           // 16. Aider CLI path (keep default)
