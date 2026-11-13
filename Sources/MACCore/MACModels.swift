@@ -320,7 +320,12 @@ public struct MACConfig: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.agyBin = try c.decodeIfPresent(String.self, forKey: .agyBin) ?? MACPathUtils.defaultAgyBin()
-        self.aiderBin = try c.decodeIfPresent(String.self, forKey: .aiderBin) ?? MACPathUtils.defaultAiderBin()
+        let decodedAider = (try c.decodeIfPresent(String.self, forKey: .aiderBin) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !decodedAider.isEmpty && decodedAider != "aider" && MACPathUtils.isExecutableAvailable(decodedAider) {
+            self.aiderBin = decodedAider
+        } else {
+            self.aiderBin = MACPathUtils.defaultAiderBin()
+        }
         let rawEng = (try c.decodeIfPresent(String.self, forKey: .agentEngine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.agentEngine = (rawEng.isEmpty || rawEng == "auto") ? "agy" : rawEng
         self.openaiApiKey = try c.decodeIfPresent(String.self, forKey: .openaiApiKey) ?? ""
@@ -357,10 +362,54 @@ public enum MACPathUtils {
     public static func defaultAiderBin() -> String {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/aider").path
-        if FileManager.default.fileExists(atPath: local) { return local }
+        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
         let brew = "/opt/homebrew/bin/aider"
-        if FileManager.default.fileExists(atPath: brew) { return brew }
-        return "aider"
+        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        let usrLocal = "/usr/local/bin/aider"
+        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if let found = findExecutableInPath("aider") { return found }
+        return ""
+    }
+
+    public static func isExecutableAvailable(_ pathOrCommand: String) -> Bool {
+        let trimmed = pathOrCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let expanded = expandPath(trimmed)
+        if expanded.contains("/") {
+            return FileManager.default.fileExists(atPath: expanded) && FileManager.default.isExecutableFile(atPath: expanded)
+        }
+        return findExecutableInPath(trimmed) != nil
+    }
+
+    public static func findExecutableInPath(_ command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let expanded = expandPath(trimmed)
+        if expanded.contains("/") {
+            if FileManager.default.fileExists(atPath: expanded) && FileManager.default.isExecutableFile(atPath: expanded) {
+                return expanded
+            }
+            return nil
+        }
+        let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        var searchDirs = envPath.split(separator: ":").map(String.init)
+        let standardPaths = [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin"
+        ]
+        for p in standardPaths where !searchDirs.contains(p) {
+            searchDirs.append(p)
+        }
+        for dir in searchDirs {
+            let candidate = URL(fileURLWithPath: dir).appendingPathComponent(trimmed).path
+            if FileManager.default.fileExists(atPath: candidate) && FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     public static func defaultBrainDir() -> String {

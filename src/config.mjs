@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { resolveDefaultAgyBin } from './agy-runner.mjs';
+import { resolveDefaultAiderBin } from './agent-runner.mjs';
 
 export const INITIAL_WORKSPACES_SEED = [];
 
@@ -262,8 +263,8 @@ export class ConfigStore {
     if (!this.config.agyBin) {
       this.config.agyBin = process.env.AGY_BIN || resolveDefaultAgyBin();
     }
-    if (!this.config.aiderBin) {
-      this.config.aiderBin = process.env.AIDER_BIN || 'aider';
+    if (this.config.aiderBin === undefined || this.config.aiderBin === 'aider') {
+      this.config.aiderBin = process.env.AIDER_BIN || resolveDefaultAiderBin();
     }
     if (!this.config.agentEngine || this.config.agentEngine === 'auto') {
       this.config.agentEngine = process.env.AGENT_ENGINE || 'agy';
@@ -424,7 +425,7 @@ export class ConfigStore {
         allowedUserIds: parseAllowedUserIds(process.env.ALLOWED_TELEGRAM_USER_IDS),
         defaultHistoryCount: Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6,
         agyBin: process.env.AGY_BIN || resolveDefaultAgyBin(),
-        aiderBin: process.env.AIDER_BIN || 'aider',
+        aiderBin: process.env.AIDER_BIN || resolveDefaultAiderBin(),
         agentEngine: process.env.AGENT_ENGINE || 'agy',
         deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
         openaiApiKey: process.env.OPENAI_API_KEY || '',

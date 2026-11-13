@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { promisify } from 'node:util';
 import {
   runAgyTurn,
@@ -431,6 +432,22 @@ export function runDirectApiTurn({
   }
 
   return { promise, abort };
+}
+
+/**
+ * Resolves local aider binary if installed, or returns empty string if not found.
+ */
+export function resolveDefaultAiderBin() {
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.local', 'bin', 'aider'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin/aider'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return '';
 }
 
 /**

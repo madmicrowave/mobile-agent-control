@@ -119,16 +119,16 @@ private struct MACEngineTabButton: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 6) {
-                Image(systemName: isConfigured ? "checkmark.circle.fill" : systemImage)
+                Image(systemName: systemImage)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isConfigured ? (isSelected ? .white : .green) : (isSelected ? .white : .secondary))
+                    .foregroundColor(isSelected ? .white : .secondary)
 
                 Text(title)
                     .font(.system(size: 12.5, weight: isSelected ? .bold : .medium))
 
                 if isConfigured {
-                    Text("✓")
-                        .font(.system(size: 11, weight: .black))
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11.5, weight: .bold))
                         .foregroundColor(isSelected ? .white : .green)
                 }
             }
@@ -159,16 +159,12 @@ private struct MACSubtabButton: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
+
                 if isConfigured {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(isSelected ? .white : .green)
-                }
-                Text(title)
-                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
-                if isConfigured {
-                    Text("✓")
-                        .font(.system(size: 10, weight: .black))
                         .foregroundColor(isSelected ? .white : .green)
                 }
             }
@@ -399,13 +395,11 @@ private final class GeneralTabVM: ObservableObject {
     @Published var showCustomKey: Bool = false
 
     var isAgyConfigured: Bool {
-        let p = MACPathUtils.expandPath(agyBinPath)
-        return !p.isEmpty && (FileManager.default.fileExists(atPath: p) || agyBinPath == "agy")
+        MACPathUtils.isExecutableAvailable(agyBinPath)
     }
 
     var isAiderConfigured: Bool {
-        let p = MACPathUtils.expandPath(aiderBinPath)
-        return !p.isEmpty
+        MACPathUtils.isExecutableAvailable(aiderBinPath)
     }
 
     var isDirectApiConfigured: Bool {
@@ -869,25 +863,25 @@ private struct GeneralTabView: View {
                 Text("Aider CLI (Terminal Coding Assistant)")
                     .font(.system(size: 13, weight: .bold))
                 Spacer()
-                Text(vm.isAiderConfigured ? "Configured ✓" : "Path Required")
+                Text(vm.isAiderConfigured ? "Configured ✓" : "Not Installed")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(vm.isAiderConfigured ? .green : .orange)
+                    .foregroundColor(vm.isAiderConfigured ? .green : .secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
-                    .background((vm.isAiderConfigured ? Color.green : Color.orange).opacity(0.12))
+                    .background((vm.isAiderConfigured ? Color.green : Color.primary).opacity(0.12))
                     .cornerRadius(5)
             }
 
-            Text("Runs non-interactive headless agent turns via the Aider CLI in your terminal, with automated file edits and git diffs.")
+            Text("Runs non-interactive headless agent turns via the Aider CLI in your terminal. If installed, specify its path below or install via: pip install aider-chat")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Aider Binary Path (aider)")
+                Text("Aider Binary Path")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(spacing: 8) {
-                    TextField("aider", text: $vm.aiderBinPath)
+                    TextField("e.g. /usr/local/bin/aider (or pip install aider-chat)", text: $vm.aiderBinPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {

@@ -29,16 +29,22 @@
     <rect x="0" y="0" width="276" height="280" rx="14" fill="url(#cardBg)" stroke="#3b82f6" stroke-width="1.5"/>
     <text x="18" y="30" font-size="15" font-weight="700" fill="#60a5fa">⚙️ General</text>
     
-    <!-- Engine Tabs Pill Indicator -->
+    <!-- Engine Tabs Pill Indicator (Icon on Left · Title · Check Circle on Right) -->
     <g transform="translate(16, 44)">
       <rect x="0" y="0" width="76" height="22" rx="5" fill="#2563eb"/>
-      <text x="38" y="15" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">AGY ✓</text>
+      <text x="32" y="15" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">AGY</text>
+      <circle cx="63" cy="11" r="5" fill="#ffffff"/>
+      <path d="M60.5 11 L62.5 13 L65.5 9" stroke="#2563eb" stroke-width="1.2" fill="none"/>
 
       <rect x="82" y="0" width="76" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-      <text x="120" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#22c55e">Aider ✓</text>
+      <text x="114" y="15" text-anchor="middle" font-size="10" font-weight="600" fill="#cbd5e1">Aider</text>
+      <circle cx="145" cy="11" r="5" fill="#22c55e"/>
+      <path d="M142.5 11 L144.5 13 L147.5 9" stroke="#ffffff" stroke-width="1.2" fill="none"/>
 
       <rect x="164" y="0" width="80" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-      <text x="204" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#22c55e">API ✓</text>
+      <text x="196" y="15" text-anchor="middle" font-size="10" font-weight="600" fill="#cbd5e1">API</text>
+      <circle cx="230" cy="11" r="5" fill="#22c55e"/>
+      <path d="M227.5 11 L229.5 13 L232.5 9" stroke="#ffffff" stroke-width="1.2" fill="none"/>
     </g>
 
     <!-- Subtabs Badge Row -->
