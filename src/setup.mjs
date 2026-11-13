@@ -696,18 +696,18 @@ export async function runConfigureAiEnginesWizard({
   // 3. Agent Engine
   const curEngine = cfg.agentEngine || 'agy';
   const engineAns = (
-    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: aider, 3: codex, 4: cloudcode, 5: direct-api)')} [${curEngine}]: `)
+    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: cloudcode, 3: codex, 4: direct-api, 5: aider)')} [${curEngine}]: `)
   ).trim().toLowerCase();
   if (['1', 'agy'].includes(engineAns)) {
     cfg.agentEngine = 'agy';
-  } else if (['2', 'aider'].includes(engineAns)) {
-    cfg.agentEngine = 'aider';
+  } else if (['2', 'cloudcode', 'cloud-code'].includes(engineAns)) {
+    cfg.agentEngine = 'cloudcode';
   } else if (['3', 'codex'].includes(engineAns)) {
     cfg.agentEngine = 'codex';
-  } else if (['4', 'cloudcode', 'cloud-code'].includes(engineAns)) {
-    cfg.agentEngine = 'cloudcode';
-  } else if (['5', 'direct-api', 'api', 'direct'].includes(engineAns)) {
+  } else if (['4', 'direct-api', 'api', 'direct'].includes(engineAns)) {
     cfg.agentEngine = 'direct-api';
+  } else if (['5', 'aider'].includes(engineAns)) {
+    cfg.agentEngine = 'aider';
   }
 
   // 4. CLI Binaries

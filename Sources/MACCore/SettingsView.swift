@@ -973,7 +973,7 @@ private struct GeneralTabView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("AI Engine Tabs")
+                Text("AI Engine")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -989,13 +989,13 @@ private struct GeneralTabView: View {
                     }
 
                     MACEngineTabButton(
-                        title: "Aider CLI",
-                        systemImage: "chevron.left.forwardslash.chevron.right",
-                        isSelected: vm.selectedEngineTab == "aider",
-                        isConfigured: vm.isAiderConfigured
+                        title: "Cloud Code",
+                        systemImage: "cloud.fill",
+                        isSelected: vm.selectedEngineTab == "cloudcode",
+                        isConfigured: vm.isCloudCodeConfigured
                     ) {
-                        vm.selectedEngineTab = "aider"
-                        vm.agentEngine = "aider"
+                        vm.selectedEngineTab = "cloudcode"
+                        vm.agentEngine = "cloudcode"
                     }
 
                     MACEngineTabButton(
@@ -1009,16 +1009,6 @@ private struct GeneralTabView: View {
                     }
 
                     MACEngineTabButton(
-                        title: "Cloud Code",
-                        systemImage: "cloud.fill",
-                        isSelected: vm.selectedEngineTab == "cloudcode",
-                        isConfigured: vm.isCloudCodeConfigured
-                    ) {
-                        vm.selectedEngineTab = "cloudcode"
-                        vm.agentEngine = "cloudcode"
-                    }
-
-                    MACEngineTabButton(
                         title: "Direct API",
                         systemImage: "key.fill",
                         isSelected: vm.selectedEngineTab == "direct-api",
@@ -1027,20 +1017,32 @@ private struct GeneralTabView: View {
                         vm.selectedEngineTab = "direct-api"
                         vm.agentEngine = "direct-api"
                     }
+
+                    MACEngineTabButton(
+                        title: "Aider CLI",
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        isSelected: vm.selectedEngineTab == "aider",
+                        isConfigured: vm.isAiderConfigured
+                    ) {
+                        vm.selectedEngineTab = "aider"
+                        vm.agentEngine = "aider"
+                    }
                 }
             }
 
             switch vm.selectedEngineTab {
             case "agy":
                 agyTabContent
-            case "aider":
-                aiderTabContent
-            case "codex":
-                codexTabContent
             case "cloudcode":
                 cloudCodeTabContent
-            default:
+            case "codex":
+                codexTabContent
+            case "direct-api":
                 directApiTabContent
+            case "aider":
+                aiderTabContent
+            default:
+                agyTabContent
             }
 
             Divider()
@@ -1461,7 +1463,7 @@ private struct GeneralTabView: View {
         vm.cloudCodeBinPath = appState.config.cloudCodeBin
         let loadedEngine = (appState.config.agentEngine == "auto" || appState.config.agentEngine.isEmpty) ? "agy" : appState.config.agentEngine
         vm.agentEngine = loadedEngine
-        vm.selectedEngineTab = ["agy", "aider", "codex", "cloudcode", "direct-api"].contains(loadedEngine) ? loadedEngine : "agy"
+        vm.selectedEngineTab = ["agy", "cloudcode", "codex", "direct-api", "aider"].contains(loadedEngine) ? loadedEngine : "agy"
         vm.deepseekApiKey = appState.config.deepseekApiKey
         vm.openaiApiKey = appState.config.openaiApiKey
         vm.anthropicApiKey = appState.config.anthropicApiKey
@@ -2088,10 +2090,10 @@ private struct WorkspaceEditorFormView: View {
     private var workspaceEngineOptions: [MACSegmentedOption<String>] {
         [
             MACSegmentedOption(id: "agy", title: "AGY CLI", value: "agy"),
-            MACSegmentedOption(id: "aider", title: "Aider CLI", value: "aider"),
-            MACSegmentedOption(id: "codex", title: "Codex CLI", value: "codex"),
             MACSegmentedOption(id: "cloudcode", title: "Cloud Code", value: "cloudcode"),
-            MACSegmentedOption(id: "direct-api", title: "Direct API", value: "direct-api")
+            MACSegmentedOption(id: "codex", title: "Codex CLI", value: "codex"),
+            MACSegmentedOption(id: "direct-api", title: "Direct API", value: "direct-api"),
+            MACSegmentedOption(id: "aider", title: "Aider CLI", value: "aider")
         ]
     }
 
