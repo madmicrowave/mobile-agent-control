@@ -185,6 +185,130 @@ private struct MACSubtabButton: View {
     }
 }
 
+// MARK: - Live Inline Validation Primitives
+
+private enum MACValidationSeverity: Equatable {
+    case info
+    case success
+    case warning
+    case error
+}
+
+private struct MACValidationStatus: Equatable {
+    let message: String
+    let severity: MACValidationSeverity
+}
+
+private struct MACValidationMessage: View {
+    let status: MACValidationStatus
+
+    var iconName: String {
+        switch status.severity {
+        case .info: return "info.circle"
+        case .success: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "xmark.circle.fill"
+        }
+    }
+
+    var tintColor: Color {
+        switch status.severity {
+        case .info: return .secondary
+        case .success: return .green
+        case .warning: return .orange
+        case .error: return .red
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: iconName)
+                .font(.system(size: 11, weight: .semibold))
+            Text(status.message)
+                .font(.system(size: 11))
+        }
+        .foregroundColor(tintColor)
+        .padding(.top, 2)
+    }
+}
+
+private enum MACValidationUtils {
+    static func validateUrl(_ urlString: String, label: String = "URL") -> MACValidationStatus? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host, !host.isEmpty else {
+            return MACValidationStatus(message: "\(label) must start with http:// or https://", severity: .error)
+        }
+        return nil
+    }
+
+    static func validateTelegramToken(_ token: String) -> MACValidationStatus {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return MACValidationStatus(message: "Telegram bot token is required to start the bot", severity: .warning)
+        }
+        let parts = trimmed.split(separator: ":", maxSplits: 1)
+        if parts.count != 2 || Int64(parts[0]) == nil || parts[1].count < 20 {
+            return MACValidationStatus(message: "Invalid format (expected <bot_id>:<token>, e.g. 123456789:AAHxId...)", severity: .error)
+        }
+        return MACValidationStatus(message: "Token format valid", severity: .success)
+    }
+
+    static func validateExecutablePath(_ path: String, binaryName: String) -> MACValidationStatus {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return MACValidationStatus(message: "Leave empty if not installed or not configured", severity: .info)
+        }
+        let expanded = MACPathUtils.expandPath(trimmed)
+        var isDir: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
+            if !trimmed.contains("/") && MACPathUtils.findExecutableInPath(trimmed) != nil {
+                return MACValidationStatus(message: "Found '\(trimmed)' in system PATH", severity: .success)
+            }
+            return MACValidationStatus(message: "File not found on disk at '\(expanded)'", severity: .error)
+        }
+        if isDir.boolValue {
+            return MACValidationStatus(message: "Path is a directory, not an executable binary file (e.g. \(expanded)/\(binaryName))", severity: .error)
+        }
+        if !FileManager.default.isExecutableFile(atPath: expanded) {
+            return MACValidationStatus(message: "File exists but lacks executable permission (chmod +x required)", severity: .error)
+        }
+        return MACValidationStatus(message: "Executable verified on disk", severity: .success)
+    }
+
+    static func validateWorkspaceLabel(_ label: String) -> MACValidationStatus? {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return MACValidationStatus(message: "Workspace label is required (shown in Telegram)", severity: .error)
+        }
+        return nil
+    }
+
+    static func validateFolderPath(_ path: String) -> MACValidationStatus {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return MACValidationStatus(message: "Workspace root folder path is required", severity: .error)
+        }
+        let expanded = MACPathUtils.expandPath(trimmed)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) else {
+            return MACValidationStatus(message: "Folder does not exist on disk: \(expanded)", severity: .error)
+        }
+        guard isDir.boolValue else {
+            return MACValidationStatus(message: "Path points to a file, not a directory", severity: .error)
+        }
+        let gitDir = URL(fileURLWithPath: expanded).appendingPathComponent(".git").path
+        if FileManager.default.fileExists(atPath: gitDir) {
+            return MACValidationStatus(message: "Git repository verified on disk", severity: .success)
+        } else {
+            return MACValidationStatus(message: "Folder exists, but no .git repository detected", severity: .warning)
+        }
+    }
+}
+
 // MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live Logs)
 
 public struct MACSettingsRootView: View {
@@ -361,6 +485,28 @@ public struct MACSettingsRootView: View {
 // MARK: - Tab 1: General (3 Sections: Jenkins / Telegram / AGY)
 
 private final class GeneralTabVM: ObservableObject {
+    private var isSyncing: Bool = false
+    private var cancellables = Set<AnyCancellable>()
+    var onAutoSave: (() -> Void)?
+
+    init() {
+        objectWillChange
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.onAutoSave?()
+            }
+            .store(in: &cancellables)
+    }
+
+    func performSync(_ block: () -> Void) {
+        isSyncing = true
+        block()
+        DispatchQueue.main.async { [weak self] in
+            self?.isSyncing = false
+        }
+    }
+
     // 1. CI/CD (Tabs: Jenkins, GitHub, Google Cloud)
     @Published var selectedCiTab: String = "jenkins" // "jenkins", "github", "google"
 
@@ -501,23 +647,18 @@ private struct GeneralTabView: View {
                 // Section 3: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
 
-                // Unified Save Row
-                HStack {
-                    Spacer()
-                    Button("Save") {
-                        saveAllGeneralSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .fixedSize()
-                }
-                .padding(.top, 2)
-                .padding(.bottom, 10)
             }
             .padding(.trailing, 8)
+            .padding(.bottom, 12)
         }
         .onAppear {
+            vm.onAutoSave = {
+                saveAllGeneralSettings(silent: true)
+            }
             loadFromAppState()
+        }
+        .onDisappear {
+            saveAllGeneralSettings(silent: true)
         }
     }
 
@@ -630,6 +771,9 @@ private struct GeneralTabView: View {
                     .foregroundColor(.secondary)
                 TextField(text: $vm.jenkinsDraft.baseUrl, prompt: Text(verbatim: "https://jenkins.example.com")) {}
                     .textFieldStyle(.roundedBorder)
+                if let status = MACValidationUtils.validateUrl(vm.jenkinsDraft.baseUrl, label: "Jenkins Base URL") {
+                    MACValidationMessage(status: status)
+                }
             }
 
             HStack(alignment: .top, spacing: 14) {
@@ -861,6 +1005,7 @@ private struct GeneralTabView: View {
                     .disabled(vm.isVerifyingToken || vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .fixedSize()
                 }
+                MACValidationMessage(status: MACValidationUtils.validateTelegramToken(vm.botToken))
             }
 
             if let msg = vm.tokenCheckMessage {
@@ -910,6 +1055,9 @@ private struct GeneralTabView: View {
                     .foregroundColor(.secondary)
                 TextField(text: $vm.telegramApiBaseUrl, prompt: Text(verbatim: "https://api.telegram.org")) {}
                     .textFieldStyle(.roundedBorder)
+                if let status = MACValidationUtils.validateUrl(vm.telegramApiBaseUrl, label: "Telegram API URL") {
+                    MACValidationMessage(status: status)
+                }
             }
         }
     }
@@ -1103,6 +1251,7 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
+                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.agyBinPath, binaryName: "agy"))
             }
         }
         .padding(12)
@@ -1143,6 +1292,7 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
+                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.aiderBinPath, binaryName: "aider"))
             }
         }
         .padding(12)
@@ -1183,6 +1333,7 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
+                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.codexBinPath, binaryName: "codex"))
             }
         }
         .padding(12)
@@ -1223,6 +1374,7 @@ private struct GeneralTabView: View {
                     }
                     .fixedSize()
                 }
+                MACValidationMessage(status: MACValidationUtils.validateExecutablePath(vm.cloudCodeBinPath, binaryName: "cloud-code"))
             }
         }
         .padding(12)
@@ -1419,6 +1571,9 @@ private struct GeneralTabView: View {
                         }
                         TextField("http://localhost:11434/v1 or https://openrouter.ai/api/v1", text: $vm.customApiBaseUrl)
                             .textFieldStyle(.roundedBorder)
+                        if let status = MACValidationUtils.validateUrl(vm.customApiBaseUrl, label: "Custom API URL") {
+                            MACValidationMessage(status: status)
+                        }
                         HStack(spacing: 6) {
                             if vm.showCustomKey {
                                 TextField("API Key (optional, blank for local models)", text: $vm.customApiKey)
@@ -1447,39 +1602,41 @@ private struct GeneralTabView: View {
     }
 
     private func loadFromAppState() {
-        vm.jenkinsDraft = appState.config.jenkins
-        vm.timeoutMinutes = max(5, vm.jenkinsDraft.buildTimeoutMs / 60_000)
-        vm.githubDraft = appState.config.github
-        vm.googleCloudDraft = appState.config.googleCloud
+        vm.performSync {
+            vm.jenkinsDraft = appState.config.jenkins
+            vm.timeoutMinutes = max(5, vm.jenkinsDraft.buildTimeoutMs / 60_000)
+            vm.githubDraft = appState.config.github
+            vm.googleCloudDraft = appState.config.googleCloud
 
-        vm.botToken = appState.config.telegramBotToken
-        vm.telegramApiBaseUrl = appState.config.telegramApiBaseUrl
-        vm.allowedUsersText = appState.config.allowedUserIds.joined(separator: ", ")
-        vm.historyCount = appState.config.defaultHistoryCount
+            vm.botToken = appState.config.telegramBotToken
+            vm.telegramApiBaseUrl = appState.config.telegramApiBaseUrl
+            vm.allowedUsersText = appState.config.allowedUserIds.joined(separator: ", ")
+            vm.historyCount = appState.config.defaultHistoryCount
 
-        vm.agyBinPath = appState.config.agyBin
-        vm.aiderBinPath = appState.config.aiderBin
-        vm.codexBinPath = appState.config.codexBin
-        vm.cloudCodeBinPath = appState.config.cloudCodeBin
-        let loadedEngine = (appState.config.agentEngine == "auto" || appState.config.agentEngine.isEmpty) ? "agy" : appState.config.agentEngine
-        vm.agentEngine = loadedEngine
-        vm.selectedEngineTab = ["agy", "cloudcode", "codex", "direct-api", "aider"].contains(loadedEngine) ? loadedEngine : "agy"
-        vm.deepseekApiKey = appState.config.deepseekApiKey
-        vm.openaiApiKey = appState.config.openaiApiKey
-        vm.anthropicApiKey = appState.config.anthropicApiKey
-        vm.qwenApiKey = appState.config.qwenApiKey
-        vm.customApiBaseUrl = appState.config.customApiBaseUrl
-        vm.customApiKey = appState.config.customApiKey
+            vm.agyBinPath = appState.config.agyBin
+            vm.aiderBinPath = appState.config.aiderBin
+            vm.codexBinPath = appState.config.codexBin
+            vm.cloudCodeBinPath = appState.config.cloudCodeBin
+            let loadedEngine = (appState.config.agentEngine == "auto" || appState.config.agentEngine.isEmpty) ? "agy" : appState.config.agentEngine
+            vm.agentEngine = loadedEngine
+            vm.selectedEngineTab = ["agy", "cloudcode", "codex", "direct-api", "aider"].contains(loadedEngine) ? loadedEngine : "agy"
+            vm.deepseekApiKey = appState.config.deepseekApiKey
+            vm.openaiApiKey = appState.config.openaiApiKey
+            vm.anthropicApiKey = appState.config.anthropicApiKey
+            vm.qwenApiKey = appState.config.qwenApiKey
+            vm.customApiBaseUrl = appState.config.customApiBaseUrl
+            vm.customApiKey = appState.config.customApiKey
 
-        let norm = MACModelOption.normalizeFamilyAndLevel(
-            rawModel: appState.config.defaultModel,
-            rawLevel: appState.config.defaultModelLevel
-        )
-        vm.defaultModelFamily = MACModelOption.allOptions.contains(where: { $0.id == norm.family }) ? norm.family : "gemini-3.8-flash"
-        vm.defaultModelLevel = norm.level
+            let norm = MACModelOption.normalizeFamilyAndLevel(
+                rawModel: appState.config.defaultModel,
+                rawLevel: appState.config.defaultModelLevel
+            )
+            vm.defaultModelFamily = MACModelOption.allOptions.contains(where: { $0.id == norm.family }) ? norm.family : "gemini-3.8-flash"
+            vm.defaultModelLevel = norm.level
+        }
     }
 
-    private func saveAllGeneralSettings() {
+    private func saveAllGeneralSettings(silent: Bool = false) {
         var updatedJenkins = vm.jenkinsDraft
         updatedJenkins.baseUrl = updatedJenkins.baseUrl
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1542,7 +1699,7 @@ private struct GeneralTabView: View {
         appState.config.defaultModel = normModel.modelId
         appState.config.defaultModelLevel = normModel.level
 
-        appState.saveConfigToDisk(banner: "Saved General settings (CI/CD Deploy, Telegram, AI Engines & Models).")
+        appState.saveConfigToDisk(banner: silent ? nil : "Saved General settings (CI/CD Deploy, Telegram, AI Engines & Models).")
     }
 
     private func runJenkinsConnectionTest() {
@@ -1799,8 +1956,8 @@ private struct WorkspacesTabView: View {
                     WorkspaceEditorFormView(
                         draft: $vm.entries[idx].draft,
                         isNewWorkspace: entry.isNewUnsaved,
-                        onSave: {
-                            saveWorkspaceEntry(at: idx)
+                        onAutoSave: {
+                            saveWorkspaceEntry(at: idx, silent: true)
                         },
                         onDelete: {
                             deleteWorkspaceEntry(uid: entry.uid)
@@ -1839,6 +1996,11 @@ private struct WorkspacesTabView: View {
         .onAppear {
             vm.syncFromConfig(appState.config, preferredWorkspaceId: appState.selectedWorkspaceId)
         }
+        .onDisappear {
+            if let idx = selectedIndex {
+                saveWorkspaceEntry(at: idx, silent: true)
+            }
+        }
     }
 
     private func sidebarCard(for entry: WorkspaceSidebarEntry) -> some View {
@@ -1870,6 +2032,9 @@ private struct WorkspacesTabView: View {
         }()
 
         return Button {
+            if let currIdx = selectedIndex {
+                saveWorkspaceEntry(at: currIdx, silent: true)
+            }
             vm.selectedUID = entry.uid
             if let savedId = entry.originalSavedId {
                 appState.selectedWorkspaceId = savedId
@@ -1944,7 +2109,7 @@ private struct WorkspacesTabView: View {
         .buttonStyle(.plain)
     }
 
-    private func saveWorkspaceEntry(at idx: Int) {
+    private func saveWorkspaceEntry(at idx: Int, silent: Bool = true) {
         guard vm.entries.indices.contains(idx) else { return }
         var normalized = vm.entries[idx].draft
         let wasNewUnsaved = vm.entries[idx].isNewUnsaved
@@ -1952,6 +2117,7 @@ private struct WorkspacesTabView: View {
 
         normalized.label = normalized.label.trimmingCharacters(in: .whitespacesAndNewlines)
         normalized.path = MACPathUtils.expandPath(normalized.path)
+        guard !normalized.label.isEmpty && !normalized.path.isEmpty else { return }
         let eng = normalized.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         normalized.engine = (eng.isEmpty || eng == "auto") ? "agy" : eng
 
@@ -2032,7 +2198,7 @@ private struct WorkspacesTabView: View {
         let bannerMsg = wasNewUnsaved
             ? "Added workspace '\(normalized.label)' — ready in Telegram!"
             : "Saved workspace '\(normalized.label)' (immediately active in Telegram)."
-        appState.saveConfigToDisk(banner: bannerMsg)
+        appState.saveConfigToDisk(banner: silent ? nil : bannerMsg)
     }
 
     private func deleteWorkspaceEntry(uid: UUID) {
@@ -2075,7 +2241,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
 private struct WorkspaceEditorFormView: View {
     @Binding var draft: MACWorkspace
     let isNewWorkspace: Bool
-    let onSave: () -> Void
+    let onAutoSave: () -> Void
     let onDelete: (() -> Void)?
 
     @StateObject private var vm = WorkspaceEditorFormVM()
@@ -2155,6 +2321,9 @@ private struct WorkspaceEditorFormView: View {
                                     draft.id = trimmed.isEmpty ? "" : MACPathUtils.slugifyWorkspaceId(trimmed)
                                 }
                             }
+                        if let status = MACValidationUtils.validateWorkspaceLabel(draft.label) {
+                            MACValidationMessage(status: status)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -2185,6 +2354,7 @@ private struct WorkspaceEditorFormView: View {
                             }
                             .fixedSize()
                         }
+                        MACValidationMessage(status: MACValidationUtils.validateFolderPath(draft.path))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -2249,6 +2419,9 @@ private struct WorkspaceEditorFormView: View {
                                     .foregroundColor(.secondary)
                                 TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
                                     .textFieldStyle(.roundedBorder)
+                                if let status = MACValidationUtils.validateUrl(draft.liveUrl, label: "Staging URL") {
+                                    MACValidationMessage(status: status)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -2258,6 +2431,9 @@ private struct WorkspaceEditorFormView: View {
                                     .foregroundColor(.secondary)
                                 TextField(text: $draft.prodLiveUrl, prompt: Text(verbatim: "https://example.com")) {}
                                     .textFieldStyle(.roundedBorder)
+                                if let status = MACValidationUtils.validateUrl(draft.prodLiveUrl, label: "Production URL") {
+                                    MACValidationMessage(status: status)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -2268,6 +2444,9 @@ private struct WorkspaceEditorFormView: View {
                                 .foregroundColor(.secondary)
                             TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
                                 .textFieldStyle(.roundedBorder)
+                            if let status = MACValidationUtils.validateUrl(draft.liveUrl, label: "Staging URL") {
+                                MACValidationMessage(status: status)
+                            }
                         }
                     }
                 }
@@ -2708,15 +2887,35 @@ private struct WorkspaceEditorFormView: View {
 
                     Spacer()
 
-                    Button(isNewWorkspace ? "Create" : "Save") {
-                        commitPendingJobInputs()
-                        syncModelFields()
-                        onSave()
+                    HStack(spacing: 5) {
+                        let isLabelEmpty = draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let isPathEmpty = draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let isFolderError = MACValidationUtils.validateFolderPath(draft.path).severity == .error
+
+                        if isLabelEmpty || isPathEmpty {
+                            Image(systemName: "exclamationmark.circle")
+                                .foregroundColor(.secondary)
+                            Text(isNewWorkspace ? "Fill Label & Path to save" : "Incomplete Workspace")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(.secondary)
+                        } else if isFolderError {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Folder not found on disk")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(.orange)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Auto-saved")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundColor(.green)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(draft.label.trimmingCharacters(in: .whitespaces).isEmpty || draft.path.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.primary.opacity(0.04))
+                    .cornerRadius(6)
                 }
                 .padding(.top, 2)
                 .padding(.bottom, 10)
@@ -2725,6 +2924,23 @@ private struct WorkspaceEditorFormView: View {
         }
         .onAppear {
             loadFromDraft()
+        }
+        .onChange(of: draft) { _, _ in
+            syncModelFields()
+            onAutoSave()
+        }
+        .onChange(of: vm.selectedModelFamily) { _, _ in
+            syncModelFields()
+            onAutoSave()
+        }
+        .onChange(of: vm.selectedModelLevel) { _, _ in
+            syncModelFields()
+            onAutoSave()
+        }
+        .onDisappear {
+            commitPendingJobInputs()
+            syncModelFields()
+            onAutoSave()
         }
     }
 
@@ -2846,7 +3062,7 @@ private struct TutorialTabView: View {
                         "Open @BotFather in Telegram and send /newbot.",
                         "Pick any display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
                         "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into General → Telegram.",
-                        "Click 'Verify Token' and 'Save'."
+                        "Click 'Verify Token' (settings auto-save automatically)."
                     ],
                     actionTitle: "Open @BotFather",
                     actionURL: "https://t.me/BotFather",

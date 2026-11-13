@@ -198,13 +198,15 @@ public final class MACAppState: ObservableObject {
     }
 
     @discardableResult
-    public func saveConfigToDisk(_ updated: MACConfig? = nil, banner: String = "Saved configuration.") -> Bool {
+    public func saveConfigToDisk(_ updated: MACConfig? = nil, banner: String? = "Saved configuration.") -> Bool {
         if let updated = updated {
             self.config = updated
         }
         do {
             try configStore.save(self.config)
-            self.statusBannerMessage = "✅ \(banner)"
+            if let banner = banner, !banner.isEmpty {
+                self.statusBannerMessage = "✅ \(banner)"
+            }
             return true
         } catch {
             self.statusBannerMessage = "❌ Failed to save config: \(error.localizedDescription)"
