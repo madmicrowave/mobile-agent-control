@@ -1,5 +1,15 @@
 import AppKit
 
+func condensedFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+    if #available(macOS 13.0, *) {
+        return NSFont.systemFont(ofSize: size, weight: weight, width: .condensed)
+    } else {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        let desc = base.fontDescriptor.withSymbolicTraits(.condensed)
+        return NSFont(descriptor: desc, size: size) ?? base
+    }
+}
+
 func generateAppIcon(size: CGFloat) -> NSImage {
     let img = NSImage(size: NSSize(width: size, height: size))
     img.lockFocus()
@@ -17,20 +27,20 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     path.stroke()
 
     // Centered stacked layout:
-    // AI (top, blue, smaller font matching superscript)
-    // MAC (bottom, white, bold font)
-    let aiFont = NSFont.systemFont(ofSize: size * 0.175, weight: .black)
-    let macFont = NSFont.systemFont(ofSize: size * 0.32, weight: .black)
+    // AI (top, blue, condensed font)
+    // MAC (bottom, white, bold condensed font)
+    let aiFont = condensedFont(size: size * 0.24, weight: .black)
+    let macFont = condensedFont(size: size * 0.36, weight: .black)
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
         .font: aiFont,
         .foregroundColor: NSColor(calibratedRed: 0.22, green: 0.74, blue: 0.98, alpha: 1.0),
-        .kern: size * 0.005
+        .kern: size * 0.008
     ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.white,
-        .kern: size * -0.015
+        .kern: size * -0.012
     ]
 
     let aiStr = NSAttributedString(string: "AI", attributes: aiAttrs)
@@ -39,20 +49,21 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     let aiSize = aiStr.size()
     let macSize = macStr.size()
 
-    let gap = size * 0.018
-    let totalHeight = aiSize.height + gap + macSize.height
-    let startY = (size - totalHeight) / 2.0
+    let macCap = macFont.capHeight
+    let aiCap = aiFont.capHeight
+    let visualGap = size * 0.038
+    let totalCapH = macCap + visualGap + aiCap
+    let bottomOfMacY = (size - totalCapH) / 2.0
 
-    // In Cocoa lockFocus, (0,0) is bottom-left: MAC at startY, AI at startY + macSize.height + gap
     let macRect = NSRect(
         x: (size - macSize.width) / 2.0,
-        y: startY,
+        y: bottomOfMacY + macFont.descender,
         width: macSize.width,
         height: macSize.height
     )
     let aiRect = NSRect(
         x: (size - aiSize.width) / 2.0,
-        y: startY + macSize.height + gap,
+        y: bottomOfMacY + macCap + visualGap + aiFont.descender,
         width: aiSize.width,
         height: aiSize.height
     )
@@ -64,12 +75,12 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     return img
 }
 
-/// Generates a 76x32 px (@2x = 38x16 pt, 144 DPI) rounded-pill menu bar template icon
-/// with punched-out inline "AI MAC" where AI is smaller font and both are vertically aligned.
+/// Generates an 80x32 px (@2x = 40x16 pt, 144 DPI) rounded-pill menu bar template icon
+/// with punched-out inline "AI  MAC" in condensed font with bigger AI and clear spacing.
 func saveMenuBarBadgePNG(path: String) {
-    let pixelWidth = 76
+    let pixelWidth = 80
     let pixelHeight = 32
-    let pointWidth: CGFloat = 38
+    let pointWidth: CGFloat = 40
     let pointHeight: CGFloat = 16
 
     guard let rep = NSBitmapImageRep(
@@ -86,7 +97,7 @@ func saveMenuBarBadgePNG(path: String) {
     ) else {
         fatalError("Failed to create NSBitmapImageRep for MenuBarIcon")
     }
-    // Setting size to 38x16 points encodes 144 DPI (@2x Retina) into the PNG!
+    // Setting size to 40x16 points encodes 144 DPI (@2x Retina) into the PNG!
     rep.size = NSSize(width: pointWidth, height: pointHeight)
 
     NSGraphicsContext.saveGraphicsState()
@@ -107,9 +118,9 @@ func saveMenuBarBadgePNG(path: String) {
     NSColor.black.setFill()
     pillPath.fill()
 
-    // Punch out inline "AI MAC" where AI is smaller font and vertically centered with MAC
-    let aiFont = NSFont.systemFont(ofSize: 5.8, weight: .black)
-    let macFont = NSFont.systemFont(ofSize: 9.0, weight: .black)
+    // Punch out inline "AI   MAC" with condensed bold font, bigger AI and clean spacing
+    let aiFont = condensedFont(size: 7.2, weight: .black)
+    let macFont = condensedFont(size: 9.6, weight: .black)
     let aiVerticalOffset = (macFont.capHeight - aiFont.capHeight) / 2.0
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
@@ -118,19 +129,25 @@ func saveMenuBarBadgePNG(path: String) {
         .baselineOffset: aiVerticalOffset,
         .kern: 0.1
     ]
+    let spaceAttrs: [NSAttributedString.Key: Any] = [
+        .font: macFont,
+        .foregroundColor: NSColor.black,
+        .kern: 2.2
+    ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.black,
-        .kern: -0.3
+        .kern: -0.15
     ]
 
-    let attrStr = NSMutableAttributedString(string: "AI ", attributes: aiAttrs)
+    let attrStr = NSMutableAttributedString(string: "AI", attributes: aiAttrs)
+    attrStr.append(NSAttributedString(string: " ", attributes: spaceAttrs))
     attrStr.append(NSAttributedString(string: "MAC", attributes: macAttrs))
     let textSize = attrStr.size()
 
     let textRect = NSRect(
         x: (pointWidth - textSize.width) / 2.0,
-        y: (pointHeight - textSize.height) / 2.0 + 0.2,
+        y: (pointHeight - textSize.height) / 2.0 + 0.15,
         width: textSize.width,
         height: textSize.height
     )

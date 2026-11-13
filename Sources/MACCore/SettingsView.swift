@@ -296,12 +296,12 @@ public struct MACSettingsRootView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    HStack(alignment: .center, spacing: 6) {
+                    HStack(alignment: .center, spacing: 8) {
                         Text("AI")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .font(.system(size: 12.5, weight: .black))
                             .foregroundColor(.accentColor)
                         Text("MAC")
-                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .font(.system(size: 15.5, weight: .black))
                         Text("— Mobile Agent Control")
                             .font(.system(size: 15, weight: .bold))
                     }
