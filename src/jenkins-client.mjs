@@ -125,7 +125,7 @@ export class JenkinsClient {
   ensureBaseUrl() {
     if (!this.baseUrl) {
       throw new Error(
-        'Jenkins Base URL is not configured yet. Run "npm run setup" or "npm run update-jenkins" in terminal.'
+        'Jenkins Base URL is not configured yet. Run "npm run setup" or "npm run jenkins-add-user" in terminal.'
       );
     }
     return this.baseUrl;
@@ -186,7 +186,7 @@ export class JenkinsClient {
       throw new Error(
         isProxyIpBlock
           ? 'Jenkins returned HTTP 403 from reverse proxy (IP allowlist / VPN check). Ensure your host VPN/IP is permitted or tunnel Jenkins over SSH.'
-          : `Jenkins authentication failed (HTTP ${res.status}). Run "npm run update-jenkins" or "npm run setup" in terminal.`
+          : `Jenkins authentication failed (HTTP ${res.status}). Run "npm run jenkins-add-user" or "npm run setup" in terminal.`
       );
     }
     if (res.status < 200 || res.status >= 300) {
@@ -260,12 +260,12 @@ export class JenkinsClient {
       throw new Error(
         isProxyIpBlock
           ? `Jenkins rejected "${jobName}" with reverse-proxy HTTP 403 (IP allowlist / VPN check). Ensure your host VPN/IP is permitted or tunnel Jenkins over SSH.`
-          : `Jenkins rejected trigger for "${jobName}" (HTTP ${triggerRes.status}). Run "npm run update-jenkins" or "npm run setup" in terminal.`
+          : `Jenkins rejected trigger for "${jobName}" (HTTP ${triggerRes.status}). Run "npm run jenkins-add-user" or "npm run setup" in terminal.`
       );
     }
     if (triggerRes.status === 404) {
       throw new Error(
-        `Jenkins job not found at ${jobPath} (HTTP 404). Check the job path via "npm run setup" or "npm run add-ide" in terminal.`
+        `Jenkins job not found at ${jobPath} (HTTP 404). Check the job path via "npm run setup" or "npm run add-workspace" in terminal.`
       );
     }
     if (triggerRes.status < 200 || triggerRes.status >= 400) {

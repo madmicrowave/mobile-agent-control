@@ -1,6 +1,6 @@
 # Contributing to Mobile Agent Control (`mac.app` / `MAC`)
 
-Thank you for contributing to **Mobile Agent Control (`mobile-agent-control`)** — open-source native macOS menu bar app (`mac.app`) & Telegram Workspace controller for AI coding (Gemini, Claude, DeepSeek, OpenAI, Qwen via CLI or Direct API), Git, and Jenkins CI/CD!
+Thank you for contributing to **Mobile Agent Control (`mobile-agent-control`)** — open-source native macOS menu bar app (`mac.app`) & Telegram Workspace controller for AI coding (Gemini, Claude, DeepSeek, OpenAI, Qwen via CLI or Direct API), Git, and CI/CD (Jenkins, GitHub, Google Cloud)!
 
 ## Local Development
 

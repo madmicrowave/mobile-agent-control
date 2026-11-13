@@ -354,7 +354,7 @@ public struct MACSettingsRootView: View {
 // MARK: - Tab 1: General (3 Sections: Jenkins / Telegram / AGY)
 
 private final class GeneralTabVM: ObservableObject {
-    // 1. CI/CD (Tabs: Jenkins, GitHub Actions, Google Cloud)
+    // 1. CI/CD (Tabs: Jenkins, GitHub, Google Cloud)
     @Published var selectedCiTab: String = "jenkins" // "jenkins", "github", "google"
 
     // Jenkins
@@ -481,13 +481,13 @@ private struct GeneralTabView: View {
                 // Section 2: Telegram
                 telegramSectionCard
 
-                // Section 3: CI/CD Deployment (Jenkins, GitHub Actions, Google Cloud)
+                // Section 3: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
 
                 // Unified Save Row
                 HStack {
                     Spacer()
-                    Button("Save General Settings") {
+                    Button("Save") {
                         saveAllGeneralSettings()
                     }
                     .buttonStyle(.borderedProminent)
@@ -516,7 +516,7 @@ private struct GeneralTabView: View {
                             Text("Testing...")
                         } else {
                             Image(systemName: "network")
-                            Text("Test Jenkins Connection")
+                            Text("Test Jenkins")
                         }
                     }
                 }
@@ -533,7 +533,7 @@ private struct GeneralTabView: View {
                             Text("Testing...")
                         } else {
                             Image(systemName: "network")
-                            Text("Test GitHub Access")
+                            Text("Test Github")
                         }
                     }
                 }
@@ -575,7 +575,7 @@ private struct GeneralTabView: View {
                     }
 
                     MACEngineTabButton(
-                        title: "GitHub Actions",
+                        title: "GitHub",
                         systemImage: "arrow.triangle.pull",
                         isSelected: vm.selectedCiTab == "github",
                         isConfigured: vm.isGitHubConfigured
@@ -1965,7 +1965,7 @@ private struct WorkspaceEditorFormView: View {
         [
             MACSegmentedOption(id: "none", title: "Git-only", value: "none"),
             MACSegmentedOption(id: "jenkins", title: "Jenkins", value: "jenkins"),
-            MACSegmentedOption(id: "github", title: "GitHub Actions", value: "github"),
+            MACSegmentedOption(id: "github", title: "GitHub", value: "github"),
             MACSegmentedOption(id: "google", title: "Google Cloud", value: "google")
         ]
     }
@@ -2322,7 +2322,7 @@ private struct WorkspaceEditorFormView: View {
                     } else if draft.ciProvider == "github" {
                         Divider()
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(draft.environmentMode == "multi" ? "GitHub Actions Workflows (Staging & Production)" : "GitHub Actions Workflow")
+                            Text(draft.environmentMode == "multi" ? "GitHub Workflows (Staging & Production)" : "GitHub Workflow")
                                 .font(.system(size: 12.5, weight: .semibold))
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -2510,7 +2510,7 @@ private struct WorkspaceEditorFormView: View {
                             }
                         } label: {
                             Label(
-                                isNewWorkspace ? "Remove Draft" : "Delete Workspace",
+                                isNewWorkspace ? "Remove Draft" : "Delete",
                                 systemImage: "trash"
                             )
                         }
@@ -2520,7 +2520,7 @@ private struct WorkspaceEditorFormView: View {
                             isPresented: $vm.showDeleteConfirm,
                             titleVisibility: .visible
                         ) {
-                            Button(isNewWorkspace ? "Remove Draft" : "Delete Workspace", role: .destructive) {
+                            Button(isNewWorkspace ? "Remove Draft" : "Delete", role: .destructive) {
                                 onDelete()
                             }
                             Button("Cancel", role: .cancel) {}
@@ -2531,7 +2531,7 @@ private struct WorkspaceEditorFormView: View {
 
                     Spacer()
 
-                    Button(isNewWorkspace ? "Create Workspace" : "Save Workspace Changes") {
+                    Button(isNewWorkspace ? "Create" : "Save") {
                         commitPendingJobInputs()
                         syncModelFields()
                         onSave()
@@ -2666,11 +2666,11 @@ private struct TutorialTabView: View {
                         "Open @BotFather in Telegram and send /newbot.",
                         "Pick any display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
                         "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into General → Telegram.",
-                        "Click 'Verify Token' and 'Save General Settings'."
+                        "Click 'Verify Token' and 'Save'."
                     ],
                     actionTitle: "Open @BotFather",
                     actionURL: "https://t.me/BotFather",
-                    secondaryTitle: "Go to General →",
+                    secondaryTitle: "General",
                     secondaryAction: { appState.selectedTab = .general }
                 )
 
@@ -2704,7 +2704,7 @@ private struct TutorialTabView: View {
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Open Workspaces →",
+                    secondaryTitle: "Workspaces",
                     secondaryAction: { appState.selectedTab = .workspaces }
                 )
 
