@@ -11,7 +11,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.09, alpha: 1.0).setFill()
     path.fill()
 
-    // Subtle border matching Sticky-AI
+    // Subtle border
     NSColor(calibratedWhite: 1.0, alpha: 0.15).setStroke()
     path.lineWidth = max(1.0, size * 0.015)
     path.stroke()
@@ -47,7 +47,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
 }
 
 /// Generates a 64x32 px (@2x = 32x16 pt, 144 DPI) rounded-pill menu bar template icon
-/// with punched-out bold "MAC" big letters — matching Sticky-AI's "SAI" menu bar badge.
+/// with punched-out bold "MAC" big letters for the menu bar badge.
 func saveMenuBarBadgePNG(path: String) {
     let pixelWidth = 64
     let pixelHeight = 32

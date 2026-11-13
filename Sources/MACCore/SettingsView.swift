@@ -2726,11 +2726,11 @@ private struct TutorialTabView: View {
 
                 tutorialStepCard(
                     stepNumber: "4",
-                    title: "Click MAC Next to Your Clock → Start... + Session Password",
+                    title: "Click MAC in Menu Bar → Start... + Session Password",
                     icon: "menubar.rectangle",
                     accent: .green,
                     bullets: [
-                        "Click the bold 'MAC' badge next to your macOS menu bar clock and choose 'Start...' (or 'Settings' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
+                        "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Settings' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
                         "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
                         "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live Bot Activity' tab."
                     ],

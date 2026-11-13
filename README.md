@@ -21,7 +21,9 @@
 
 ## What is Mobile Agent Control (`mac.app`)?
 
-**Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source **native macOS application** that places a bold **`MAC`** icon right next to your macOS menu bar clock (matching [Sticky-AI](https://github.com/madmicrowave/sticky-ai)'s `SAI` badge) and connects your local coding Workspaces directly to **Telegram** on your iPhone or Android.
+**Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source native macOS application that lets you control your local AI coding workspaces directly from **Telegram** on your iPhone or Android.
+
+Send instructions or attach UI screenshots from your phone while away from your desk. The local AI agent executes prompts on your Mac inside your selected workspace/project, modifies files, runs tests, presents formatted summaries with git diffs, and automatically triggers deployment pipelines (Jenkins, GitHub, Google Cloud Build) to Staging and Production — perfect for doing real coding work, fixing bugs, and deploying changes on the go without sitting at your desk.
 
 You can code, debug, review git diffs, commit, push, and deploy to Jenkins, GitHub, or Google Cloud Build from anywhere using your choice of frontier AI models:
 - **Google Gemini**: Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon (low, medium, high effort levels)
@@ -130,11 +132,11 @@ The local model reasons, inspects files, applies changes, and returns a formatte
   cd mobile-agent-control
   npm start
   ```
-  `npm start` compiles **`mac.app`** natively with `swiftc` and launches the **`MAC`** icon next to your macOS clock.
+  `npm start` compiles **`mac.app`** natively with `swiftc` and opens **Settings**.
 
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
-1. **Click `MAC` Next to Your Clock → `Settings`** *(shows `mac.app` in your bottom Dock while open)*:
+1. **Click `MAC` in Menu Bar → `Settings`** *(shows `mac.app` in your bottom Dock while open)*:
    - In the **`General`** tab (organized into 3 clear cards):
      - **1. AI Engines & Models**:
        - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
@@ -156,7 +158,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
 
 ## macOS Menu Bar Controls & 4 App Tabs
 
-Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle control:
+Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
@@ -182,7 +184,7 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 ## Controlling Workspaces via Telegram
 
 ```text
-Click [MAC] Next to macOS Clock -> "Start..." -> Enter RAM-Only Session Password
+Click [MAC] in Menu Bar -> "Start..." -> Enter RAM-Only Session Password
    │  (MacBook sleep prevention automatically active while running)
    ▼
 Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
@@ -303,7 +305,7 @@ No. <code>mac.app</code> uses outbound HTTPS long-polling (<code>getUpdates</cod
 <details>
 <summary><b>What happens when I click <code>Settings</code> vs closing the window with <code>✕</code>?</b></summary>
 <br />
-Clicking <b>Settings</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running next to your macOS clock.
+Clicking <b>Settings</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running in the menu bar.
 </details>
 
 <details>
