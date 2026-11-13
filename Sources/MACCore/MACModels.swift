@@ -17,6 +17,15 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true),
         MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true),
         MACModelOption(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", tiered: true),
+        MACModelOption(id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet", tiered: false),
+        MACModelOption(id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", tiered: false),
+        MACModelOption(id: "deepseek-chat", label: "DeepSeek V3", tiered: false),
+        MACModelOption(id: "deepseek-reasoner", label: "DeepSeek R1", tiered: false),
+        MACModelOption(id: "gpt-4o", label: "OpenAI GPT-4o", tiered: false),
+        MACModelOption(id: "o3-mini", label: "OpenAI o3-mini", tiered: false),
+        MACModelOption(id: "o1", label: "OpenAI o1", tiered: false),
+        MACModelOption(id: "qwen-2.5-coder-32b", label: "Qwen 2.5 Coder 32B", tiered: false),
+        MACModelOption(id: "qwen-2.5-72b", label: "Qwen 2.5 72B", tiered: false),
         MACModelOption(id: "gpt-oss-120b-medium", label: "GPT-OSS 120B", tiered: false)
     ]
 
@@ -234,6 +243,14 @@ public struct MACJenkinsConfig: Codable, Equatable {
 
 public struct MACConfig: Codable, Equatable {
     public var agyBin: String
+    public var aiderBin: String
+    public var agentEngine: String
+    public var openaiApiKey: String
+    public var anthropicApiKey: String
+    public var deepseekApiKey: String
+    public var qwenApiKey: String
+    public var customApiBaseUrl: String
+    public var customApiKey: String
     public var defaultModel: String
     public var defaultModelLevel: String
     public var skipPermissions: Bool
@@ -247,6 +264,14 @@ public struct MACConfig: Codable, Equatable {
 
     public init(
         agyBin: String = MACPathUtils.defaultAgyBin(),
+        aiderBin: String = MACPathUtils.defaultAiderBin(),
+        agentEngine: String = "auto",
+        openaiApiKey: String = "",
+        anthropicApiKey: String = "",
+        deepseekApiKey: String = "",
+        qwenApiKey: String = "",
+        customApiBaseUrl: String = "",
+        customApiKey: String = "",
         defaultModel: String = "gemini-3.8-flash-high",
         defaultModelLevel: String = "high",
         skipPermissions: Bool = true,
@@ -259,6 +284,14 @@ public struct MACConfig: Codable, Equatable {
         antigravityBrainDir: String = MACPathUtils.defaultBrainDir()
     ) {
         self.agyBin = agyBin
+        self.aiderBin = aiderBin
+        self.agentEngine = agentEngine
+        self.openaiApiKey = openaiApiKey
+        self.anthropicApiKey = anthropicApiKey
+        self.deepseekApiKey = deepseekApiKey
+        self.qwenApiKey = qwenApiKey
+        self.customApiBaseUrl = customApiBaseUrl
+        self.customApiKey = customApiKey
         self.defaultModel = defaultModel
         self.defaultModelLevel = defaultModelLevel
         self.skipPermissions = skipPermissions
@@ -272,13 +305,23 @@ public struct MACConfig: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case agyBin, defaultModel, defaultModelLevel, skipPermissions, jenkins, workspaces
+        case agyBin, aiderBin, agentEngine
+        case openaiApiKey, anthropicApiKey, deepseekApiKey, qwenApiKey, customApiBaseUrl, customApiKey
+        case defaultModel, defaultModelLevel, skipPermissions, jenkins, workspaces
         case telegramBotToken, telegramApiBaseUrl, allowedUserIds, defaultHistoryCount, antigravityBrainDir
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.agyBin = try c.decodeIfPresent(String.self, forKey: .agyBin) ?? MACPathUtils.defaultAgyBin()
+        self.aiderBin = try c.decodeIfPresent(String.self, forKey: .aiderBin) ?? MACPathUtils.defaultAiderBin()
+        self.agentEngine = try c.decodeIfPresent(String.self, forKey: .agentEngine) ?? "auto"
+        self.openaiApiKey = try c.decodeIfPresent(String.self, forKey: .openaiApiKey) ?? ""
+        self.anthropicApiKey = try c.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
+        self.deepseekApiKey = try c.decodeIfPresent(String.self, forKey: .deepseekApiKey) ?? ""
+        self.qwenApiKey = try c.decodeIfPresent(String.self, forKey: .qwenApiKey) ?? ""
+        self.customApiBaseUrl = try c.decodeIfPresent(String.self, forKey: .customApiBaseUrl) ?? ""
+        self.customApiKey = try c.decodeIfPresent(String.self, forKey: .customApiKey) ?? ""
         self.defaultModel = try c.decodeIfPresent(String.self, forKey: .defaultModel) ?? "gemini-3.8-flash-high"
         self.defaultModelLevel = try c.decodeIfPresent(String.self, forKey: .defaultModelLevel) ?? "high"
         self.skipPermissions = try c.decodeIfPresent(Bool.self, forKey: .skipPermissions) ?? true
@@ -302,6 +345,15 @@ public enum MACPathUtils {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/agy").path
         return FileManager.default.fileExists(atPath: local) ? local : "agy"
+    }
+
+    public static func defaultAiderBin() -> String {
+        let local = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/aider").path
+        if FileManager.default.fileExists(atPath: local) { return local }
+        let brew = "/opt/homebrew/bin/aider"
+        if FileManager.default.fileExists(atPath: brew) { return brew }
+        return "aider"
     }
 
     public static func defaultBrainDir() -> String {

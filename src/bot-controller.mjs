@@ -21,6 +21,7 @@ import {
   resolveEffectiveModelAndLevel,
   runAgyTurn
 } from './agy-runner.mjs';
+import { runUnifiedAgentTurn } from './agent-runner.mjs';
 import {
   getLatestConversationMessages,
   discoverRecentWorkspaceConversations
@@ -76,7 +77,7 @@ export class BotController {
   constructor({
     configStore,
     telegram,
-    agentRunner = runAgyTurn,
+    agentRunner = runUnifiedAgentTurn,
     jenkinsFactory = (cfg) => new JenkinsClient(cfg),
     gitPush = true,
     nowProvider = () => new Date(),
@@ -1288,7 +1289,7 @@ export class BotController {
     const wsLabel = this.getWorkspaceLabel(ws);
     const modelInfo = this.resolveWorkspaceModel(ws);
 
-    const familyButtons = GEMINI_MODEL_FAMILIES.map((fam) => {
+    const familyButtons = DEFAULT_AGENT_MODEL_FAMILIES.map((fam) => {
       const isSelected = modelInfo.family === fam.family;
       return {
         text: `${isSelected ? '✅ ' : '🧠 '}${fam.label}`,
@@ -1810,6 +1811,14 @@ export class BotController {
     const runSingleAttempt = async (attemptConversationId) => {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
+        aiderBin: this.configStore.config.aiderBin,
+        agentEngine: this.configStore.config.agentEngine,
+        openaiApiKey: this.configStore.config.openaiApiKey,
+        anthropicApiKey: this.configStore.config.anthropicApiKey,
+        deepseekApiKey: this.configStore.config.deepseekApiKey,
+        qwenApiKey: this.configStore.config.qwenApiKey,
+        customApiBaseUrl: this.configStore.config.customApiBaseUrl,
+        customApiKey: this.configStore.config.customApiKey,
         workspacePath: ws.path,
         prompt: effectivePrompt,
         imagePaths: attachedPhotos.map((p) => p.path),

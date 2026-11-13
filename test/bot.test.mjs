@@ -21,10 +21,16 @@ import {
 import {
   VALID_MODEL_LEVELS,
   GEMINI_MODEL_FAMILIES,
+  DEFAULT_AGENT_MODEL_FAMILIES,
   buildAgyArgs,
   isMissingTrajectoryError,
   resolveEffectiveModelAndLevel
 } from '../src/agy-runner.mjs';
+import {
+  executeWorkspaceTool,
+  runDirectApiTurn,
+  runUnifiedAgentTurn
+} from '../src/agent-runner.mjs';
 import {
   cleanUserPromptText,
   readTranscriptMessages,
@@ -495,6 +501,69 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     });
     assert.match(plistXml, /com\.domonk\.mobile-agent-control/);
     assert.match(plistXml, /GIT_TERMINAL_PROMPT/);
+  });
+
+  it('executes workspace tools and supports Option 1 (CLI) & Option 2 (Direct API) unified runner', async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mac-tools-test-'));
+    try {
+      // 1. write_file
+      const writeRes = await executeWorkspaceTool(tmpDir, 'write_file', {
+        path: 'src/main.js',
+        content: 'console.log("hello world");\n'
+      });
+      assert.match(writeRes, /Successfully wrote/);
+
+      // 2. read_file
+      const readContent = await executeWorkspaceTool(tmpDir, 'read_file', { path: 'src/main.js' });
+      assert.equal(readContent, 'console.log("hello world");\n');
+
+      // 3. edit_file
+      const editRes = await executeWorkspaceTool(tmpDir, 'edit_file', {
+        path: 'src/main.js',
+        target: 'hello world',
+        replacement: 'hello agent'
+      });
+      assert.match(editRes, /Successfully edited/);
+      const afterEdit = await executeWorkspaceTool(tmpDir, 'read_file', { path: 'src/main.js' });
+      assert.equal(afterEdit, 'console.log("hello agent");\n');
+
+      // 4. list_dir
+      const listRes = await executeWorkspaceTool(tmpDir, 'list_dir', { path: 'src' });
+      assert.match(listRes, /main\.js/);
+
+      // 5. run_command
+      const cmdRes = await executeWorkspaceTool(tmpDir, 'run_command', { command: 'node src/main.js' });
+      assert.equal(cmdRes, 'hello agent');
+
+      // 6. Direct API error when key missing
+      assert.rejects(
+        async () => {
+          const { promise } = runDirectApiTurn({
+            workspacePath: tmpDir,
+            prompt: 'Test prompt',
+            provider: 'deepseek',
+            apiKey: ''
+          });
+          await promise;
+        },
+        /DeepSeek API key is not configured/
+      );
+
+      // 7. Model normalization for new providers
+      const dskNorm = resolveEffectiveModelAndLevel({ model: 'deepseek-chat' });
+      assert.equal(dskNorm.modelId, 'deepseek-chat');
+      assert.equal(dskNorm.displayLabel, 'DeepSeek V3');
+
+      const gpt4oNorm = resolveEffectiveModelAndLevel({ model: 'gpt-4o' });
+      assert.equal(gpt4oNorm.modelId, 'gpt-4o');
+      assert.equal(gpt4oNorm.displayLabel, 'OpenAI GPT-4o');
+
+      const qwenNorm = resolveEffectiveModelAndLevel({ model: 'qwen-2.5-coder' });
+      assert.equal(qwenNorm.modelId, 'qwen-2.5-coder-32b');
+      assert.equal(qwenNorm.displayLabel, 'Qwen 2.5 Coder 32B');
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('validates git branch names accurately', async () => {
@@ -1635,11 +1704,16 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     const flatModelBtns = cfgMsg.reply_markup.inline_keyboard.flat();
     const cbs = flatModelBtns.map((b) => b.callback_data);
-    // Must include Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, and Claude Opus 5.5
+    // Must include Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Claude Opus 5.5, DeepSeek, OpenAI, Qwen
     assert.ok(cbs.includes('mdl:f:payments:g38'));
     assert.ok(cbs.includes('mdl:f:payments:g4'));
     assert.ok(cbs.includes('mdl:f:payments:g4c'));
     assert.ok(cbs.includes('mdl:f:payments:co55'));
+    assert.ok(cbs.includes('mdl:f:payments:c37s'));
+    assert.ok(cbs.includes('mdl:f:payments:dsk'));
+    assert.ok(cbs.includes('mdl:f:payments:dsr'));
+    assert.ok(cbs.includes('mdl:f:payments:g4o'));
+    assert.ok(cbs.includes('mdl:f:payments:q25c'));
     // Must have ONLY 3 levels (low, medium, high) — NO xhigh or max, and NO Custom Model button!
     assert.ok(cbs.includes('mdl:l:payments:low'));
     assert.ok(cbs.includes('mdl:l:payments:medium'));

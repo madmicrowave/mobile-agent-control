@@ -262,6 +262,45 @@ export class ConfigStore {
     if (!this.config.agyBin) {
       this.config.agyBin = process.env.AGY_BIN || resolveDefaultAgyBin();
     }
+    if (!this.config.aiderBin) {
+      this.config.aiderBin = process.env.AIDER_BIN || 'aider';
+    }
+    if (!this.config.agentEngine) {
+      this.config.agentEngine = process.env.AGENT_ENGINE || 'auto';
+    }
+    if (process.env.DEEPSEEK_API_KEY && !this.config.deepseekApiKey) {
+      this.config.deepseekApiKey = process.env.DEEPSEEK_API_KEY.trim();
+    } else if (typeof this.config.deepseekApiKey !== 'string') {
+      this.config.deepseekApiKey = '';
+    }
+    if (process.env.OPENAI_API_KEY && !this.config.openaiApiKey) {
+      this.config.openaiApiKey = process.env.OPENAI_API_KEY.trim();
+    } else if (typeof this.config.openaiApiKey !== 'string') {
+      this.config.openaiApiKey = '';
+    }
+    if (process.env.ANTHROPIC_API_KEY && !this.config.anthropicApiKey) {
+      this.config.anthropicApiKey = process.env.ANTHROPIC_API_KEY.trim();
+    } else if (typeof this.config.anthropicApiKey !== 'string') {
+      this.config.anthropicApiKey = '';
+    }
+    if (
+      (process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY) &&
+      !this.config.qwenApiKey
+    ) {
+      this.config.qwenApiKey = (process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY).trim();
+    } else if (typeof this.config.qwenApiKey !== 'string') {
+      this.config.qwenApiKey = '';
+    }
+    if (process.env.CUSTOM_API_BASE_URL && !this.config.customApiBaseUrl) {
+      this.config.customApiBaseUrl = process.env.CUSTOM_API_BASE_URL.trim();
+    } else if (typeof this.config.customApiBaseUrl !== 'string') {
+      this.config.customApiBaseUrl = '';
+    }
+    if (process.env.CUSTOM_API_KEY && !this.config.customApiKey) {
+      this.config.customApiKey = process.env.CUSTOM_API_KEY.trim();
+    } else if (typeof this.config.customApiKey !== 'string') {
+      this.config.customApiKey = '';
+    }
     if (process.env.ANTIGRAVITY_BRAIN_DIR) {
       this.config.antigravityBrainDir = process.env.ANTIGRAVITY_BRAIN_DIR;
     } else if (
@@ -383,6 +422,14 @@ export class ConfigStore {
         allowedUserIds: parseAllowedUserIds(process.env.ALLOWED_TELEGRAM_USER_IDS),
         defaultHistoryCount: Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6,
         agyBin: process.env.AGY_BIN || resolveDefaultAgyBin(),
+        aiderBin: process.env.AIDER_BIN || 'aider',
+        agentEngine: process.env.AGENT_ENGINE || 'auto',
+        deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+        openaiApiKey: process.env.OPENAI_API_KEY || '',
+        anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+        qwenApiKey: process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY || '',
+        customApiBaseUrl: process.env.CUSTOM_API_BASE_URL || '',
+        customApiKey: process.env.CUSTOM_API_KEY || '',
         antigravityBrainDir: process.env.ANTIGRAVITY_BRAIN_DIR || defaultBrainDir,
         defaultModel: process.env.DEFAULT_AGENT_MODEL || 'gemini-3.8-flash',
         defaultModelLevel: process.env.DEFAULT_AGENT_MODEL_LEVEL || 'high',

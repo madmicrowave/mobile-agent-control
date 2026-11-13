@@ -296,10 +296,25 @@ private final class GeneralTabVM: ObservableObject {
     @Published var tokenCheckMessage: String?
     @Published var tokenCheckSucceeded: Bool = false
 
-    // 3. AGY
+    // 3. AI Agent Runners & Models (Option 1: Terminal CLI, Option 2: Direct API)
     @Published var agyBinPath: String = ""
+    @Published var aiderBinPath: String = "aider"
+    @Published var agentEngine: String = "auto"
     @Published var defaultModelFamily: String = "gemini-3.8-flash"
     @Published var defaultModelLevel: String = "high"
+
+    // Option 2: Direct API Keys & Endpoints
+    @Published var deepseekApiKey: String = ""
+    @Published var showDeepseekKey: Bool = false
+    @Published var openaiApiKey: String = ""
+    @Published var showOpenaiKey: Bool = false
+    @Published var anthropicApiKey: String = ""
+    @Published var showAnthropicKey: Bool = false
+    @Published var qwenApiKey: String = ""
+    @Published var showQwenKey: Bool = false
+    @Published var customApiBaseUrl: String = ""
+    @Published var customApiKey: String = ""
+    @Published var showCustomKey: Bool = false
 
     var effectiveDefaultModelId: String {
         MACModelOption.normalizeFamilyAndLevel(rawModel: defaultModelFamily, rawLevel: defaultModelLevel).modelId
@@ -327,8 +342,8 @@ private struct GeneralTabView: View {
                 // Section 2: Telegram
                 telegramSectionCard
 
-                // Section 3: AGY
-                agySectionCard
+                // Section 3: AI Engines & Models (Option 1: CLI Binaries, Option 2: Direct API Keys)
+                aiEnginesSectionCard
 
                 // Unified Save Row
                 HStack {
@@ -548,10 +563,10 @@ private struct GeneralTabView: View {
         }
     }
 
-    private var agySectionCard: some View {
-        MACSectionCard(title: "AGY", systemImage: "cpu.fill") {
+    private var aiEnginesSectionCard: some View {
+        MACSectionCard(title: "AI Engines & Models", systemImage: "cpu.fill") {
             HStack(spacing: 6) {
-                Text("Default CLI ID:")
+                Text("Default ID:")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
                 Text(vm.effectiveDefaultModelId)
@@ -565,20 +580,202 @@ private struct GeneralTabView: View {
             .fixedSize()
         } content: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Antigravity CLI Binary Path (agy)")
+                Text("Agent Execution Engine")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                HStack(spacing: 8) {
-                    TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Browse...") {
-                        if let chosen = chooseExecutableFile(initialPath: vm.agyBinPath) {
-                            vm.agyBinPath = chosen
+                Picker("Engine", selection: $vm.agentEngine) {
+                    Text("Auto (Recommended)").tag("auto")
+                    Text("AGY CLI").tag("agy")
+                    Text("Aider CLI").tag("aider")
+                    Text("Direct API").tag("direct-api")
+                }
+                .pickerStyle(.segmented)
+            }
+
+            // Option 1: Terminal CLI Runners
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                    Text("Option 1: Terminal CLI Runner Binaries")
+                        .font(.system(size: 12.5, weight: .bold))
+                }
+                Text("Define paths to local CLI binaries to execute AI workflows via terminal.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Antigravity CLI (agy)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                if let chosen = chooseExecutableFile(initialPath: vm.agyBinPath, prompt: "Select agy Binary") {
+                                    vm.agyBinPath = chosen
+                                }
+                            }
+                            .fixedSize()
                         }
                     }
-                    .fixedSize()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Aider CLI (aider)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("aider", text: $vm.aiderBinPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {
+                                    vm.aiderBinPath = chosen
+                                }
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            // Option 2: Direct API Keys & Providers
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                    Text("Option 2: Direct API Keys & Custom Endpoints")
+                        .font(.system(size: 12.5, weight: .bold))
+                }
+                Text("Define API keys to use Claude, OpenAI, DeepSeek, or Qwen directly without external CLI setup.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("DeepSeek API Key (V3 & R1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            if vm.showDeepseekKey {
+                                TextField("sk-...", text: $vm.deepseekApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-...", text: $vm.deepseekApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showDeepseekKey ? "Hide" : "Show") {
+                                vm.showDeepseekKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("OpenAI API Key (GPT-4o, o3-mini, o1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            if vm.showOpenaiKey {
+                                TextField("sk-proj-...", text: $vm.openaiApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-proj-...", text: $vm.openaiApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showOpenaiKey ? "Hide" : "Show") {
+                                vm.showOpenaiKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Anthropic API Key (Claude 3.7 / 3.5 Sonnet)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            if vm.showAnthropicKey {
+                                TextField("sk-ant-...", text: $vm.anthropicApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-ant-...", text: $vm.anthropicApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showAnthropicKey ? "Hide" : "Show") {
+                                vm.showAnthropicKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Qwen / DashScope / OpenRouter API Key")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            if vm.showQwenKey {
+                                TextField("sk-...", text: $vm.qwenApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-...", text: $vm.qwenApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showQwenKey ? "Hide" : "Show") {
+                                vm.showQwenKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Custom API Base URL (optional, e.g. Ollama, vLLM, OpenRouter)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("http://localhost:11434/v1 or https://openrouter.ai/api/v1", text: $vm.customApiBaseUrl)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Custom API Key (optional)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            if vm.showCustomKey {
+                                TextField("key...", text: $vm.customApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("key...", text: $vm.customApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showCustomKey ? "Hide" : "Show") {
+                                vm.showCustomKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
 
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -626,7 +823,7 @@ private struct GeneralTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Default Effort Level")
+                    Text("Default Effort Level (for tiered models)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)
@@ -669,6 +866,15 @@ private struct GeneralTabView: View {
         vm.historyCount = appState.config.defaultHistoryCount
 
         vm.agyBinPath = appState.config.agyBin
+        vm.aiderBinPath = appState.config.aiderBin
+        vm.agentEngine = appState.config.agentEngine
+        vm.deepseekApiKey = appState.config.deepseekApiKey
+        vm.openaiApiKey = appState.config.openaiApiKey
+        vm.anthropicApiKey = appState.config.anthropicApiKey
+        vm.qwenApiKey = appState.config.qwenApiKey
+        vm.customApiBaseUrl = appState.config.customApiBaseUrl
+        vm.customApiKey = appState.config.customApiKey
+
         let norm = MACModelOption.normalizeFamilyAndLevel(
             rawModel: appState.config.defaultModel,
             rawLevel: appState.config.defaultModelLevel
@@ -703,6 +909,19 @@ private struct GeneralTabView: View {
             appState.config.agyBin = cleanAgy
             vm.agyBinPath = cleanAgy
         }
+        let cleanAider = MACPathUtils.expandPath(vm.aiderBinPath)
+        if !cleanAider.isEmpty {
+            appState.config.aiderBin = cleanAider
+            vm.aiderBinPath = cleanAider
+        }
+        appState.config.agentEngine = vm.agentEngine
+        appState.config.deepseekApiKey = vm.deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.openaiApiKey = vm.openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.anthropicApiKey = vm.anthropicApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.qwenApiKey = vm.qwenApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.customApiBaseUrl = vm.customApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.customApiKey = vm.customApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
         let normModel = MACModelOption.normalizeFamilyAndLevel(
             rawModel: vm.defaultModelFamily,
             rawLevel: vm.defaultModelLevel
@@ -710,7 +929,7 @@ private struct GeneralTabView: View {
         appState.config.defaultModel = normModel.modelId
         appState.config.defaultModelLevel = normModel.level
 
-        appState.saveConfigToDisk(banner: "Saved General settings (Jenkins, Telegram & AGY).")
+        appState.saveConfigToDisk(banner: "Saved General settings (Jenkins, Telegram, AI Engines & Models).")
     }
 
     private func runJenkinsConnectionTest() {
@@ -756,13 +975,13 @@ private struct GeneralTabView: View {
         }
     }
 
-    private func chooseExecutableFile(initialPath: String) -> String? {
+    private func chooseExecutableFile(initialPath: String, prompt: String = "Select Binary") -> String? {
         let panel = NSOpenPanel()
         panel.level = .modalPanel
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Select agy Binary"
+        panel.prompt = prompt
         let expanded = MACPathUtils.expandPath(initialPath)
         if !expanded.isEmpty {
             let parent = URL(fileURLWithPath: expanded).deletingLastPathComponent()
@@ -1735,13 +1954,14 @@ private struct TutorialTabView: View {
 
                 tutorialStepCard(
                     stepNumber: "3",
-                    title: "Add Workspaces & Optional Staging → Production Jenkins Jobs",
+                    title: "Configure AI Engines (CLI or Direct API) & Workspaces",
                     icon: "folder.fill.badge.gearshape",
                     accent: .purple,
                     bullets: [
-                        "Open the 'Workspaces' tab, click '+' in the left sidebar to create a new Workspace record, enter a Workspace Label, and click 'Browse...' to pick your project folder.",
-                        "Click 'Scan Git Repos' to auto-detect single or multi-repo Git folders, and choose the Workspace's AI Model (Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Claude Opus 5.5) and effort level (low / medium / high).",
-                        "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, and save your server credentials in General → Jenkins."
+                        "In General → AI Engines, select your engine: Option 1 (CLI runners: agy, aider) or Option 2 (Direct API keys: Claude, OpenAI, DeepSeek, Qwen).",
+                        "Open the 'Workspaces' tab, click '+' in the left sidebar to add a Workspace, enter a Label, and click 'Browse...' to select your project folder.",
+                        "Click 'Scan Git Repos' to auto-detect repos, and pick your preferred AI Model: Gemini, Claude (Opus 5.5, 3.7 Sonnet), DeepSeek (V3, R1), OpenAI (GPT-4o, o3-mini), or Qwen.",
+                        "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in General → Jenkins."
                     ],
                     actionTitle: nil,
                     actionURL: nil,

@@ -83,6 +83,119 @@ export const DEFAULT_AGENT_MODEL_FAMILIES = [
     tieredLevels: ['low', 'medium', 'high']
   },
   {
+    shortCode: 'c37s',
+    family: 'claude-3-7-sonnet',
+    label: 'Claude 3.7 Sonnet',
+    aliases: [
+      'claude-3-7-sonnet',
+      'claude-3.7-sonnet',
+      'claude 3.7 sonnet',
+      'claude-3.7',
+      'claude 3.7',
+      'claude-3-7'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'c35s',
+    family: 'claude-3-5-sonnet',
+    label: 'Claude 3.5 Sonnet',
+    aliases: [
+      'claude-3-5-sonnet',
+      'claude-3.5-sonnet',
+      'claude 3.5 sonnet',
+      'claude-3.5',
+      'claude 3.5',
+      'claude-3-5'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'dsk',
+    family: 'deepseek-chat',
+    label: 'DeepSeek V3',
+    aliases: [
+      'deepseek-chat',
+      'deepseek-v3',
+      'deepseek v3',
+      'deepseek'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'dsr',
+    family: 'deepseek-reasoner',
+    label: 'DeepSeek R1',
+    aliases: [
+      'deepseek-reasoner',
+      'deepseek-r1',
+      'deepseek r1',
+      'r1'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'g4o',
+    family: 'gpt-4o',
+    label: 'OpenAI GPT-4o',
+    aliases: [
+      'gpt-4o',
+      'gpt4o',
+      '4o',
+      'chatgpt-4o',
+      'openai-gpt-4o'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'o3m',
+    family: 'o3-mini',
+    label: 'OpenAI o3-mini',
+    aliases: [
+      'o3-mini',
+      'o3mini',
+      'o3',
+      'openai-o3-mini'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'o1',
+    family: 'o1',
+    label: 'OpenAI o1',
+    aliases: [
+      'o1',
+      'openai-o1',
+      'chatgpt-o1'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'q25c',
+    family: 'qwen-2.5-coder-32b',
+    label: 'Qwen 2.5 Coder 32B',
+    aliases: [
+      'qwen-2.5-coder-32b',
+      'qwen-coder',
+      'qwen-2.5-coder',
+      'qwen coder',
+      'qwen 2.5 coder'
+    ],
+    tieredLevels: []
+  },
+  {
+    shortCode: 'q25',
+    family: 'qwen-2.5-72b',
+    label: 'Qwen 2.5 72B',
+    aliases: [
+      'qwen-2.5-72b',
+      'qwen-72b',
+      'qwen',
+      'qwen 2.5 72b'
+    ],
+    tieredLevels: []
+  },
+  {
     shortCode: 'gpt120',
     family: 'gpt-oss-120b-medium',
     label: 'GPT-OSS 120B',

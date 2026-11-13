@@ -4,7 +4,7 @@
 
 # Mobile Agent Control (`mac.app` / `MAC`) — Native macOS App for Telegram AI Coding
 
-**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Antigravity, Google Gemini & Anthropic Claude), push Git branches across single repos or monorepos, and run optional Staging → Production Jenkins CI/CD straight from Telegram.**
+**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production Jenkins CI/CD straight from Telegram.**
 
 [![CI](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml/badge.svg)](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/madmicrowave/mobile-agent-control?label=Download%20mac.app&logo=apple)](https://github.com/madmicrowave/mobile-agent-control/releases/latest)
@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
 [![Powered by DOMONK Factory](https://img.shields.io/badge/Powered%20by-DOMONK%20Factory-7c3aed)](https://domonk.com)
 
-[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**App Screenshots**](#native-macos-application-preview) • [**2-Minute Setup**](#easy-2-minute-setup-100-gui--no-cli-needed) • [**Menu Bar & 4 Tabs**](#macos-menu-bar-controls--4-app-tabs) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
+[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**App Screenshots**](#native-macos-application-preview) • [**AI Engines & Providers**](#supported-ai-models--dual-engine-architecture) • [**2-Minute Setup**](#easy-2-minute-setup-100-gui--no-cli-needed) • [**Menu Bar & 4 Tabs**](#macos-menu-bar-controls--4-app-tabs) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
 
 </div>
 
@@ -21,16 +21,50 @@
 
 ## What is Mobile Agent Control (`mac.app`)?
 
-**Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source **native macOS application** that places a bold **`MAC`** icon right next to your macOS menu bar clock (matching [Sticky-AI](https://github.com/madmicrowave/sticky-ai)'s `SAI` badge) and connects your local **Google Antigravity (`agy`)** coding Workspaces (**Google Gemini 3.8 Flash**, **Gemini 4 Argon**, **Gemini 4 Carbon**, **Claude Opus 5.5**, **Claude Sonnet 5.5**) directly to **Telegram** on your iPhone or Android.
+**Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source **native macOS application** that places a bold **`MAC`** icon right next to your macOS menu bar clock (matching [Sticky-AI](https://github.com/madmicrowave/sticky-ai)'s `SAI` badge) and connects your local coding Workspaces directly to **Telegram** on your iPhone or Android.
+
+You can code, debug, review git diffs, commit, push, and deploy to Jenkins from anywhere using your choice of frontier AI models:
+- **Google Gemini**: Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon (low, medium, high effort levels)
+- **Anthropic Claude**: Claude Opus 5.5, Claude Sonnet 5.5, Claude 3.7 Sonnet, Claude 3.5 Sonnet
+- **DeepSeek**: DeepSeek V3 (`deepseek-chat`), DeepSeek R1 (`deepseek-reasoner`)
+- **OpenAI**: GPT-4o, o3-mini, o1
+- **Alibaba Qwen**: Qwen 2.5 Coder 32B, Qwen 2.5 72B
+- **Local / Open-Source**: Ollama, vLLM, OpenRouter, or GPT-OSS 120B
 
 Whether you are away from your desk, commuting, or testing a mobile build on your phone, you can:
 1. **Switch between any local Mac Workspace** in one tap (`🔀 Workspace`) — each with its own AI model, effort level, active chat, and Git repositories.
 2. **Continue your live Desktop chat** (`Same Chat •`) or start a **`🆕 New Chat`** — sending text prompts and up to **5 UI screenshots** at once.
-3. **Use Git-Only Push Mode OR Full Jenkins CI/CD**:
-   - **Git-Only Workspaces (No Jenkins Required)**: Leave Jenkins jobs empty and `mac.app` reviews modified files (`M` / `A` / `D`) across one or multiple Git repositories in the Workspace, then commits & pushes to your configured branch (or a new **Custom Branch**) right from Telegram.
-   - **Single or Multi-Environment Jenkins CI/CD**: Attach **Single (Staging)** or **Multi (Staging → Production)** parameterized Jenkins jobs (`VERSION=<branch>`), stream build failure logs, verify your live preview URL, and tap **`🚀 Yes, deploy on prod`**, **`✅ Yes (skip prod deploy)`**, or **`↩️ Revert (Bad Commit)`**.
+3. **Iterate with "Add Fix" in the Same Process**: Review changed files (`M` / `A` / `D`), tap **`Add Fix`** to supply follow-up instructions without committing or resetting state, or tap **`✅ Yes`** to commit & push.
+4. **Autonomous CI/CD & Error Recovery**:
+   - **Git-Only Workspaces (No Jenkins Required)**: Commits & pushes to your configured branch or a new **Custom Branch** right from Telegram.
+   - **Single or Multi-Environment Jenkins CI/CD**: Run Staging, inspect failure logs, tap **`↩️ Revert`** for an instant rollback deploy, or tap **`Fix Error`** to have AI automatically diagnose the build log, apply fixes, commit, and prompt to redeploy!
 
 Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero uploading private source code to third-party cloud sandboxes, and **automatic MacBook sleep prevention** whenever the bot is running.
+
+---
+
+## Supported AI Models & Dual-Engine Architecture
+
+In `mac.app` **General → AI Engines**, you can run any model using two flexible options:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Mobile Agent Control Execution Modes                     │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│  Option 1: Terminal CLI Runners     │  Option 2: Direct API Engine         │
+│  (agy, aider, etc.)                  │  (Zero CLI tools needed)             │
+├──────────────────────────────────────┼──────────────────────────────────────┤
+│ • Antigravity CLI (agy):             │ • DeepSeek API (V3 & R1)             │
+│   Native support for Gemini 3.8/4 &  │ • OpenAI API (GPT-4o, o3-mini, o1)   │
+│   Claude Opus/Sonnet 5.5             │ • Anthropic API (Claude 3.7/3.5)     │
+│ • Aider CLI (aider):                 │ • Qwen / DashScope / OpenRouter      │
+│   Multi-provider terminal coding CLI │ • Custom Base URL (Ollama, vLLM)     │
+│ • Custom binary paths with Browse... │ • Built-in file read, edit, write,   │
+│   button in General tab              │   command runner & tool loop         │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+Both options feed changes into the exact same Git inspection and Telegram commit review pipeline!
 
 ---
 
@@ -41,14 +75,14 @@ Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero u
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — Jenkins, Telegram &amp; AGY Settings" width="100%" />
+      <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — Jenkins, Telegram &amp; AI Engines Settings" width="100%" />
       <br />
-      <sub><b>Tab 1: General</b> — Unified <b>Jenkins</b>, <b>Telegram</b> &amp; <b>AGY</b> setup, 1-click connection checks, Login Item toggle &amp; live sleep-prevention indicator.</sub>
+      <sub><b>Tab 1: General</b> — Unified <b>Jenkins</b>, <b>Telegram</b>, <b>AI Engines (CLI + API Keys)</b>, 1-click connection checks, Login Item toggle &amp; live sleep-prevention indicator.</sub>
     </td>
     <td width="50%" align="center">
       <img src="./assets/macos-workspaces-tab.png" alt="mac.app Workspaces Tab — Inline + Workspace Creation, AI Models, Multi-Env Jenkins &amp; Git Repos" width="100%" />
       <br />
-      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models, and choose Git-only or Staging → Prod Jenkins.</sub>
+      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models (Gemini, Claude, DeepSeek, OpenAI, Qwen), and choose Git-only or Staging → Prod Jenkins.</sub>
     </td>
   </tr>
 </table>
@@ -74,15 +108,19 @@ Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero u
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
 1. **Click `MAC` Next to Your Clock → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
-   - In the **`General`** tab (or **`Tutorial`** tab if you need a new bot), click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**.
-   - *(Optional)* Enter your numeric Telegram User ID (`@userinfobot`), **Jenkins** server URL/token (`Test Jenkins Connection`), and **AGY** CLI path / default AI model, then click **Save General Settings**.
+   - In the **`General`** tab:
+     - **Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**.
+     - **AI Engines**:
+       - *Option 1 (CLI)*: Define path to `agy` or `aider` CLI binary with **Browse...**.
+       - *Option 2 (Direct API)*: Enter your API key for **DeepSeek**, **OpenAI**, **Anthropic Claude**, or **Qwen**.
+     - *(Optional)* Enter allowed numeric Telegram User IDs (`@userinfobot`) and **Jenkins** server credentials. Click **Save General Settings**.
 2. **Open `Workspaces` Tab & Click `+`**:
-   - Click **`+`** in the left sidebar — an empty Workspace draft appears on the left and opens the form on the right.
-   - Enter a **Workspace Label** (e.g. `SAAS PLATFORM`, `MAC OS`), click **Browse...** to pick your project or monorepo folder, and click **Scan Git Repos**.
-   - Pick the Workspace's **AI Model & Effort Level** (`low` / `medium` / `high`). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
+   - Click **`+`** in the left sidebar to create a new Workspace draft.
+   - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Scan Git Repos**.
+   - Pick the Workspace's **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
-   - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to ship from anywhere!
+   - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
 
 ---
 
@@ -101,10 +139,10 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 
 ### Inside the 4 `mac.app` Window Tabs
 
-1. **`⚙️ General`** — Combines **Jenkins** (server URL, credentials, timeout, 1-click connection test), **Telegram** (BotFather token, 1-click verify, allowed User IDs, history message count), and **AGY** (`agy` binary path, default AI model & effort level, Login Item toggle, sleep status).
-2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports multi-repository folders (e.g. multiple Git repos under one parent Workspace), extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
-3. **`📖 Tutorial`** — Interactive 2-minute onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, Workspace & CI/CD walkthroughs, and Telegram command cheat sheets.
-4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, `agy` turns, Git pushes, and Jenkins builds.
+1. **`⚙️ General`** — Combines **Jenkins** (server URL, credentials, timeout, 1-click test), **Telegram** (bot token, 1-click verify, user lock), and **AI Engines** (Option 1 CLI paths for `agy` and `aider`, Option 2 API keys for DeepSeek, OpenAI, Anthropic, Qwen, Custom URL, default AI model & effort level, Login Item toggle, sleep status).
+2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
+3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
+4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and Jenkins builds.
 
 ---
 
@@ -118,27 +156,30 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
    │
    ▼
 🗂 Select a Workspace (`•` marks active Workspace; `Same Chat •` active by default)
-   ├── Type a prompt or attach up to 5 screenshots ──► Continues active Desktop chat immediately
-   └── Tap "🆕 New Chat"                           ──► Starts a fresh Antigravity conversation
+   ├── Type a prompt or attach up to 5 screenshots ──► Continues active chat
+   └── Tap "🆕 New Chat"                           ──► Starts a fresh conversation
    │
    ▼
-🤖 Antigravity (`agy`) runs locally on your Mac with the Workspace's AI Model & Level
+🤖 AI Agent runs locally on your Mac (via CLI runner or Direct API)
    │
    ▼
 📝 Formatted Agent Summary + Changed Files (`M` / `A` / `D` across single or multiple Git repos)
-   Ask: Commit & push?
-   ├── ❌ No (Discard Changes) ──► Cleans turn's uncommitted edits -> Ready
+   Ask: Commit & push these changes?
+   ├── ➕ Add Fix              ──► Prompts for follow-up fixes in same turn without resetting
+   ├── ❌ No (Discard Changes) ──► Reverts uncommitted edits -> Ready
    ├── ✅ Yes                  ──► Commits & pushes modified repos on current/configured branch
    └── 🌿 Custom Branch        ──► Prompts for branch name -> `git checkout -B <branch>` -> commits & pushes
    │
    ├── (If Workspace has NO Jenkins jobs: Git push completes & Workspace unlocks -> Ready!)
    ▼
 🚀 (If Jenkins configured) Ask: Run Jenkins / Run Staging Jenkins? (`buildWithParameters?VERSION=<branch>`)
-   ├── ❌ Failed  ──► Streams Jenkins Console Error Log -> Retry / Revert / Keep
-   └── ✅ Success ──► Ask: Is it okay?
+   ├── ❌ Failed  ──► Streams Jenkins Console Error Log
+   │                  ├── ↩️ Revert      ──► `git revert` + push + rollback Jenkins deploy
+   │                  └── 🛠 Fix Error   ──► AI analyzes error log, auto-commits fix & prompts deploy
+   └── ✅ Success ──► Ask: Deploy to Production?
                         ├── 🚀 Yes, deploy on prod (multi-env) ──► Runs Production Jenkins -> Ready
-                        ├── ✅ Yes / Yes (skip prod deploy)    ──► Confirms & unlocks Workspace -> Ready
-                        └── ↩️ Revert (Bad Commit)             ──► `git revert` + push + optional rollback deploy
+                        ├── ✅ Yes (skip prod)                 ──► Confirms & unlocks Workspace -> Ready
+                        └── ↩️ Revert                          ──► Reverts bad commit
 ```
 
 ### Telegram Buttons & Slash Commands
@@ -146,8 +187,11 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 | Control / Command | Description |
 | :--- | :--- |
 | **`🔀 Workspace`** (`/workspaces`) | Switch between local Mac Workspaces; each Workspace keeps its own active chat and pending Git/Jenkins state. |
-| **`⚙️ Settings`** (`/settings`, `/model`) | Change the **AI Model**, **Effort Level** (`low` / `medium` / `high`), or read **`📜 Last Messages`** for any Workspace. |
-| **`🆕 New Chat`** (`/newchat`) | Start a fresh Antigravity conversation in the selected Workspace. |
+| **`⚙️ Settings`** (`/settings`, `/model`) | Change the **AI Model** (Gemini, Claude, DeepSeek, OpenAI, Qwen), **Effort Level** (`low` / `medium` / `high`), or read **`📜 Last Messages`**. |
+| **`🆕 New Chat`** (`/newchat`) | Start a fresh conversation in the selected Workspace. |
+| **`➕ Add Fix`** | Provide follow-up instructions to refine changes within the current turn before committing. |
+| **`🛠 Fix Error`** | Automatically diagnose a failed Jenkins build log with AI, apply fixes, commit, and prompt to redeploy. |
+| **`↩️ Revert`** | Revert a bad commit and automatically trigger a rollback Jenkins deployment. |
 | `/history` | Display the latest `X` user & agent messages from the active Workspace transcript. |
 | `/lock` | Lock your Telegram session immediately until the session password is entered again. |
 
@@ -157,10 +201,11 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 
 | Capability | Mobile Agent Control (`mac.app`) | SSH / Mobile Terminal | Cloud Agent Sandboxes |
 | :--- | :--- | :--- | :--- |
+| **Multi-Provider AI** | ✅ Gemini, Claude, DeepSeek, OpenAI, Qwen (CLI + Direct API) | ❌ Complex script setup | ⚠️ Vendor locked |
 | **macOS Experience** | ✅ Native SwiftUI menu bar (`MAC`) + Dock window | ❌ Manual SSH, `tmux` & `caffeinate` | ⚠️ Browser-only |
 | **Network Security** | ✅ Outbound Telegram HTTPS polling (zero open ports) | ❌ Requires VPN / Tailscale / port forward | ⚠️ Source code leaves your Mac |
-| **Real Local Workspaces** | ✅ Shares live Antigravity Desktop chats & local monorepos | ✅ Local shell | ❌ Isolated remote container |
-| **Git-Only or Full CI/CD** | ✅ Multi-repo Git push out of the box + optional Staging → Prod Jenkins | ❌ Tiny phone keyboard for Git/CI | ⚠️ No local LAN Jenkins access |
+| **Real Local Workspaces** | ✅ Shares live Desktop chats, local monorepos & files | ✅ Local shell | ❌ Isolated remote container |
+| **Git & CI/CD Iteration**| ✅ "Add Fix", auto-revert & AI error recovery from phone | ❌ Clunky CLI typing | ⚠️ No local LAN Jenkins access |
 | **Power Management** | ✅ Auto-starts at login & prevents Mac sleep while running | ❌ Mac sleeps mid-build | ✅ Cloud-hosted |
 
 ---
@@ -170,13 +215,27 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 - **macOS 14.0 (Sonoma) or later** (Apple Silicon `M1` / `M2` / `M3` / `M4` & Intel)
 - **Node.js `>= 20.0.0`** (`brew install node` or [nodejs.org](https://nodejs.org))
 - **Git** (`git --version`)
-- **Google Antigravity CLI (`agy`)** installed locally (`~/.local/bin/agy` or on `PATH`)
 - A free **Telegram Bot Token** from [`@BotFather`](https://t.me/BotFather)
+- Either:
+  - **Option 1**: Local CLI binary (`agy` or `aider`), **OR**
+  - **Option 2**: API key for your chosen model (DeepSeek, OpenAI, Anthropic Claude, Qwen, or Custom)
 - *(Optional)* **Jenkins** server with parameterized `VERSION` build jobs (not required for Git-only Workspaces)
 
 ---
 
 ## Frequently Asked Questions (FAQ)
+
+<details>
+<summary><b>Can I use DeepSeek, OpenAI, or Claude without installing terminal tools?</b></summary>
+<br />
+Yes! With <b>Option 2: Direct API</b>, you just paste your API key (DeepSeek, OpenAI, Anthropic, or Qwen) into the <b>General</b> tab of <code>mac.app</code>. The app runs a native tool-calling agent that reads files, applies edits, and runs commands directly in your workspace without needing any external CLI tools installed.
+</details>
+
+<details>
+<summary><b>How does the "Add Fix" button work?</b></summary>
+<br />
+When the agent finishes an edit, Telegram presents the summary and asks <i>"Commit &amp; push these changes?"</i>. If you notice something missing or want to adjust the code before committing, tap <b>➕ Add Fix</b> and send your feedback. The agent receives your message in the same process, updates the code, and presents the new diff without losing state or creating extra commits.
+</details>
 
 <details>
 <summary><b>Can I use <code>mac.app</code> with GitHub / GitLab repositories without Jenkins?</b></summary>
@@ -203,9 +262,9 @@ No. Clicking <b>Start...</b> acquires a native macOS <code>PreventUserIdleSystem
 </details>
 
 <details>
-<summary><b>Can someone add Workspaces or read tokens from Telegram?</b></summary>
+<summary><b>Are my API keys and tokens stored securely?</b></summary>
 <br />
-Never. Workspace paths, Telegram tokens, and Jenkins API tokens stay strictly on your Mac in <code>data/config.json</code> (with <code>0600</code> owner-only permissions) and can only be viewed or edited locally inside <code>mac.app</code>. Every bot start also requires a fresh RAM-only session password.
+Yes. All configuration stays strictly on your local Mac in <code>data/config.json</code> with <code>0600</code> owner-only POSIX permissions. Tokens and API keys are never sent to external servers other than the respective official API endpoints (Telegram, Anthropic, OpenAI, DeepSeek, Jenkins). Furthermore, session access requires a fresh RAM-only password set on every launch.
 </details>
 
 ---
