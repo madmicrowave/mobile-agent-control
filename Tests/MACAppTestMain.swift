@@ -216,7 +216,7 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(controller.settingsWindow?.isVisible == true, "Main app window visible")
     expect(controller.effectiveActivationPolicy == .regular, "Expected effectiveActivationPolicy == .regular when Open App is active")
     expect(NSApp.activationPolicy() == .accessory, "Bare MACAppTests binary must NEVER appear in the macOS Dock")
-    expect(controller.settingsWindow?.level == .floating, "Expected window level == .floating so it stays above normal apps during screenshots")
+    expect(controller.settingsWindow?.level == .normal, "Expected window level == .normal so it behaves as a regular application and goes under when other apps are focused")
     expect(controller.settingsWindow?.hidesOnDeactivate == false, "Expected window hidesOnDeactivate == false")
 
     if let win = controller.settingsWindow {

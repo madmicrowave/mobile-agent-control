@@ -271,11 +271,11 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 980, height: 700))
             window.minSize = NSSize(width: 920, height: 640)
-            // Keep window at floating level and never hide on deactivate
-            // (e.g. when taking macOS screenshots or copying tokens/paths from other apps)
-            window.level = .floating
+            // Standard application window level (.normal) so it behaves as a regular app
+            // and goes under other apps when they are focused
+            window.level = .normal
             window.hidesOnDeactivate = false
-            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            window.collectionBehavior = [.moveToActiveSpace]
             window.isReleasedWhenClosed = false
             window.delegate = self
             if isHeadlessTestMode {
@@ -286,7 +286,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             self.settingsWindow = window
         }
 
-        settingsWindow?.level = .floating
+        settingsWindow?.level = .normal
         settingsWindow?.hidesOnDeactivate = false
         if isHeadlessTestMode {
             settingsWindow?.orderBack(nil)
@@ -294,15 +294,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         }
 
         NSApp.activate(ignoringOtherApps: true)
-        settingsWindow?.orderFrontRegardless()
         settingsWindow?.makeKeyAndOrderFront(nil)
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let win = self.settingsWindow, win.isVisible else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            win.orderFrontRegardless()
-            win.makeKeyAndOrderFront(nil)
-        }
     }
 
     /// Closes the main app window when 'x' (or Cmd+W) is clicked while keeping MAC running
