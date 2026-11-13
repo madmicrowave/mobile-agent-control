@@ -984,6 +984,12 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('eng:')) {
+        const [, wsId, eng] = data.split(':');
+        await this.handleUpdateWorkspaceEngine(chatId, wsId, eng, messageId);
+        return;
+      }
+
       if (data.startsWith('mdl:l:')) {
         const [, , wsId, level] = data.split(':');
         await this.handleUpdateWorkspaceModelLevel(chatId, wsId, level, messageId);
@@ -1458,12 +1464,25 @@ export class BotController {
       };
     });
 
+    const currentEngine = ws.engine || 'agy';
     const engineLabel =
-      ws.engine === 'aider'
+      currentEngine === 'aider'
         ? 'Aider CLI'
-        : ws.engine === 'direct-api'
-          ? 'Direct API'
-          : 'AGY CLI';
+        : currentEngine === 'codex'
+          ? 'Codex CLI'
+          : currentEngine === 'cloudcode' || currentEngine === 'cloud-code'
+            ? 'Cloud Code'
+            : currentEngine === 'direct-api'
+              ? 'Direct API'
+              : 'AGY CLI';
+
+    const engineRow = [
+      { text: `${currentEngine === 'agy' ? '✅ ' : ''}AGY`, callback_data: `eng:${ws.id}:agy` },
+      { text: `${currentEngine === 'aider' ? '✅ ' : ''}Aider`, callback_data: `eng:${ws.id}:aider` },
+      { text: `${currentEngine === 'codex' ? '✅ ' : ''}Codex`, callback_data: `eng:${ws.id}:codex` },
+      { text: `${currentEngine === 'cloudcode' || currentEngine === 'cloud-code' ? '✅ ' : ''}CloudCode`, callback_data: `eng:${ws.id}:cloudcode` },
+      { text: `${currentEngine === 'direct-api' ? '✅ ' : ''}API`, callback_data: `eng:${ws.id}:direct-api` }
+    ];
 
     const text =
       `🧠 <b>AI Model & Engine — ${escapeHtml(wsLabel)}</b>\n\n` +
@@ -1473,6 +1492,7 @@ export class BotController {
 
     const replyMarkup = {
       inline_keyboard: [
+        engineRow,
         ...familyRows,
         levelButtons,
         [
@@ -1539,6 +1559,15 @@ export class BotController {
 
     ws.model = resolved.modelId || baseModel;
     ws.modelLevel = resolved.effort || level;
+    await this.configStore.saveConfig();
+    await this.sendWorkspaceRepoInfo(chatId, ws.id, editMessageId);
+  }
+
+  async handleUpdateWorkspaceEngine(chatId, wsId, eng, editMessageId = null) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+    const norm = String(eng || '').toLowerCase();
+    ws.engine = ['agy', 'aider', 'codex', 'cloudcode', 'direct-api'].includes(norm) ? norm : 'agy';
     await this.configStore.saveConfig();
     await this.sendWorkspaceRepoInfo(chatId, ws.id, editMessageId);
   }
@@ -1659,12 +1688,17 @@ export class BotController {
     const hasProd = prodJobs.length > 0;
     const modelInfo = this.resolveWorkspaceModel(ws);
 
+    const currentEngine = ws.engine || 'agy';
     const engineTag =
-      ws.engine === 'aider'
+      currentEngine === 'aider'
         ? 'Aider CLI'
-        : ws.engine === 'direct-api'
-          ? 'Direct API'
-          : 'AGY';
+        : currentEngine === 'codex'
+          ? 'Codex CLI'
+          : currentEngine === 'cloudcode' || currentEngine === 'cloud-code'
+            ? 'Cloud Code'
+            : currentEngine === 'direct-api'
+              ? 'Direct API'
+              : 'AGY';
 
     const infoSections = [
       `🗂 <b>Workspace Selected</b>\n<b>${escapeHtml(wsLabel)}</b>\n<code>${escapeHtml(ws.path)}</code>`,
@@ -1983,6 +2017,8 @@ export class BotController {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
         aiderBin: this.configStore.config.aiderBin,
+        codexBin: this.configStore.config.codexBin,
+        cloudCodeBin: this.configStore.config.cloudCodeBin,
         agentEngine: ws.engine || this.configStore.config.agentEngine || 'agy',
         openaiApiKey: this.configStore.config.openaiApiKey,
         anthropicApiKey: this.configStore.config.anthropicApiKey,

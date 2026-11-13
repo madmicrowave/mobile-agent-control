@@ -447,13 +447,247 @@ export function resolveDefaultAiderBin() {
   const home = os.homedir();
   const candidates = [
     path.join(home, '.local', 'bin', 'aider'),
-    '/opt/homebrew/bin',
+    '/opt/homebrew/bin/aider',
     '/usr/local/bin/aider'
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
   return '';
+}
+
+/**
+ * Resolves local codex binary if installed, or returns 'codex'.
+ */
+export function resolveDefaultCodexBin() {
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.local', 'bin', 'codex'),
+    '/opt/homebrew/bin/codex',
+    '/usr/local/bin/codex'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return 'codex';
+}
+
+/**
+ * Resolves local cloud-code binary if installed, or returns 'cloud-code'.
+ */
+export function resolveDefaultCloudCodeBin() {
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.local', 'bin', 'cloud-code'),
+    '/opt/homebrew/bin/cloud-code',
+    '/usr/local/bin/cloud-code'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return 'cloud-code';
+}
+
+/**
+ * Runs a turn using OpenAI Codex CLI (`codex`) in non-interactive headless mode.
+ */
+export function runCodexTurn({
+  codexBin = 'codex',
+  workspacePath,
+  prompt,
+  model = '',
+  openaiApiKey = '',
+  onTextDelta = () => {},
+  onStepEvent = () => {}
+}) {
+  const env = {
+    ...process.env,
+    OPENAI_API_KEY: openaiApiKey || process.env.OPENAI_API_KEY || ''
+  };
+
+  const args = [
+    'exec',
+    '--full-auto',
+    '--yes',
+    `${prompt}\n\n${BOT_CONTROLLER_PROMPT_SUFFIX}`
+  ];
+
+  if (model) {
+    args.push('--model', model);
+  }
+
+  let child = null;
+  let aborted = false;
+
+  const promise = new Promise((resolve, reject) => {
+    onStepEvent({
+      stepIndex: 1,
+      stepType: 'codex_run',
+      state: 'RUNNING',
+      toolName: ''
+    });
+
+    child = spawn(codexBin, args, {
+      cwd: workspacePath,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    child.stdin.end();
+
+    let output = '';
+    let stderrText = '';
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      output += text;
+      onTextDelta(text, output);
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderrText += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to spawn Codex CLI (${codexBin}): ${err.message}. Please verify the binary path or install Codex CLI.`));
+    });
+
+    child.on('close', (code) => {
+      if (aborted) {
+        reject(new Error('Agent run stopped by user'));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(`Codex CLI exited with error code ${code}: ${stderrText.trim() || output.trim()}`));
+        return;
+      }
+      onStepEvent({
+        stepIndex: 1,
+        stepType: 'codex_run',
+        state: 'SUCCESS',
+        toolName: ''
+      });
+      resolve({
+        conversationId: null,
+        response: output.trim(),
+        durationSeconds: null,
+        usage: null
+      });
+    });
+  });
+
+  function abort() {
+    if (!child || aborted) return;
+    aborted = true;
+    try {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }, 2000).unref();
+    } catch {}
+  }
+
+  return { promise, abort };
+}
+
+/**
+ * Runs a turn using Google Cloud Code CLI (`cloud-code`) in non-interactive headless mode.
+ */
+export function runCloudCodeTurn({
+  cloudCodeBin = 'cloud-code',
+  workspacePath,
+  prompt,
+  model = '',
+  onTextDelta = () => {},
+  onStepEvent = () => {}
+}) {
+  const env = { ...process.env };
+  const args = [
+    'exec',
+    '--headless',
+    `${prompt}\n\n${BOT_CONTROLLER_PROMPT_SUFFIX}`
+  ];
+
+  if (model) {
+    args.push('--model', model);
+  }
+
+  let child = null;
+  let aborted = false;
+
+  const promise = new Promise((resolve, reject) => {
+    onStepEvent({
+      stepIndex: 1,
+      stepType: 'cloudcode_run',
+      state: 'RUNNING',
+      toolName: ''
+    });
+
+    child = spawn(cloudCodeBin, args, {
+      cwd: workspacePath,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    child.stdin.end();
+
+    let output = '';
+    let stderrText = '';
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      output += text;
+      onTextDelta(text, output);
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderrText += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to spawn Cloud Code CLI (${cloudCodeBin}): ${err.message}. Please verify the binary path or install Cloud Code CLI.`));
+    });
+
+    child.on('close', (code) => {
+      if (aborted) {
+        reject(new Error('Agent run stopped by user'));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(`Cloud Code CLI exited with error code ${code}: ${stderrText.trim() || output.trim()}`));
+        return;
+      }
+      onStepEvent({
+        stepIndex: 1,
+        stepType: 'cloudcode_run',
+        state: 'SUCCESS',
+        toolName: ''
+      });
+      resolve({
+        conversationId: null,
+        response: output.trim(),
+        durationSeconds: null,
+        usage: null
+      });
+    });
+  });
+
+  function abort() {
+    if (!child || aborted) return;
+    aborted = true;
+    try {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }, 2000).unref();
+    } catch {}
+  }
+
+  return { promise, abort };
 }
 
 /**
@@ -569,12 +803,14 @@ export function runAiderTurn({
 
 /**
  * Unified Agent Runner supporting:
- * - Option 1: Terminal CLI Runners (`agy`, `aider`)
+ * - Option 1: Terminal CLI Runners (`agy`, `aider`, `codex`, `cloud-code`)
  * - Option 2: Direct API Execution (DeepSeek, OpenAI, Anthropic Claude, Qwen, Custom)
  */
 export function runUnifiedAgentTurn({
   agyBin,
   aiderBin,
+  codexBin,
+  cloudCodeBin,
   agentEngine = 'auto',
   openaiApiKey = '',
   anthropicApiKey = '',
@@ -616,6 +852,29 @@ export function runUnifiedAgentTurn({
       anthropicApiKey,
       deepseekApiKey,
       qwenApiKey,
+      onTextDelta,
+      onStepEvent
+    });
+  }
+
+  if (agentEngine === 'codex') {
+    return runCodexTurn({
+      codexBin: codexBin || 'codex',
+      workspacePath,
+      prompt,
+      model,
+      openaiApiKey,
+      onTextDelta,
+      onStepEvent
+    });
+  }
+
+  if (agentEngine === 'cloudcode' || agentEngine === 'cloud-code') {
+    return runCloudCodeTurn({
+      cloudCodeBin: cloudCodeBin || 'cloud-code',
+      workspacePath,
+      prompt,
+      model,
       onTextDelta,
       onStepEvent
     });

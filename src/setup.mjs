@@ -696,13 +696,17 @@ export async function runConfigureAiEnginesWizard({
   // 3. Agent Engine
   const curEngine = cfg.agentEngine || 'agy';
   const engineAns = (
-    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: aider, 3: direct-api)')} [${curEngine}]: `)
+    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: aider, 3: codex, 4: cloudcode, 5: direct-api)')} [${curEngine}]: `)
   ).trim().toLowerCase();
   if (['1', 'agy'].includes(engineAns)) {
     cfg.agentEngine = 'agy';
   } else if (['2', 'aider'].includes(engineAns)) {
     cfg.agentEngine = 'aider';
-  } else if (['3', 'direct-api', 'api', 'direct'].includes(engineAns)) {
+  } else if (['3', 'codex'].includes(engineAns)) {
+    cfg.agentEngine = 'codex';
+  } else if (['4', 'cloudcode', 'cloud-code'].includes(engineAns)) {
+    cfg.agentEngine = 'cloudcode';
+  } else if (['5', 'direct-api', 'api', 'direct'].includes(engineAns)) {
     cfg.agentEngine = 'direct-api';
   }
 
@@ -721,6 +725,24 @@ export async function runConfigureAiEnginesWizard({
   ).trim();
   if (aiderAns) {
     cfg.aiderBin = expandUserPath(aiderAns);
+  }
+
+  if (cfg.agentEngine === 'codex') {
+    const curCodex = cfg.codexBin || 'codex';
+    const codexAns = (
+      await ask(`${p(5, 'OpenAI Codex CLI Binary Path (codex)')} [${curCodex}]: `)
+    ).trim();
+    if (codexAns) {
+      cfg.codexBin = expandUserPath(codexAns);
+    }
+  } else if (cfg.agentEngine === 'cloudcode') {
+    const curCloudCode = cfg.cloudCodeBin || 'cloud-code';
+    const cloudCodeAns = (
+      await ask(`${p(5, 'Google Cloud Code CLI Binary Path (cloud-code)')} [${curCloudCode}]: `)
+    ).trim();
+    if (cloudCodeAns) {
+      cfg.cloudCodeBin = expandUserPath(cloudCodeAns);
+    }
   }
 
   // 5. Direct API Keys & Local Endpoints

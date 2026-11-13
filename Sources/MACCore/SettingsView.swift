@@ -408,11 +408,13 @@ private final class GeneralTabVM: ObservableObject {
     @Published var tokenCheckMessage: String?
     @Published var tokenCheckSucceeded: Bool = false
 
-    // 3. AI Agent Runners & Models (Tabs: AGY CLI, Aider CLI, Direct API)
+    // 3. AI Agent Runners & Models (Tabs: AGY CLI, Aider CLI, Codex CLI, Cloud Code, Direct API)
     @Published var agyBinPath: String = ""
     @Published var aiderBinPath: String = "aider"
+    @Published var codexBinPath: String = "codex"
+    @Published var cloudCodeBinPath: String = "cloud-code"
     @Published var agentEngine: String = "agy"
-    @Published var selectedEngineTab: String = "agy" // "agy", "aider", "direct-api"
+    @Published var selectedEngineTab: String = "agy" // "agy", "aider", "codex", "cloudcode", "direct-api"
     @Published var selectedDirectApiSubtab: String = "deepseek" // "deepseek", "openai", "anthropic", "qwen", "custom"
     @Published var defaultModelFamily: String = "gemini-3.8-flash"
     @Published var defaultModelLevel: String = "high"
@@ -436,6 +438,14 @@ private final class GeneralTabVM: ObservableObject {
 
     var isAiderConfigured: Bool {
         MACPathUtils.isExecutableAvailable(aiderBinPath)
+    }
+
+    var isCodexConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(codexBinPath)
+    }
+
+    var isCloudCodeConfigured: Bool {
+        MACPathUtils.isExecutableAvailable(cloudCodeBinPath)
     }
 
     var isDirectApiConfigured: Bool {
@@ -989,6 +999,26 @@ private struct GeneralTabView: View {
                     }
 
                     MACEngineTabButton(
+                        title: "Codex CLI",
+                        systemImage: "curlybraces",
+                        isSelected: vm.selectedEngineTab == "codex",
+                        isConfigured: vm.isCodexConfigured
+                    ) {
+                        vm.selectedEngineTab = "codex"
+                        vm.agentEngine = "codex"
+                    }
+
+                    MACEngineTabButton(
+                        title: "Cloud Code",
+                        systemImage: "cloud.fill",
+                        isSelected: vm.selectedEngineTab == "cloudcode",
+                        isConfigured: vm.isCloudCodeConfigured
+                    ) {
+                        vm.selectedEngineTab = "cloudcode"
+                        vm.agentEngine = "cloudcode"
+                    }
+
+                    MACEngineTabButton(
                         title: "Direct API",
                         systemImage: "key.fill",
                         isSelected: vm.selectedEngineTab == "direct-api",
@@ -1005,6 +1035,10 @@ private struct GeneralTabView: View {
                 agyTabContent
             case "aider":
                 aiderTabContent
+            case "codex":
+                codexTabContent
+            case "cloudcode":
+                cloudCodeTabContent
             default:
                 directApiTabContent
             }
@@ -1103,6 +1137,86 @@ private struct GeneralTabView: View {
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {
                             vm.aiderBinPath = chosen
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    private var codexTabContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("OpenAI Codex CLI")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(vm.isCodexConfigured ? "Configured ✓" : "Not Installed")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(vm.isCodexConfigured ? .green : .secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background((vm.isCodexConfigured ? Color.green : Color.primary).opacity(0.12))
+                    .cornerRadius(5)
+            }
+
+            Text("Executes non-interactive headless agent turns via OpenAI Codex CLI in your terminal. Edits local workspace code, executes shell commands, runs tests, and prepares commits.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Codex Binary Path")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    TextField("codex", text: $vm.codexBinPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Browse...") {
+                        if let chosen = chooseExecutableFile(initialPath: vm.codexBinPath, prompt: "Select codex Binary") {
+                            vm.codexBinPath = chosen
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    private var cloudCodeTabContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Google Cloud Code / Gemini Code Assist")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(vm.isCloudCodeConfigured ? "Configured ✓" : "Not Installed")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(vm.isCloudCodeConfigured ? .green : .secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background((vm.isCloudCodeConfigured ? Color.green : Color.primary).opacity(0.12))
+                    .cornerRadius(5)
+            }
+
+            Text("Executes non-interactive agent coding turns using Google Cloud Code and Gemini Code Assist. Modifies repository files, validates changes, and enables automated deployment.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cloud Code Binary Path")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    TextField("cloud-code", text: $vm.cloudCodeBinPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Browse...") {
+                        if let chosen = chooseExecutableFile(initialPath: vm.cloudCodeBinPath, prompt: "Select cloud-code Binary") {
+                            vm.cloudCodeBinPath = chosen
                         }
                     }
                     .fixedSize()
@@ -1343,9 +1457,11 @@ private struct GeneralTabView: View {
 
         vm.agyBinPath = appState.config.agyBin
         vm.aiderBinPath = appState.config.aiderBin
+        vm.codexBinPath = appState.config.codexBin
+        vm.cloudCodeBinPath = appState.config.cloudCodeBin
         let loadedEngine = (appState.config.agentEngine == "auto" || appState.config.agentEngine.isEmpty) ? "agy" : appState.config.agentEngine
         vm.agentEngine = loadedEngine
-        vm.selectedEngineTab = ["agy", "aider", "direct-api"].contains(loadedEngine) ? loadedEngine : "agy"
+        vm.selectedEngineTab = ["agy", "aider", "codex", "cloudcode", "direct-api"].contains(loadedEngine) ? loadedEngine : "agy"
         vm.deepseekApiKey = appState.config.deepseekApiKey
         vm.openaiApiKey = appState.config.openaiApiKey
         vm.anthropicApiKey = appState.config.anthropicApiKey
@@ -1403,6 +1519,16 @@ private struct GeneralTabView: View {
         if !cleanAider.isEmpty {
             appState.config.aiderBin = cleanAider
             vm.aiderBinPath = cleanAider
+        }
+        let cleanCodex = MACPathUtils.expandPath(vm.codexBinPath)
+        if !cleanCodex.isEmpty {
+            appState.config.codexBin = cleanCodex
+            vm.codexBinPath = cleanCodex
+        }
+        let cleanCloudCode = MACPathUtils.expandPath(vm.cloudCodeBinPath)
+        if !cleanCloudCode.isEmpty {
+            appState.config.cloudCodeBin = cleanCloudCode
+            vm.cloudCodeBinPath = cleanCloudCode
         }
         appState.config.agentEngine = vm.agentEngine
         appState.config.deepseekApiKey = vm.deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1959,6 +2085,8 @@ private struct WorkspaceEditorFormView: View {
         [
             MACSegmentedOption(id: "agy", title: "AGY CLI", value: "agy"),
             MACSegmentedOption(id: "aider", title: "Aider CLI", value: "aider"),
+            MACSegmentedOption(id: "codex", title: "Codex CLI", value: "codex"),
+            MACSegmentedOption(id: "cloudcode", title: "Cloud Code", value: "cloudcode"),
             MACSegmentedOption(id: "direct-api", title: "Direct API", value: "direct-api")
         ]
     }
@@ -2138,7 +2266,7 @@ private struct WorkspaceEditorFormView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text(draft.engine == "aider" ? "Aider CLI" : (draft.engine == "direct-api" ? "Direct API" : "Antigravity CLI (agy)"))
+                                Text(draft.engine == "aider" ? "Aider CLI" : (draft.engine == "codex" ? "Codex CLI" : (draft.engine == "cloudcode" ? "Cloud Code" : (draft.engine == "direct-api" ? "Direct API" : "Antigravity CLI (agy)"))))
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -2153,7 +2281,7 @@ private struct WorkspaceEditorFormView: View {
                                     set: { draft.engine = $0 }
                                 )
                             )
-                            .frame(maxWidth: 440, alignment: .leading)
+                            .frame(maxWidth: 580, alignment: .leading)
                         }
 
                         Divider()

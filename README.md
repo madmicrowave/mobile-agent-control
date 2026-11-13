@@ -50,23 +50,26 @@ Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero u
 In `mac.app` **General → AI Engines & Models**, you can configure and run workflows using a modern tabbed layout where each tab displays a live **`✓` checkmark circle** on the right side when configured:
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Mobile Agent Control Multi-Engine Architecture              │
-├──────────────────────────────────────┬──────────────────────────────────────┤
-│  CLI Runner Tabs (Option 1)          │  Direct API Subtabs (Option 2)       │
-│  [ AGY CLI (✓) ]   [ Aider CLI ]     │  [ Direct API (✓) ]                  │
-├──────────────────────────────────────┼──────────────────────────────────────┤
-│ • AGY CLI (Google Antigravity):      │ Subtabs with live configured status: │
-│   Native support for Gemini 3.8/4,   │ • DeepSeek: V3 & R1                  │
-│   Gemini 4 Carbon, Claude Opus 5.5   │ • OpenAI: GPT-4o, o3-mini, o1        │
-│ • Aider CLI:                         │ • Anthropic: Claude 3.7 / 3.5 Sonnet │
-│   Multi-model headless terminal agent│ • Qwen: Qwen 2.5 Coder 32B / 72B     │
-│ • Custom binary path selector with   │ • Custom / Local: Ollama, LM Studio, │
-│   1-click Browse... button           │   vLLM, LocalAI, Jan, OpenRouter     │
-├──────────────────────────────────────┴──────────────────────────────────────┤
-│  Per-Workspace AI Engine: Each Workspace independently selects its engine   │
-│  (AGY CLI, Aider CLI, or Direct API) — defaulting to AGY for your projects! │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                      Mobile Agent Control Multi-Engine Architecture                    │
+├─────────────────────────────────────────────────┬──────────────────────────────────────┤
+│  CLI Runner Tabs (Option 1)                     │  Direct API Subtabs (Option 2)       │
+│  [ AGY CLI (✓) ] [ Aider ] [ Codex ] [ CloudCode]│  [ Direct API (✓) ]                  │
+├─────────────────────────────────────────────────┼──────────────────────────────────────┤
+│ • AGY CLI (Google Antigravity):                 │ Subtabs with live configured status: │
+│   Native support for Gemini 3.8/4,              │ • DeepSeek: V3 & R1                  │
+│   Gemini 4 Carbon, Claude Opus 5.5              │ • OpenAI: GPT-4o, o3-mini, o1        │
+│ • Aider CLI:                                    │ • Anthropic: Claude 3.7 / 3.5 Sonnet │
+│   Multi-model headless terminal agent           │ • Qwen: Qwen 2.5 Coder 32B / 72B     │
+│ • OpenAI Codex CLI:                             │ • Custom / Local: Ollama, LM Studio, │
+│   Automated turns via Codex CLI in terminal     │   vLLM, LocalAI, Jan, OpenRouter     │
+│ • Google Cloud Code:                            │                                      │
+│   Gemini Code Assist / Cloud Code CLI           │                                      │
+│ • Custom binary path pickers with Browse...     │                                      │
+├─────────────────────────────────────────────────┴──────────────────────────────────────┤
+│  Per-Workspace AI Engine: Each Workspace independently selects its engine              │
+│  (AGY CLI, Aider CLI, Codex CLI, Cloud Code, or Direct API) — with Telegram switching! │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Both CLI tools and Direct API connect into the exact same Git inspection, diff review, Add Fix, and Telegram commit pipeline!
@@ -106,7 +109,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
     <td width="50%" align="center">
       <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — AI Engines, Telegram &amp; CI/CD Deployment Settings" width="100%" />
       <br />
-      <sub><b>Tab 1: General</b> — Unified <b>1. AI Engines &amp; Models</b> (AGY CLI, Aider, Direct API), <b>2. Telegram</b> (token &amp; 1-click verify), <b>3. CI/CD Deployment</b> (Jenkins, GitHub, Google Cloud with 1-click tests), Login Item toggle &amp; live sleep-prevention indicator.</sub>
+      <sub><b>Tab 1: General</b> — Unified <b>1. AI Engines &amp; Models</b> (AGY CLI, Aider, Codex CLI, Cloud Code, Direct API), <b>2. Telegram</b> (token &amp; 1-click verify), <b>3. CI/CD Deployment</b> (Jenkins, GitHub, Google Cloud with 1-click tests), Login Item toggle &amp; live sleep-prevention indicator.</sub>
     </td>
     <td width="50%" align="center">
       <img src="./assets/macos-workspaces-tab.png" alt="mac.app Workspaces Tab — Inline + Workspace Creation, AI Models, Multi-CI/CD &amp; Git Repos" width="100%" />
@@ -140,15 +143,15 @@ The local model reasons, inspects files, applies changes, and returns a formatte
    - In the **`General`** tab (organized into 3 clear cards):
      - **1. AI Engines & Models**:
        - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
-       - *AI Engine Tabs*: Click between **AGY CLI**, **Aider CLI**, and **Direct API** — each tab displays a green checkmark circle (`✓`) on the right when configured.
-       - *CLI Runner Tabs*: Define your local executable path for `agy` or `aider` using the **Browse...** button.
+       - *AI Engine Tabs*: Click between **AGY CLI**, **Aider CLI**, **Codex CLI**, **Cloud Code**, and **Direct API** — each tab displays a green checkmark circle (`✓`) on the right when configured.
+       - *CLI Runner Tabs*: Define your local executable path for `agy`, `aider`, `codex`, or `cloud-code` using the **Browse...** button.
        - *Direct API Subtabs*: Click between **DeepSeek**, **OpenAI**, **Anthropic**, **Qwen**, and **Custom / Local** to enter provider API keys or connect personal local models (e.g. `http://localhost:11434/v1` for Ollama, with zero API key needed).
      - **2. Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**. Lock down access by pasting allowed numeric Telegram User IDs (`@userinfobot`).
      - **3. CI/CD Deployment**: *(Optional)* Switch between **Jenkins**, **GitHub**, and **Google Cloud Build** tabs, enter credentials/tokens, and click 1-click test buttons (**Test Jenkins**, **Test Github**, **Test Google Cloud**). Click **Save**.
 2. **Open `Workspaces` Tab & Click `+`**:
    - Click **`+`** in the left sidebar to create a new Workspace draft.
    - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Re-Scan**.
-   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models).
+   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, **Codex CLI**, **Cloud Code**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models).
    - Choose **Git-only** or **CI/CD Deployment** (**Jenkins**, **GitHub**, or **Google Cloud**) and Environment Mode (**Single** or **Multi: Staging → Production**), then click **Save** (or **Create** for a new Workspace).
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
@@ -172,10 +175,10 @@ Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
 ### Inside the 4 `mac.app` Window Tabs
 
 1. **`⚙️ General`** — Structured into 3 clear cards:
-   - **1. AI Engines & Models**: Default Model Family & Effort Level, tabbed engine selection with live configured status (`[ AGY CLI (✓) ] [ Aider CLI ] [ Direct API (✓) ]`), binary file path pickers with **Browse...**, and Direct API subtabs (`DeepSeek`, `OpenAI`, `Anthropic`, `Qwen`, and `Custom / Local` for Ollama, LM Studio, vLLM, OpenRouter).
+   - **1. AI Engines & Models**: Default Model Family & Effort Level, tabbed engine selection with live configured status (`[ AGY CLI (✓) ] [ Aider CLI ] [ Codex CLI ] [ Cloud Code ] [ Direct API (✓) ]`), binary file path pickers with **Browse...**, and Direct API subtabs (`DeepSeek`, `OpenAI`, `Anthropic`, `Qwen`, and `Custom / Local` for Ollama, LM Studio, vLLM, OpenRouter).
    - **2. Telegram**: Bot token, 1-click token verify, allowed numeric Telegram User IDs (`@userinfobot`), and message history count.
    - **3. CI/CD Deployment**: Sub-tabs for **Jenkins** (server URL, user, API token, timeout), **GitHub** (PAT token, default owner/org), and **Google Cloud Build** (Project ID, key JSON/token, region) with live connection test buttons and status indicators.
-2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
+2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Codex CLI`, `Cloud Code`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
 4. **`🖥 Live Logs`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
 

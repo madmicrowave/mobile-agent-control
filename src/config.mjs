@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { resolveDefaultAgyBin } from './agy-runner.mjs';
-import { resolveDefaultAiderBin } from './agent-runner.mjs';
+import { resolveDefaultAiderBin, resolveDefaultCodexBin, resolveDefaultCloudCodeBin } from './agent-runner.mjs';
 
 export const INITIAL_WORKSPACES_SEED = [];
 
@@ -266,6 +266,12 @@ export class ConfigStore {
     if (this.config.aiderBin === undefined || this.config.aiderBin === 'aider') {
       this.config.aiderBin = process.env.AIDER_BIN || resolveDefaultAiderBin();
     }
+    if (this.config.codexBin === undefined || this.config.codexBin === 'codex') {
+      this.config.codexBin = process.env.CODEX_BIN || resolveDefaultCodexBin();
+    }
+    if (this.config.cloudCodeBin === undefined || this.config.cloudCodeBin === 'cloud-code') {
+      this.config.cloudCodeBin = process.env.CLOUD_CODE_BIN || resolveDefaultCloudCodeBin();
+    }
     if (!this.config.agentEngine || this.config.agentEngine === 'auto') {
       this.config.agentEngine = process.env.AGENT_ENGINE || 'agy';
     }
@@ -418,7 +424,7 @@ export class ConfigStore {
         ws.modelLevel = ['low', 'medium', 'high'].includes(normLvl) ? normLvl : 'high';
       }
       const rawEngine = String(ws.engine || '').trim().toLowerCase();
-      ws.engine = ['agy', 'aider', 'direct-api'].includes(rawEngine) ? rawEngine : 'agy';
+      ws.engine = ['agy', 'aider', 'codex', 'cloudcode', 'direct-api'].includes(rawEngine) ? rawEngine : 'agy';
 
       if (typeof ws.ciProvider !== 'string' || !ws.ciProvider.trim()) {
         const hasJenkins = (ws.jenkinsJobs && ws.jenkinsJobs.length > 0) ||
@@ -489,6 +495,8 @@ export class ConfigStore {
         defaultHistoryCount: Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6,
         agyBin: process.env.AGY_BIN || resolveDefaultAgyBin(),
         aiderBin: process.env.AIDER_BIN || resolveDefaultAiderBin(),
+        codexBin: process.env.CODEX_BIN || resolveDefaultCodexBin(),
+        cloudCodeBin: process.env.CLOUD_CODE_BIN || resolveDefaultCloudCodeBin(),
         agentEngine: process.env.AGENT_ENGINE || 'agy',
         deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
         openaiApiKey: process.env.OPENAI_API_KEY || '',

@@ -376,6 +376,8 @@ public struct MACGoogleCloudConfig: Codable, Equatable {
 public struct MACConfig: Codable, Equatable {
     public var agyBin: String
     public var aiderBin: String
+    public var codexBin: String
+    public var cloudCodeBin: String
     public var agentEngine: String
     public var openaiApiKey: String
     public var anthropicApiKey: String
@@ -399,6 +401,8 @@ public struct MACConfig: Codable, Equatable {
     public init(
         agyBin: String = MACPathUtils.defaultAgyBin(),
         aiderBin: String = MACPathUtils.defaultAiderBin(),
+        codexBin: String = MACPathUtils.defaultCodexBin(),
+        cloudCodeBin: String = MACPathUtils.defaultCloudCodeBin(),
         agentEngine: String = "agy",
         openaiApiKey: String = "",
         anthropicApiKey: String = "",
@@ -421,6 +425,8 @@ public struct MACConfig: Codable, Equatable {
     ) {
         self.agyBin = agyBin
         self.aiderBin = aiderBin
+        self.codexBin = codexBin
+        self.cloudCodeBin = cloudCodeBin
         self.agentEngine = agentEngine
         self.openaiApiKey = openaiApiKey
         self.anthropicApiKey = anthropicApiKey
@@ -443,7 +449,7 @@ public struct MACConfig: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case agyBin, aiderBin, agentEngine
+        case agyBin, aiderBin, codexBin, cloudCodeBin, agentEngine
         case openaiApiKey, anthropicApiKey, deepseekApiKey, qwenApiKey, customApiBaseUrl, customApiKey
         case defaultModel, defaultModelLevel, skipPermissions, jenkins, github, googleCloud, workspaces
         case telegramBotToken, telegramApiBaseUrl, allowedUserIds, defaultHistoryCount, antigravityBrainDir
@@ -457,6 +463,18 @@ public struct MACConfig: Codable, Equatable {
             self.aiderBin = decodedAider
         } else {
             self.aiderBin = MACPathUtils.defaultAiderBin()
+        }
+        let decodedCodex = (try c.decodeIfPresent(String.self, forKey: .codexBin) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !decodedCodex.isEmpty && decodedCodex != "codex" && MACPathUtils.isExecutableAvailable(decodedCodex) {
+            self.codexBin = decodedCodex
+        } else {
+            self.codexBin = MACPathUtils.defaultCodexBin()
+        }
+        let decodedCloudCode = (try c.decodeIfPresent(String.self, forKey: .cloudCodeBin) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !decodedCloudCode.isEmpty && decodedCloudCode != "cloud-code" && MACPathUtils.isExecutableAvailable(decodedCloudCode) {
+            self.cloudCodeBin = decodedCloudCode
+        } else {
+            self.cloudCodeBin = MACPathUtils.defaultCloudCodeBin()
         }
         let rawEng = (try c.decodeIfPresent(String.self, forKey: .agentEngine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.agentEngine = (rawEng.isEmpty || rawEng == "auto") ? "agy" : rawEng
@@ -503,6 +521,30 @@ public enum MACPathUtils {
         if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
         if let found = findExecutableInPath("aider") { return found }
         return ""
+    }
+
+    public static func defaultCodexBin() -> String {
+        let local = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/codex").path
+        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
+        let brew = "/opt/homebrew/bin/codex"
+        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        let usrLocal = "/usr/local/bin/codex"
+        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if let found = findExecutableInPath("codex") { return found }
+        return "codex"
+    }
+
+    public static func defaultCloudCodeBin() -> String {
+        let local = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/cloud-code").path
+        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
+        let brew = "/opt/homebrew/bin/cloud-code"
+        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        let usrLocal = "/usr/local/bin/cloud-code"
+        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if let found = findExecutableInPath("cloud-code") { return found }
+        return "cloud-code"
     }
 
     public static func isExecutableAvailable(_ pathOrCommand: String) -> Bool {

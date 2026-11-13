@@ -20,6 +20,8 @@ struct ScreenshotGenerator {
         let sampleConfig = MACConfig(
             agyBin: "~/.local/bin/agy",
             aiderBin: "aider",
+            codexBin: "codex",
+            cloudCodeBin: "cloud-code",
             agentEngine: "agy",
             openaiApiKey: "sk-proj-••••••••••••••••••••••••••••••••",
             anthropicApiKey: "sk-ant-••••••••••••••••••••••••••••••••",

@@ -2013,6 +2013,18 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(lastAgentCallArgs.model, 'claude-opus-5-5-low');
     assert.equal(lastAgentCallArgs.modelLevel, 'low');
     assert.equal(lastAgentCallArgs.agentEngine, 'aider');
+
+    // Switch to Codex CLI via Telegram inline callback
+    await controller.handleUpdate(makeCallback('eng:payments:codex'));
+    await controller.handleUpdate(makeUserMsg('Third check with Codex'));
+    await controller.waitForBackgroundTasks();
+    assert.equal(lastAgentCallArgs.agentEngine, 'codex');
+
+    // Switch to Cloud Code via Telegram inline callback
+    await controller.handleUpdate(makeCallback('eng:payments:cloudcode'));
+    await controller.handleUpdate(makeUserMsg('Fourth check with Cloud Code'));
+    await controller.waitForBackgroundTasks();
+    assert.equal(lastAgentCallArgs.agentEngine, 'cloudcode');
   });
 
   it('coalesces multi-photo albums + split big messages into a single agent run and caps uploads at 5 files', async () => {
