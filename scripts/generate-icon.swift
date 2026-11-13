@@ -31,7 +31,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     // Text("AI").font(.system(size: 12.5, weight: .black))
     // Text("MAC").font(.system(size: 15.5, weight: .black))
     let macFont = NSFont.systemFont(ofSize: size * 0.31, weight: .black)
-    let aiFont = NSFont.systemFont(ofSize: size * 0.266, weight: .black)
+    let aiFont = NSFont.systemFont(ofSize: size * 0.275, weight: .black)
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
         .font: aiFont,
@@ -52,7 +52,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
 
     let macCap = macFont.capHeight
     let aiCap = aiFont.capHeight
-    let visualGap = size * 0.092
+    let visualGap = size * 0.108
     let totalCapH = macCap + visualGap + aiCap
     let bottomOfMacY = (size - totalCapH) / 2.0
 
