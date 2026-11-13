@@ -247,7 +247,7 @@ public struct MACSettingsRootView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(minWidth: 920, minHeight: 640)
+        .frame(minWidth: 800, minHeight: 640)
     }
 
     private var tabNavigationBar: some View {

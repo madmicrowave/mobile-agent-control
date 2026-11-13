@@ -63,6 +63,7 @@
   "scripts": {
     "start": "[ -d ./mac.app ] || zsh scripts/build-app.sh; open ./mac.app",
     "build:app": "zsh scripts/build-app.sh",
+    "screenshots": "swiftc -parse-as-library Sources/MACCore/*.swift scripts/generate-screenshots.swift -framework AppKit -framework SwiftUI -framework Combine -framework IOKit -o /tmp/gen_shots && /tmp/gen_shots && rm -f /tmp/gen_shots",
     "cli": "node src/bot.mjs",
     "setup": "node src/setup.mjs",
     "add-workspace": "node src/setup.mjs add-workspace",

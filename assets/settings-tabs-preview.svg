@@ -90,7 +90,7 @@
     <text x="310" y="160" font-size="12" fill="#cbd5e1">• Folder picker &amp; --add-dir paths</text>
     <text x="310" y="182" font-size="12" fill="#cbd5e1">• Gemini, Claude, DeepSeek, OpenAI, Qwen</text>
     <text x="310" y="204" font-size="12" fill="#cbd5e1">• Single/Multi CI/CD (Jenkins, GitHub, GCP)</text>
-    <text x="310" y="226" font-size="12" fill="#cbd5e1">• 1-Click Scan Git Repositories</text>
+    <text x="310" y="226" font-size="12" fill="#cbd5e1">• 1-Click Re-Scan Repositories</text>
 
     <rect x="308" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>
     <text x="430" y="257" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">Hot-Reloads in Telegram</text>
@@ -134,7 +134,7 @@
     </g>
 
     <text x="894" y="116" font-size="12" fill="#cbd5e1">• Real-time bot polling stream</text>
-    <text x="894" y="138" font-size="12" fill="#cbd5e1">• Live Git &amp; Jenkins build logs</text>
+    <text x="894" y="138" font-size="12" fill="#cbd5e1">• Live Git &amp; CI/CD build logs</text>
     <text x="894" y="160" font-size="12" fill="#cbd5e1">• AI Tool loop: read, edit, write, exec</text>
     <text x="894" y="182" font-size="12" fill="#cbd5e1">• Auto-scroll monospaced console</text>
     <text x="894" y="204" font-size="12" fill="#cbd5e1">• Selectable text &amp; 1-Click Copy</text>

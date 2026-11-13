@@ -104,14 +104,14 @@ The local model reasons, inspects files, applies changes, and returns a formatte
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — Jenkins, Telegram &amp; AI Engines Settings" width="100%" />
+      <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — AI Engines, Telegram &amp; CI/CD Deployment Settings" width="100%" />
       <br />
-      <sub><b>Tab 1: General</b> — Unified <b>1. AI Engines &amp; Models</b> (CLI + API keys + local models), <b>2. Telegram</b> (token &amp; 1-click verify), <b>3. Jenkins</b> (CI/CD server URL &amp; test), Login Item toggle &amp; live sleep-prevention indicator.</sub>
+      <sub><b>Tab 1: General</b> — Unified <b>1. AI Engines &amp; Models</b> (AGY CLI, Aider, Direct API), <b>2. Telegram</b> (token &amp; 1-click verify), <b>3. CI/CD Deployment</b> (Jenkins, GitHub, Google Cloud with 1-click tests), Login Item toggle &amp; live sleep-prevention indicator.</sub>
     </td>
     <td width="50%" align="center">
-      <img src="./assets/macos-workspaces-tab.png" alt="mac.app Workspaces Tab — Inline + Workspace Creation, AI Models, Multi-Env Jenkins &amp; Git Repos" width="100%" />
+      <img src="./assets/macos-workspaces-tab.png" alt="mac.app Workspaces Tab — Inline + Workspace Creation, AI Models, Multi-CI/CD &amp; Git Repos" width="100%" />
       <br />
-      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models (Gemini, Claude, DeepSeek, OpenAI, Qwen, Local), and choose Git-only or Staging → Prod Jenkins.</sub>
+      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models (Gemini, Claude, DeepSeek, OpenAI, Qwen, Local), and choose Git-only checkbox or Staging → Prod CI/CD (Jenkins, GitHub, Google Cloud).</sub>
     </td>
   </tr>
 </table>
