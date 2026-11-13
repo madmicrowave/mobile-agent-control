@@ -189,7 +189,7 @@ let macBannerHTML = """
     line-height: 1;
     display: inline-flex;
     align-items: center;
-    transform: translateY(-4.5px);
+    transform: translateY(0.5px);
   }
   .mac-badge-lg .mac-text {
     line-height: 1;
@@ -260,9 +260,15 @@ let macBannerHTML = """
     font-weight: 800;
     color: #0284c7;
     margin-right: 2px;
+    line-height: 1;
     display: inline-flex;
     align-items: center;
-    transform: translateY(-1.5px);
+    transform: translateY(-0.19px);
+  }
+  .mac-menubar-pill .mac-text {
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
   }
   .strip-caption {
     display: flex;
@@ -638,12 +644,12 @@ let macBannerHTML = """
         <div class="macos-menubar">
           <div class="menubar-left">
             <strong></strong>
-            <strong><small style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px; display: inline-flex; align-items: center; transform: translateY(-1.5px);">AI</small>MAC</strong>
+            <strong style="display: inline-flex; align-items: center; line-height: 1;"><small style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px; line-height: 1; display: inline-flex; align-items: center; transform: translateY(-0.285px);">AI</small><span style="line-height: 1; display: inline-flex; align-items: center;">MAC</span></strong>
             <span>File</span>
             <span>Edit</span>
           </div>
           <div class="menubar-right">
-            <span class="mac-menubar-pill"><small>AI</small>MAC</span>
+            <span class="mac-menubar-pill"><small>AI</small><span class="mac-text">MAC</span></span>
             <span>Tue 9:41 AM</span>
           </div>
         </div>
@@ -656,7 +662,7 @@ let macBannerHTML = """
       <div class="steps-grid">
         <div class="step-box">
           <h4>1. Open mac.app</h4>
-          <p>Lives next to clock as <b><small style="font-size: 0.75em; color: #38bdf8; display: inline-flex; align-items: center; transform: translateY(-1.5px);">AI</small> MAC</b>; Open App appears in Dock.</p>
+          <p>Lives next to clock as <b style="display: inline-flex; align-items: center; line-height: 1;"><small style="font-size: 0.75em; color: #38bdf8; margin-right: 2px; line-height: 1; display: inline-flex; align-items: center; transform: translateY(0.5px);">AI</small><span style="line-height: 1; display: inline-flex; align-items: center;">MAC</span></b>; Open App appears in Dock.</p>
         </div>
         <div class="step-box">
           <h4>2. Add Workspaces</h4>
@@ -700,7 +706,7 @@ let macBannerHTML = """
                   <div class="name">Mobile Agent Control (<small style="font-size:0.75em;color:#38bdf8;display:inline-flex;align-items:center;transform:translateY(-1.5px);">AI</small> MAC)</div>
                   <div class="sub">bot</div>
                 </div>
-                <div class="tg-avatar"><small style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;display:inline-flex;align-items:center;transform:translateY(-1.2px);">AI</small>M</div>
+                <div class="tg-avatar"><small style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;display:inline-flex;align-items:center;transform:translateY(0.55px);">AI</small>M</div>
               </div>
             </div>
 
