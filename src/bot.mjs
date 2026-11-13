@@ -434,7 +434,8 @@ export async function startBotRunner({
     ...(agentRunner ? { agentRunner } : {}),
     ...(jenkinsFactory ? { jenkinsFactory } : {}),
     gitPush,
-    ...(nowProvider ? { nowProvider } : {})
+    ...(nowProvider ? { nowProvider } : {}),
+    logger
   });
 
   const botInfo = await telegram.getMe();

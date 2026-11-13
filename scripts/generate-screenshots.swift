@@ -196,9 +196,38 @@ struct ScreenshotGenerator {
 
         let genOut = assetsDir.appendingPathComponent("macos-general-tab.png")
         let workOut = assetsDir.appendingPathComponent("macos-workspaces-tab.png")
+        let logsOut = assetsDir.appendingPathComponent("macos-live-logs-tab.png")
 
         renderTab(tab: .general, size: NSSize(width: 800, height: 1180), outFile: genOut)
         renderTab(tab: .workspaces, size: NSSize(width: 800, height: 1300), outFile: workOut)
+
+        appState.logLines = [
+            "[MAC] 🚀 Starting Mobile Agent Control (mac.app)...",
+            "[MAC] ⚡️ MacBook sleep prevented (IOKit + caffeinate active)",
+            "[telegram] 🤖 Telegram Bot: @acme_mac_bot (https://t.me/acme_mac_bot)",
+            "[telegram] 🟢 Long-polling active. Open your bot in Telegram and send /start",
+            "[telegram] 📩 Update #1042 received from @alice: 'Update hero banner copy & fix checkout validation'",
+            "[stage] AI Agent Executing: SAAS PLATFORM",
+            "[agent] Executing agy with model gemini-2.0-flash on workspace \"SAAS PLATFORM\"",
+            "[agent] Tool execution: read_file (completed)",
+            "[agent] Tool execution: edit_file (completed)",
+            "[agent] Tool execution: run_command (completed)",
+            "[agent] Turn execution completed in workspace \"SAAS PLATFORM\".",
+            "[git] Created commit on saas-platform: fix(checkout): update hero banner and validate inputs",
+            "[git] Pushing changes for saas-platform to branch main...",
+            "[stage] Jenkins CI Deploying: STAGING/saas-platform/web-app",
+            "[jenkins] Build triggered for STAGING/saas-platform/web-app (branch: main)",
+            "[jenkins] Build update: STAGING/saas-platform/web-app (Building revision 482...)",
+            "[jenkins] Build STAGING/saas-platform/web-app completed with status: SUCCESS",
+            "[stage] Ready for Telegram requests"
+        ]
+        appState.activeStage = "Jenkins CI Deploying"
+        appState.activeStageDetail = "STAGING/saas-platform/web-app (Building revision 482...)"
+        appState.isTaskRunning = true
+        appState.activeWorkspaceName = "SAAS PLATFORM"
+        appState.activeModelName = "gemini-2.0-flash"
+
+        renderTab(tab: .liveActivity, size: NSSize(width: 800, height: 1180), outFile: logsOut)
     }
 }
 

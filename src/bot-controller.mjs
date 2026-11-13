@@ -81,7 +81,8 @@ export class BotController {
     jenkinsFactory = (cfg) => new JenkinsClient(cfg),
     gitPush = true,
     nowProvider = () => new Date(),
-    inputCoalesceMs = 1000
+    inputCoalesceMs = 1000,
+    logger = null
   }) {
     this.configStore = configStore;
     this.telegram = telegram;
@@ -90,6 +91,7 @@ export class BotController {
     this.gitPush = gitPush;
     this.nowProvider = nowProvider;
     this.inputCoalesceMs = inputCoalesceMs;
+    this.logger = logger;
 
     /** @type {Map<string, { abortAgent?: () => void, abortJenkins?: AbortController }>} */
     this.runtime = new Map();
@@ -124,6 +126,12 @@ export class BotController {
   async waitForBackgroundTasks() {
     while (this.activePromises.size > 0) {
       await Promise.allSettled([...this.activePromises]);
+    }
+  }
+
+  log(category, msg) {
+    if (this.logger?.log) {
+      this.logger.log(`[${category}] ${msg}`);
     }
   }
 
@@ -1877,6 +1885,8 @@ export class BotController {
     const effectivePrompt =
       promptOverride ||
       (st.activeTurn.prompt === '(Photo prompt)' ? '' : st.activeTurn.prompt);
+    this.log('stage', `AI Agent Executing: ${wsLabel}`);
+    this.log('agent', `Executing ${ws.engine || 'agy'} with model ${effectiveModel.modelId} on workspace "${wsLabel}"`);
     const runSingleAttempt = async (attemptConversationId) => {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
@@ -1909,6 +1919,9 @@ export class BotController {
           }
         },
         onStepEvent: (evt) => {
+          if (evt.toolName) {
+            this.log('agent', `Tool execution: ${evt.toolName} (${evt.state || 'running'})`);
+          }
           const nowMs = Date.now();
           if (statusMessageId && nowMs - lastProgressEditMs > 3000) {
             lastProgressEditMs = nowMs;
@@ -1988,7 +2001,11 @@ export class BotController {
         chatId,
         text: `🤖 <b>${escapeHtml(wsLabel)} — Agent Response:</b>\n\n${markdownToTelegramHtml(replyText)}`
       });
+      this.log('agent', `Turn execution finished in workspace "${wsLabel}".`);
+      this.log('stage', 'Ready for Telegram requests');
     } catch (agentErr) {
+      this.log('agent', `Agent stopped/failed in workspace "${wsLabel}": ${agentErr.message}`);
+      this.log('stage', 'Ready for Telegram requests');
       this.runtime.delete(ws.id);
       if (statusMessageId) {
         await this.telegram.clearInlineButtons(chatId, statusMessageId);
@@ -2729,10 +2746,13 @@ export class BotController {
     for (const target of deployTargets) {
       let lastEditMs = 0;
       try {
+        this.log('jenkins', `Build triggered for ${target.jenkinsJob} (branch: ${target.branch})`);
+        this.log('stage', `Jenkins CI Deploying: ${target.jenkinsJob}`);
         const res = await jenkins.triggerAndWaitForBuild({
           jobName: target.jenkinsJob,
           branch: target.branch,
           onUpdate: (upd) => {
+            this.log('jenkins', `Build update: ${target.jenkinsJob} (${upd.message || upd.status})`);
             const nowMs = Date.now();
             if (progressMsgId && nowMs - lastEditMs > 3000) {
               lastEditMs = nowMs;
@@ -2751,6 +2771,8 @@ export class BotController {
         });
 
         results.push(res);
+        this.log('jenkins', `Build ${target.jenkinsJob} completed with status: ${res.result}`);
+        this.log('stage', res.result === 'SUCCESS' ? 'CI/CD Build Succeeded' : 'CI/CD Build Failed');
         if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
           failedBuild = {
             jobName: target.jenkinsJob,

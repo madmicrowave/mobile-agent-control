@@ -129,7 +129,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
 
         menu.addItem(.separator())
 
-        openAppMenuItem = NSMenuItem(title: "Settings", action: #selector(handleOpenAppClicked), keyEquivalent: "")
+        openAppMenuItem = NSMenuItem(title: "Open App", action: #selector(handleOpenAppClicked), keyEquivalent: "")
         openAppMenuItem.target = self
         menu.addItem(openAppMenuItem)
 
@@ -378,7 +378,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         aboutItem.target = self
         appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
-        let openItem = NSMenuItem(title: "Settings", action: #selector(handleOpenAppClicked), keyEquivalent: ",")
+        let openItem = NSMenuItem(title: "Open App", action: #selector(handleOpenAppClicked), keyEquivalent: ",")
         openItem.target = self
         appMenu.addItem(openItem)
         appMenu.addItem(.separator())

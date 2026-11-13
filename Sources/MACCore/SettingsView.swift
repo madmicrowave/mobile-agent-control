@@ -185,7 +185,7 @@ private struct MACSubtabButton: View {
     }
 }
 
-// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live Bot Activity)
+// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live App Logs)
 
 public struct MACSettingsRootView: View {
     @ObservedObject public var appState: MACAppState
@@ -255,7 +255,7 @@ public struct MACSettingsRootView: View {
             tabItemButton(.general, title: "General", icon: "gearshape.2.fill")
             tabItemButton(.workspaces, title: "Workspaces", icon: "folder.badge.gearshape")
             tabItemButton(.tutorial, title: "Tutorial", icon: "book.fill")
-            tabItemButton(.liveActivity, title: "Live Bot Activity", icon: "terminal.fill")
+            tabItemButton(.liveActivity, title: "Live App Logs", icon: "terminal.fill")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
@@ -2730,13 +2730,13 @@ private struct TutorialTabView: View {
                     icon: "menubar.rectangle",
                     accent: .green,
                     bullets: [
-                        "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Settings' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
+                        "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Open App' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
                         "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
-                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live Bot Activity' tab."
+                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live App Logs' tab."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Live Bot Activity →",
+                    secondaryTitle: "Live App Logs →",
                     secondaryAction: { appState.selectedTab = .liveActivity }
                 )
 
@@ -2863,89 +2863,529 @@ private struct TutorialTabView: View {
     }
 }
 
-// MARK: - Tab 4: Live Bot Activity (Dedicated Tab After Tutorial)
+// MARK: - Tab 4: Live App Logs (Real-Time Colored Telemetry, Process Loaders & Stages)
+
+private enum MACLogCategory: String, CaseIterable, Identifiable {
+    case all = "All"
+    case telegram = "Telegram"
+    case agent = "AI Agent"
+    case cicd = "CI/CD"
+    case git = "Git"
+    case system = "MAC"
+    case errors = "Errors"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .all: return "list.bullet"
+        case .telegram: return "paperplane.fill"
+        case .agent: return "cpu.fill"
+        case .cicd: return "shippingbox.fill"
+        case .git: return "point.3.connected.trianglepath.dotted"
+        case .system: return "apple.logo"
+        case .errors: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .all: return .accentColor
+        case .telegram: return .cyan
+        case .agent: return .purple
+        case .cicd: return .blue
+        case .git: return .mint
+        case .system: return .secondary
+        case .errors: return .red
+        }
+    }
+}
+
+private struct MACParsedLogLine: Identifiable {
+    let id: Int
+    let rawText: String
+    let source: MACLogCategory
+    let badgeLabel: String
+    let badgeColor: Color
+    let icon: String
+    let lineNumber: String
+    let messageText: String
+    let messageColor: Color
+    let isLoading: Bool
+}
+
+private final class LiveActivityTabVM: ObservableObject {
+    @Published var selectedCategory: MACLogCategory = .all
+    @Published var searchText: String = ""
+    @Published var autoScroll: Bool = true
+}
 
 private struct LiveActivityTabView: View {
     @ObservedObject var appState: MACAppState
+    @StateObject private var vm = LiveActivityTabVM()
+
+    private var parsedLines: [MACParsedLogLine] {
+        appState.logLines.enumerated().map { idx, line in
+            parseLogLine(line, index: idx)
+        }
+    }
+
+    private var filteredLines: [MACParsedLogLine] {
+        parsedLines.filter { item in
+            let matchesCategory: Bool
+            if vm.selectedCategory == .all {
+                matchesCategory = true
+            } else if vm.selectedCategory == .errors {
+                matchesCategory = item.source == .errors
+            } else {
+                matchesCategory = (item.source == vm.selectedCategory)
+            }
+
+            if !matchesCategory { return false }
+
+            if !vm.searchText.isEmpty {
+                return item.rawText.localizedCaseInsensitiveContains(vm.searchText)
+            }
+            return true
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.accentColor)
-
-                Text("Live Bot Activity")
-                    .font(.system(size: 14.5, weight: .bold))
-
-                Text("\(appState.logLines.count) lines")
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06))
-                    .cornerRadius(5)
-
-                Spacer()
-
-                Button {
-                    let pb = NSPasteboard.general
-                    pb.clearContents()
-                    pb.setString(appState.logLines.joined(separator: "\n"), forType: .string)
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .controlSize(.small)
-                .disabled(appState.logLines.isEmpty)
-                .fixedSize()
-
-                Button {
-                    appState.clearLogs()
-                } label: {
-                    Label("Clear", systemImage: "trash")
-                }
-                .controlSize(.small)
-                .disabled(appState.logLines.isEmpty)
-                .fixedSize()
-            }
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 3) {
-                        if appState.logLines.isEmpty {
-                            Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram & CI/CD activity.")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 6)
-                        } else {
-                            ForEach(Array(appState.logLines.enumerated()), id: \.offset) { idx, line in
-                                Text(line)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(idx)
-                            }
-                        }
-                    }
-                    .padding(12)
-                }
-                .onChange(of: appState.logLines.count) { _, newCount in
-                    if newCount > 0 {
-                        proxy.scrollTo(newCount - 1, anchor: .bottom)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(0.22))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-            )
+            headerBar
+            processStageCard
+            filterAndControlsBar
+            logConsoleBox
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var headerBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "terminal.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.accentColor)
+
+            Text("Live App Logs")
+                .font(.system(size: 14.5, weight: .bold))
+
+            Text("\(appState.logLines.count) events")
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.06))
+                .cornerRadius(5)
+
+            Spacer()
+
+            if appState.isTaskRunning {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Processing...")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.accentColor.opacity(0.12))
+                .cornerRadius(6)
+            }
+        }
+    }
+
+    private var processStageCard: some View {
+        HStack(spacing: 12) {
+            if appState.isTaskRunning {
+                ProgressView()
+                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(appState.activeStage)
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Active")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.2))
+                            .foregroundColor(.accentColor)
+                            .cornerRadius(5)
+                    }
+                    Text(appState.activeStageDetail)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            } else if appState.status.isRunningOrStarting {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(appState.activeStage.isEmpty ? "Ready & Polling Telegram" : appState.activeStage)
+                            .font(.system(size: 13, weight: .bold))
+                        if case .running(let bot) = appState.status, let bot = bot, !bot.isEmpty {
+                            Text("@\(bot)")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.cyan)
+                        }
+                    }
+                    Text(appState.activeStageDetail.isEmpty ? "Listening for remote commands from your phone..." : appState.activeStageDetail)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            } else {
+                Circle()
+                    .fill(Color.secondary)
+                    .frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Bot Controller Stopped")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
+                    Text("Click 'Start...' (or 'Open App' from menu bar) to begin streaming.")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            // Telemetry badges
+            HStack(spacing: 8) {
+                if let ws = appState.activeWorkspaceName ?? appState.config.workspaces.first?.label {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.accentColor)
+                        Text(ws)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.05))
+                    .cornerRadius(6)
+                }
+
+                let currentModel = appState.activeModelName ?? appState.config.workspaces.first?.model ?? appState.config.defaultModel
+                if !currentModel.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu.fill")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.purple)
+                        Text(currentModel)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.purple.opacity(0.12))
+                    .cornerRadius(6)
+                }
+
+                HStack(spacing: 5) {
+                    Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
+                    Text(appState.isSleepPrevented ? "Sleep Prevented" : "Sleep Standby")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.primary.opacity(0.04))
+                .cornerRadius(6)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private var filterAndControlsBar: some View {
+        HStack(spacing: 8) {
+            ForEach(MACLogCategory.allCases) { cat in
+                let isSelected = (vm.selectedCategory == cat)
+                Button {
+                    vm.selectedCategory = cat
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: cat.icon)
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Text(cat.rawValue)
+                            .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
+                        Text("(\(countForCategory(cat)))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .opacity(0.7)
+                    }
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(isSelected ? cat.badgeColor : Color.primary.opacity(0.05))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(isSelected ? cat.badgeColor : Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 11))
+                TextField("Filter logs...", text: $vm.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
+                    .frame(width: 120)
+                if !vm.searchText.isEmpty {
+                    Button {
+                        vm.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(0.04))
+            .cornerRadius(6)
+
+            Toggle("Auto-scroll", isOn: $vm.autoScroll)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11.5))
+
+            Button {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                let textToCopy = filteredLines.map(\.rawText).joined(separator: "\n")
+                pb.setString(textToCopy, forType: .string)
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .controlSize(.small)
+            .disabled(filteredLines.isEmpty)
+            .fixedSize()
+
+            Button {
+                appState.clearLogs()
+            } label: {
+                Label("Clear", systemImage: "trash")
+            }
+            .controlSize(.small)
+            .disabled(appState.logLines.isEmpty)
+            .fixedSize()
+        }
+    }
+
+    private var logConsoleBox: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    if appState.logLines.isEmpty {
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.secondary)
+                                Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram, AI turns & CI/CD logs.")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if filteredLines.isEmpty {
+                        Text("No logs matching '\(vm.selectedCategory.rawValue)' or search filter '\(vm.searchText)'.")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(filteredLines) { item in
+                            logRow(for: item)
+                                .id(item.id)
+                        }
+                    }
+                }
+                .padding(10)
+            }
+            .onChange(of: appState.logLines.count) { _, newCount in
+                if vm.autoScroll && newCount > 0 {
+                    proxy.scrollTo(newCount - 1, anchor: .bottom)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(red: 0.05, green: 0.07, blue: 0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func logRow(for item: MACParsedLogLine) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Source Badge
+            HStack(spacing: 3) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 8.5))
+                Text(item.badgeLabel)
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(item.badgeColor.opacity(0.85))
+            .cornerRadius(4)
+            .frame(width: 66, alignment: .center)
+
+            // Index / line number
+            Text(item.lineNumber)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundColor(.secondary.opacity(0.55))
+                .frame(width: 28, alignment: .trailing)
+
+            // Message text
+            Text(item.messageText)
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundColor(item.messageColor)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if item.isLoading {
+                ProgressView()
+                    .controlSize(.mini)
+                    .padding(.trailing, 4)
+            }
+        }
+        .padding(.vertical, 1.5)
+        .padding(.horizontal, 4)
+    }
+
+    private func countForCategory(_ cat: MACLogCategory) -> Int {
+        if cat == .all { return appState.logLines.count }
+        return parsedLines.filter { $0.source == cat }.count
+    }
+
+    private func parseLogLine(_ line: String, index: Int) -> MACParsedLogLine {
+        let lower = line.lowercased()
+        let isError = line.contains("❌") || line.contains("🔴") || lower.contains("error:") || lower.contains("failed") || lower.contains("fatal") || line.contains("⛔")
+        let isSuccess = line.contains("✅") || lower.contains("success") || lower.contains("restored")
+        let isWarning = line.contains("⚠️") || lower.contains("conflict") || lower.contains("retrying") || lower.contains("wait")
+        let isLoading = lower.contains("...") || lower.contains("in progress") || lower.contains("running") || lower.contains("polling") || lower.contains("dispatching") || lower.contains("triggering")
+
+        // Determine category
+        let category: MACLogCategory
+        let badgeLabel: String
+        let badgeColor: Color
+        let icon: String
+
+        if isError {
+            category = .errors
+            badgeLabel = "ERR"
+            badgeColor = .red
+            icon = "exclamationmark.triangle.fill"
+        } else if line.contains("[telegram]") || lower.contains("@botfather") || line.contains("Telegram Bot") || lower.contains("long-polling") {
+            category = .telegram
+            badgeLabel = "TG"
+            badgeColor = .cyan
+            icon = "paperplane.fill"
+        } else if line.contains("[agent]") || line.contains("[stage]") || line.contains("[tool]") || lower.contains("agy") || lower.contains("gemini") || lower.contains("claude") || lower.contains("deepseek") || lower.contains("model:") || lower.contains("agent runner") {
+            category = .agent
+            badgeLabel = line.contains("[tool]") ? "TOOL" : "AGENT"
+            badgeColor = line.contains("[tool]") ? Color(red: 0.88, green: 0.38, blue: 0.95) : .purple
+            icon = line.contains("[tool]") ? "wrench.and.screwdriver.fill" : "cpu.fill"
+        } else if line.contains("[jenkins]") || line.contains("[github]") || line.contains("[gcp]") || line.contains("[ci]") || line.contains("Jenkins") || lower.contains("build #") || lower.contains("ci/cd") {
+            category = .cicd
+            badgeLabel = line.contains("[github]") ? "GH" : (line.contains("[gcp]") ? "GCP" : "JENKINS")
+            badgeColor = isSuccess ? .green : (isError ? .red : .blue)
+            icon = "shippingbox.fill"
+        } else if line.contains("[git]") || lower.contains("commit") || lower.contains("push") || lower.contains("branch") || lower.contains("git:") {
+            category = .git
+            badgeLabel = "GIT"
+            badgeColor = .mint
+            icon = "point.3.connected.trianglepath.dotted"
+        } else if line.contains("[MAC]") || lower.contains("sleep") || lower.contains("session auth") || lower.contains("login item") {
+            category = .system
+            badgeLabel = "MAC"
+            badgeColor = isSuccess ? .green : .secondary
+            icon = "apple.logo"
+        } else {
+            category = .system
+            badgeLabel = "LOG"
+            badgeColor = .secondary.opacity(0.8)
+            icon = "terminal"
+        }
+
+        // Determine message color
+        let msgColor: Color
+        if isError {
+            msgColor = Color(red: 1.0, green: 0.45, blue: 0.45)
+        } else if isSuccess {
+            msgColor = Color(red: 0.4, green: 0.9, blue: 0.5)
+        } else if isWarning {
+            msgColor = Color(red: 1.0, green: 0.78, blue: 0.3)
+        } else if category == .telegram {
+            msgColor = Color(red: 0.5, green: 0.85, blue: 1.0)
+        } else if category == .agent {
+            msgColor = Color(red: 0.85, green: 0.72, blue: 1.0)
+        } else if category == .cicd {
+            msgColor = Color(red: 0.65, green: 0.82, blue: 1.0)
+        } else if category == .git {
+            msgColor = Color(red: 0.55, green: 0.92, blue: 0.82)
+        } else if line.contains("===") || line.contains("---") {
+            msgColor = Color.secondary.opacity(0.65)
+        } else {
+            msgColor = Color.primary.opacity(0.88)
+        }
+
+        var cleanMsg = line
+        if cleanMsg.hasPrefix("[MAC] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[bot] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[telegram] ") {
+            cleanMsg = String(cleanMsg.dropFirst(11))
+        } else if cleanMsg.hasPrefix("[agent] ") {
+            cleanMsg = String(cleanMsg.dropFirst(8))
+        } else if cleanMsg.hasPrefix("[git] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[jenkins] ") {
+            cleanMsg = String(cleanMsg.dropFirst(10))
+        } else if cleanMsg.hasPrefix("[stage] ") {
+            cleanMsg = String(cleanMsg.dropFirst(8))
+        }
+
+        return MACParsedLogLine(
+            id: index,
+            rawText: line,
+            source: category,
+            badgeLabel: badgeLabel,
+            badgeColor: badgeColor,
+            icon: icon,
+            lineNumber: String(format: "%03d", index + 1),
+            messageText: cleanMsg,
+            messageColor: msgColor,
+            isLoading: isLoading
+        )
     }
 }

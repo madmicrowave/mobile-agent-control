@@ -116,7 +116,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
   </tr>
 </table>
 
-<img src="./assets/settings-tabs-preview.svg" alt="mac.app 4 Tabs Overview — General, Workspaces, Tutorial &amp; Live Bot Activity" width="100%" />
+<img src="./assets/settings-tabs-preview.svg" alt="mac.app 4 Tabs Overview — General, Workspaces, Tutorial &amp; Live App Logs" width="100%" />
 
 ---
 
@@ -132,11 +132,11 @@ The local model reasons, inspects files, applies changes, and returns a formatte
   cd mobile-agent-control
   npm start
   ```
-  `npm start` compiles **`mac.app`** natively with `swiftc` and opens **Settings**.
+  `npm start` compiles **`mac.app`** natively with `swiftc` and opens **Open App**.
 
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
-1. **Click `MAC` in Menu Bar → `Settings`** *(shows `mac.app` in your bottom Dock while open)*:
+1. **Click `MAC` in Menu Bar → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
    - In the **`General`** tab (organized into 3 clear cards):
      - **1. AI Engines & Models**:
        - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
@@ -147,9 +147,9 @@ The local model reasons, inspects files, applies changes, and returns a formatte
      - **3. CI/CD Deployment**: *(Optional)* Switch between **Jenkins**, **GitHub**, and **Google Cloud Build** tabs, enter credentials/tokens, and click 1-click test buttons (**Test Jenkins**, **Test Github**, **Test Google Cloud**). Click **Save**.
 2. **Open `Workspaces` Tab & Click `+`**:
    - Click **`+`** in the left sidebar to create a new Workspace draft.
-   - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Scan Git Repos**.
+   - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Re-Scan**.
    - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models).
-   - Choose your **CI/CD Provider** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) and Environment Mode (**Single** or **Multi: Staging → Production**), then click **Save** (or **Create** for a new Workspace).
+   - Choose **Git-only** or **CI/CD Deployment** (**Jenkins**, **GitHub**, or **Google Cloud**) and Environment Mode (**Single** or **Multi: Staging → Production**), then click **Save** (or **Create** for a new Workspace).
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
    - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
@@ -162,7 +162,7 @@ Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
-| **`Settings`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Bot Activity**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `MAC` running in the background. |
+| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live App Logs**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `MAC` running in the background. |
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts outbound Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot process, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and releases the macOS sleep assertion so your Mac sleeps normally again. |
@@ -177,7 +177,11 @@ Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
    - **3. CI/CD Deployment**: Sub-tabs for **Jenkins** (server URL, user, API token, timeout), **GitHub** (PAT token, default owner/org), and **Google Cloud Build** (Project ID, key JSON/token, region) with live connection test buttons and status indicators.
 2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
-4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and CI/CD builds.
+4. **`🖥 Live App Logs`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
+
+<div align="center">
+  <img src="./assets/macos-live-logs-tab.png" alt="mac.app Live App Logs — Real-time Multi-Colored Telemetry &amp; Process Stage Loaders" width="85%" />
+</div>
 
 ---
 
@@ -303,9 +307,9 @@ No. <code>mac.app</code> uses outbound HTTPS long-polling (<code>getUpdates</cod
 </details>
 
 <details>
-<summary><b>What happens when I click <code>Settings</code> vs closing the window with <code>✕</code>?</b></summary>
+<summary><b>What happens when I click <code>Open App</code> vs closing the window with <code>✕</code>?</b></summary>
 <br />
-Clicking <b>Settings</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running in the menu bar.
+Clicking <b>Open App</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running in the menu bar.
 </details>
 
 <details>

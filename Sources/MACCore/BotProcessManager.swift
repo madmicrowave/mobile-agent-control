@@ -38,7 +38,7 @@ public enum MACSettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case workspaces = "Workspaces"
     case tutorial = "Tutorial"
-    case liveActivity = "Live Bot Activity"
+    case liveActivity = "Live App Logs"
 
     public var id: String { rawValue }
 }
@@ -59,6 +59,11 @@ public final class MACAppState: ObservableObject {
     @Published public var selectedWorkspaceId: String?
     @Published public var logLines: [String] = []
     @Published public var statusBannerMessage: String?
+    @Published public var activeStage: String = "Idle"
+    @Published public var activeStageDetail: String = "Ready for Telegram requests"
+    @Published public var isTaskRunning: Bool = false
+    @Published public var activeWorkspaceName: String?
+    @Published public var activeModelName: String?
 
     public let configStore: MACConfigFileStore
     public let runtimeRootURL: URL
@@ -366,6 +371,9 @@ public final class MACAppState: ObservableObject {
         sleepPreventer.release()
         isSleepPrevented = false
         status = .stopped
+        isTaskRunning = false
+        activeStage = "Stopped"
+        activeStageDetail = "Bot stopped"
         if !silent {
             appendLog("[MAC] ⏹ Bot stopped. Mac sleep allowed again.")
         }
@@ -415,6 +423,7 @@ public final class MACAppState: ObservableObject {
             // Strip raw password stars prompt noise
             if trimmed.contains("Enter session password for this bot run:") { continue }
             appendLog(rawLine)
+            updateStageFromLogLine(rawLine)
 
             if let range = rawLine.range(of: #"Telegram Bot\s*:\s*@([A-Za-z0-9_]+)"#, options: .regularExpression) {
                 let sub = String(rawLine[range])
@@ -442,6 +451,57 @@ public final class MACAppState: ObservableObject {
 
     public func clearLogs() {
         logLines.removeAll()
+    }
+
+    private func updateStageFromLogLine(_ line: String) {
+        if line.contains("[stage]") {
+            let stageText = line.replacingOccurrences(of: #".*\[stage\]\s*"#, with: "", options: .regularExpression)
+            activeStage = stageText
+            isTaskRunning = true
+        } else if line.contains("[agent]") && (line.contains("Executing") || line.contains("Starting") || line.contains("Running")) {
+            activeStage = "AI Agent Executing"
+            isTaskRunning = true
+            activeStageDetail = line.replacingOccurrences(of: #".*\[agent\]\s*"#, with: "", options: .regularExpression)
+        } else if line.contains("[agent]") && line.contains("Tool execution:") {
+            activeStage = "Executing AI Tools"
+            isTaskRunning = true
+            activeStageDetail = line.replacingOccurrences(of: #".*Tool execution:\s*"#, with: "", options: .regularExpression)
+        } else if line.contains("[agent]") && (line.contains("completed") || line.contains("finished")) {
+            activeStage = "Agent Turn Complete"
+            isTaskRunning = false
+            activeStageDetail = "Turn changes applied"
+        } else if line.contains("[git]") && (line.contains("Staging") || line.contains("Created commit")) {
+            activeStage = "Git Commit"
+            isTaskRunning = true
+            activeStageDetail = line.replacingOccurrences(of: #".*\[git\]\s*"#, with: "", options: .regularExpression)
+        } else if line.contains("[git]") && line.contains("Pushing") {
+            activeStage = "Git Push"
+            isTaskRunning = true
+            activeStageDetail = "Pushing changes to remote branch"
+        } else if line.contains("[jenkins]") && (line.contains("Build triggered") || line.contains("in progress")) {
+            activeStage = "Jenkins CI Deploying"
+            isTaskRunning = true
+            activeStageDetail = line.replacingOccurrences(of: #".*\[jenkins\]\s*"#, with: "", options: .regularExpression)
+        } else if line.contains("[jenkins]") && (line.contains("SUCCESSFUL") || line.contains("SUCCESS")) {
+            activeStage = "CI/CD Build Succeeded"
+            isTaskRunning = false
+            activeStageDetail = "Deployment complete"
+        } else if line.contains("[jenkins]") && (line.contains("FAILED") || line.contains("FAILURE")) {
+            activeStage = "CI/CD Build Failed"
+            isTaskRunning = false
+            activeStageDetail = "Build failed"
+        } else if line.contains("Long-polling active") || line.contains("Telegram connection restored") {
+            activeStage = "Ready & Polling Telegram"
+            isTaskRunning = false
+            activeStageDetail = "Listening for remote commands"
+        } else if line.contains("[telegram] 📩 Received") {
+            activeStage = "Processing Telegram Request"
+            isTaskRunning = true
+            activeStageDetail = line.replacingOccurrences(of: #".*\[telegram\]\s*"#, with: "", options: .regularExpression)
+        } else if line.contains("[workspace] 📁 Workspace selected:") {
+            let ws = line.replacingOccurrences(of: #".*Workspace selected:\s*"#, with: "", options: .regularExpression)
+            activeWorkspaceName = ws
+        }
     }
 
     private static func queryLaunchctlEnv(_ name: String) -> String? {
