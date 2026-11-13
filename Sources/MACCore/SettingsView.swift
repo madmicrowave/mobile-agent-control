@@ -354,13 +354,42 @@ public struct MACSettingsRootView: View {
 // MARK: - Tab 1: General (3 Sections: Jenkins / Telegram / AGY)
 
 private final class GeneralTabVM: ObservableObject {
-    // 1. Jenkins
+    // 1. CI/CD (Tabs: Jenkins, GitHub Actions, Google Cloud)
+    @Published var selectedCiTab: String = "jenkins" // "jenkins", "github", "google"
+
+    // Jenkins
     @Published var jenkinsDraft: MACJenkinsConfig = MACJenkinsConfig()
     @Published var showJenkinsToken: Bool = false
     @Published var timeoutMinutes: Int = 25
     @Published var isTestingJenkins: Bool = false
     @Published var jenkinsTestMessage: String?
     @Published var jenkinsTestSucceeded: Bool = false
+
+    // GitHub
+    @Published var githubDraft: MACGitHubConfig = MACGitHubConfig()
+    @Published var showGitHubToken: Bool = false
+    @Published var isTestingGitHub: Bool = false
+    @Published var githubTestMessage: String?
+    @Published var githubTestSucceeded: Bool = false
+
+    // Google Cloud
+    @Published var googleCloudDraft: MACGoogleCloudConfig = MACGoogleCloudConfig()
+    @Published var showGcpKey: Bool = false
+    @Published var isTestingGoogleCloud: Bool = false
+    @Published var googleCloudTestMessage: String?
+    @Published var googleCloudTestSucceeded: Bool = false
+
+    var isJenkinsConfigured: Bool {
+        !jenkinsDraft.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isGitHubConfigured: Bool {
+        !githubDraft.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isGoogleCloudConfigured: Bool {
+        !googleCloudDraft.projectId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     // 2. Telegram
     @Published var botToken: String = ""
@@ -452,8 +481,8 @@ private struct GeneralTabView: View {
                 // Section 2: Telegram
                 telegramSectionCard
 
-                // Section 3: Jenkins
-                jenkinsSectionCard
+                // Section 3: CI/CD Deployment (Jenkins, GitHub Actions, Google Cloud)
+                ciCdSectionCard
 
                 // Unified Save Row
                 HStack {
@@ -475,25 +504,109 @@ private struct GeneralTabView: View {
         }
     }
 
-    private var jenkinsSectionCard: some View {
-        MACSectionCard(title: "Jenkins", systemImage: "server.rack") {
-            Button {
-                runJenkinsConnectionTest()
-            } label: {
-                HStack(spacing: 5) {
-                    if vm.isTestingJenkins {
-                        ProgressView().controlSize(.small)
-                        Text("Testing...")
-                    } else {
-                        Image(systemName: "network")
-                        Text("Test Jenkins Connection")
+    private var ciCdSectionCard: some View {
+        MACSectionCard(title: "CI/CD Deployment", systemImage: "shippingbox.fill") {
+            if vm.selectedCiTab == "jenkins" {
+                Button {
+                    runJenkinsConnectionTest()
+                } label: {
+                    HStack(spacing: 5) {
+                        if vm.isTestingJenkins {
+                            ProgressView().controlSize(.small)
+                            Text("Testing...")
+                        } else {
+                            Image(systemName: "network")
+                            Text("Test Jenkins Connection")
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .disabled(vm.isTestingJenkins || vm.jenkinsDraft.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty)
+                .fixedSize()
+            } else if vm.selectedCiTab == "github" {
+                Button {
+                    runGitHubConnectionTest()
+                } label: {
+                    HStack(spacing: 5) {
+                        if vm.isTestingGitHub {
+                            ProgressView().controlSize(.small)
+                            Text("Testing...")
+                        } else {
+                            Image(systemName: "network")
+                            Text("Test GitHub Access")
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .disabled(vm.isTestingGitHub || vm.githubDraft.token.trimmingCharacters(in: .whitespaces).isEmpty)
+                .fixedSize()
+            } else {
+                Button {
+                    runGoogleCloudConnectionTest()
+                } label: {
+                    HStack(spacing: 5) {
+                        if vm.isTestingGoogleCloud {
+                            ProgressView().controlSize(.small)
+                            Text("Testing...")
+                        } else {
+                            Image(systemName: "network")
+                            Text("Test Google Cloud")
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .disabled(vm.isTestingGoogleCloud || vm.googleCloudDraft.projectId.trimmingCharacters(in: .whitespaces).isEmpty)
+                .fixedSize()
+            }
+        } content: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CI/CD Provider Tabs")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 6) {
+                    MACEngineTabButton(
+                        title: "Jenkins",
+                        systemImage: "server.rack",
+                        isSelected: vm.selectedCiTab == "jenkins",
+                        isConfigured: vm.isJenkinsConfigured
+                    ) {
+                        vm.selectedCiTab = "jenkins"
+                    }
+
+                    MACEngineTabButton(
+                        title: "GitHub Actions",
+                        systemImage: "arrow.triangle.pull",
+                        isSelected: vm.selectedCiTab == "github",
+                        isConfigured: vm.isGitHubConfigured
+                    ) {
+                        vm.selectedCiTab = "github"
+                    }
+
+                    MACEngineTabButton(
+                        title: "Google Cloud",
+                        systemImage: "cloud.fill",
+                        isSelected: vm.selectedCiTab == "google",
+                        isConfigured: vm.isGoogleCloudConfigured
+                    ) {
+                        vm.selectedCiTab = "google"
                     }
                 }
             }
-            .controlSize(.small)
-            .disabled(vm.isTestingJenkins || vm.jenkinsDraft.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty)
-            .fixedSize()
-        } content: {
+
+            switch vm.selectedCiTab {
+            case "jenkins":
+                jenkinsTabContent
+            case "github":
+                githubTabContent
+            default:
+                googleCloudTabContent
+            }
+        }
+    }
+
+    private var jenkinsTabContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Jenkins Base URL")
                     .font(.caption)
@@ -573,6 +686,117 @@ private struct GeneralTabView: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background((vm.jenkinsTestSucceeded ? Color.green : Color.red).opacity(0.12))
+                .cornerRadius(6)
+            }
+        }
+    }
+
+    private var githubTabContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("GitHub Personal Access Token (PAT)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    if vm.showGitHubToken {
+                        TextField("ghp_... or github_pat_...", text: $vm.githubDraft.token)
+                            .textFieldStyle(.roundedBorder)
+                    } else {
+                        SecureField("ghp_... or github_pat_...", text: $vm.githubDraft.token)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    Button(vm.showGitHubToken ? "Hide" : "Show") {
+                        vm.showGitHubToken.toggle()
+                    }
+                    .fixedSize()
+                }
+                Text("Requires 'repo' or 'workflow' scope to trigger workflow_dispatch events.")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Default GitHub Owner / Organization (optional)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                TextField("e.g. your-org or github-username", text: $vm.githubDraft.owner)
+                    .textFieldStyle(.roundedBorder)
+                Text("Default owner prefix when repository name is specified without owner.")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.secondary)
+            }
+
+            if let msg = vm.githubTestMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: vm.githubTestSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(vm.githubTestSucceeded ? .green : .red)
+                    Text(msg)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background((vm.githubTestSucceeded ? Color.green : Color.red).opacity(0.12))
+                .cornerRadius(6)
+            }
+        }
+    }
+
+    private var googleCloudTabContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Google Cloud Project ID")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("my-gcp-project-12345", text: $vm.googleCloudDraft.projectId)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("GCP Region")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("us-central1", text: $vm.googleCloudDraft.region)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .frame(width: 180, alignment: .leading)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Service Account Key / Access Token")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    if vm.showGcpKey {
+                        TextField("Service Account Key JSON or OAuth Token", text: $vm.googleCloudDraft.serviceAccountKey)
+                            .textFieldStyle(.roundedBorder)
+                    } else {
+                        SecureField("Service Account Key JSON or OAuth Token", text: $vm.googleCloudDraft.serviceAccountKey)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    Button(vm.showGcpKey ? "Hide" : "Show") {
+                        vm.showGcpKey.toggle()
+                    }
+                    .fixedSize()
+                }
+                Text("Optional if gcloud CLI is already authenticated locally.")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.secondary)
+            }
+
+            if let msg = vm.googleCloudTestMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: vm.googleCloudTestSucceeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(vm.googleCloudTestSucceeded ? .green : .red)
+                    Text(msg)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background((vm.googleCloudTestSucceeded ? Color.green : Color.red).opacity(0.12))
                 .cornerRadius(6)
             }
         }
@@ -1116,6 +1340,8 @@ private struct GeneralTabView: View {
     private func loadFromAppState() {
         vm.jenkinsDraft = appState.config.jenkins
         vm.timeoutMinutes = max(5, vm.jenkinsDraft.buildTimeoutMs / 60_000)
+        vm.githubDraft = appState.config.github
+        vm.googleCloudDraft = appState.config.googleCloud
 
         vm.botToken = appState.config.telegramBotToken
         vm.telegramApiBaseUrl = appState.config.telegramApiBaseUrl
@@ -1151,6 +1377,18 @@ private struct GeneralTabView: View {
         updatedJenkins.apiToken = updatedJenkins.apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
         updatedJenkins.buildTimeoutMs = vm.timeoutMinutes * 60 * 1000
         appState.config.jenkins = updatedJenkins
+
+        var updatedGithub = vm.githubDraft
+        updatedGithub.token = updatedGithub.token.trimmingCharacters(in: .whitespacesAndNewlines)
+        updatedGithub.owner = updatedGithub.owner.trimmingCharacters(in: .whitespacesAndNewlines)
+        appState.config.github = updatedGithub
+
+        var updatedGcp = vm.googleCloudDraft
+        updatedGcp.projectId = updatedGcp.projectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        updatedGcp.serviceAccountKey = updatedGcp.serviceAccountKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanRegion = updatedGcp.region.trimmingCharacters(in: .whitespacesAndNewlines)
+        updatedGcp.region = cleanRegion.isEmpty ? "us-central1" : cleanRegion
+        appState.config.googleCloud = updatedGcp
 
         appState.config.telegramBotToken = vm.botToken.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanBaseUrl = vm.telegramApiBaseUrl
@@ -1188,7 +1426,7 @@ private struct GeneralTabView: View {
         appState.config.defaultModel = normModel.modelId
         appState.config.defaultModelLevel = normModel.level
 
-        appState.saveConfigToDisk(banner: "Saved General settings (Jenkins, Telegram, AI Engines & Models).")
+        appState.saveConfigToDisk(banner: "Saved General settings (CI/CD Deploy, Telegram, AI Engines & Models).")
     }
 
     private func runJenkinsConnectionTest() {
@@ -1207,6 +1445,48 @@ private struct GeneralTabView: View {
                 case .failure(let err):
                     viewModel.jenkinsTestSucceeded = false
                     viewModel.jenkinsTestMessage = err.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func runGitHubConnectionTest() {
+        vm.isTestingGitHub = true
+        vm.githubTestMessage = nil
+        let snapshot = vm.githubDraft
+        let viewModel = vm
+        Task {
+            let res = await GitHubConnectionTester.testConnection(config: snapshot)
+            await MainActor.run {
+                viewModel.isTestingGitHub = false
+                switch res {
+                case .success(let info):
+                    viewModel.githubTestSucceeded = true
+                    viewModel.githubTestMessage = info
+                case .failure(let err):
+                    viewModel.githubTestSucceeded = false
+                    viewModel.githubTestMessage = err.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func runGoogleCloudConnectionTest() {
+        vm.isTestingGoogleCloud = true
+        vm.googleCloudTestMessage = nil
+        let snapshot = vm.googleCloudDraft
+        let viewModel = vm
+        Task {
+            let res = await GoogleCloudConnectionTester.testConnection(config: snapshot)
+            await MainActor.run {
+                viewModel.isTestingGoogleCloud = false
+                switch res {
+                case .success(let info):
+                    viewModel.googleCloudTestSucceeded = true
+                    viewModel.googleCloudTestMessage = info
+                case .failure(let err):
+                    viewModel.googleCloudTestSucceeded = false
+                    viewModel.googleCloudTestMessage = err.localizedDescription
                 }
             }
         }
@@ -1568,15 +1848,42 @@ private struct WorkspacesTabView: View {
                 prodJobs: normalized.prodJenkinsJobs
             )
         }
-        for repo in normalized.repos where repo.deployEnabled {
-            let j = repo.jenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !j.isEmpty && !normalized.jenkinsJobs.contains(j) {
-                normalized.jenkinsJobs.append(j)
+        if normalized.ciProvider.isEmpty {
+            if !normalized.jenkinsJobs.isEmpty || normalized.repos.contains(where: { !$0.jenkinsJob.isEmpty }) {
+                normalized.ciProvider = "jenkins"
+            } else if !normalized.githubRepo.isEmpty || !normalized.githubWorkflow.isEmpty || normalized.repos.contains(where: { !$0.githubWorkflow.isEmpty }) {
+                normalized.ciProvider = "github"
+            } else if !normalized.gcpTrigger.isEmpty || normalized.repos.contains(where: { !$0.gcpTrigger.isEmpty }) {
+                normalized.ciProvider = "google"
+            } else {
+                normalized.ciProvider = "none"
             }
-            if normalized.environmentMode == "multi" {
-                let pj = repo.prodJenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !pj.isEmpty && !normalized.prodJenkinsJobs.contains(pj) {
-                    normalized.prodJenkinsJobs.append(pj)
+        }
+        for repo in normalized.repos where repo.deployEnabled {
+            if normalized.ciProvider == "jenkins" {
+                let j = repo.jenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !j.isEmpty && !normalized.jenkinsJobs.contains(j) {
+                    normalized.jenkinsJobs.append(j)
+                }
+                if normalized.environmentMode == "multi" {
+                    let pj = repo.prodJenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !pj.isEmpty && !normalized.prodJenkinsJobs.contains(pj) {
+                        normalized.prodJenkinsJobs.append(pj)
+                    }
+                }
+            } else if normalized.ciProvider == "github" {
+                if normalized.githubWorkflow.isEmpty && !repo.githubWorkflow.isEmpty {
+                    normalized.githubWorkflow = repo.githubWorkflow
+                }
+                if normalized.prodGithubWorkflow.isEmpty && !repo.prodGithubWorkflow.isEmpty {
+                    normalized.prodGithubWorkflow = repo.prodGithubWorkflow
+                }
+            } else if normalized.ciProvider == "google" {
+                if normalized.gcpTrigger.isEmpty && !repo.gcpTrigger.isEmpty {
+                    normalized.gcpTrigger = repo.gcpTrigger
+                }
+                if normalized.prodGcpTrigger.isEmpty && !repo.prodGcpTrigger.isEmpty {
+                    normalized.prodGcpTrigger = repo.prodGcpTrigger
                 }
             }
         }
@@ -1665,6 +1972,15 @@ private struct WorkspaceEditorFormView: View {
         [
             MACSegmentedOption(id: "single", title: "Single (Staging / Default)", value: "single"),
             MACSegmentedOption(id: "multi", title: "Multi (Staging → Production)", value: "multi")
+        ]
+    }
+
+    private var ciProviderOptions: [MACSegmentedOption<String>] {
+        [
+            MACSegmentedOption(id: "none", title: "Git-only", value: "none"),
+            MACSegmentedOption(id: "jenkins", title: "Jenkins", value: "jenkins"),
+            MACSegmentedOption(id: "github", title: "GitHub Actions", value: "github"),
+            MACSegmentedOption(id: "google", title: "Google Cloud", value: "google")
         ]
     }
 
@@ -1901,84 +2217,51 @@ private struct WorkspaceEditorFormView: View {
                     }
                 }
 
-                // 3. Environments & Jenkins Jobs
-                MACSectionCard(title: "Environments & Jenkins CI/CD Jobs", systemImage: "shippingbox.fill") {
+                // 3. Environments & CI/CD Deployment
+                MACSectionCard(title: "Environments & CI/CD Deployment", systemImage: "shippingbox.fill") {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Environment Mode")
+                        Text("CI/CD Provider")
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                        MACSegmentedPicker(options: envModeOptions, selection: $draft.environmentMode)
-                            .frame(maxWidth: 440, alignment: .leading)
+                        MACSegmentedPicker(options: ciProviderOptions, selection: $draft.ciProvider)
+                            .frame(maxWidth: 520, alignment: .leading)
                     }
 
-                    Divider()
-
-                    // Staging Jenkins Jobs
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(draft.environmentMode == "multi" ? "Staging Jenkins Jobs" : "Jenkins Jobs (Staging / Default)")
-                            .font(.system(size: 12.5, weight: .semibold))
-
-                        if !draft.jenkinsJobs.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(Array(draft.jenkinsJobs.enumerated()), id: \.offset) { idx, job in
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "hammer.fill")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.accentColor)
-                                        Text(job)
-                                            .font(.system(size: 12, design: .monospaced))
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                        Spacer()
-                                        Button(role: .destructive) {
-                                            draft.jenkinsJobs.remove(at: idx)
-                                        } label: {
-                                            Image(systemName: "minus.circle.fill")
-                                        }
-                                        .buttonStyle(.borderless)
-                                    }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.primary.opacity(0.04))
-                                    .cornerRadius(6)
-                                }
-                            }
-                        }
-
-                        HStack(spacing: 8) {
-                            TextField("Job path, URL, or comma list e.g. 'HS-1/app/api', 'HS-1/app/web'", text: $vm.stagingJobInput)
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit { addStagingJobsFromInput() }
-                            Button("Add Staging Job(s)") {
-                                addStagingJobsFromInput()
-                            }
-                            .disabled(vm.stagingJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .fixedSize()
-                        }
-                    }
-
-                    // Production Jenkins Jobs (Multi mode)
-                    if draft.environmentMode == "multi" {
+                    if draft.ciProvider != "none" {
                         Divider()
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Production Jenkins Jobs (triggered on '🚀 Yes, deploy on prod')")
+                            Text("Environment Mode")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            MACSegmentedPicker(options: envModeOptions, selection: $draft.environmentMode)
+                                .frame(maxWidth: 440, alignment: .leading)
+                        }
+                    }
+
+                    if draft.ciProvider == "jenkins" {
+                        Divider()
+
+                        // Staging Jenkins Jobs
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(draft.environmentMode == "multi" ? "Staging Jenkins Jobs" : "Jenkins Jobs (Staging / Default)")
                                 .font(.system(size: 12.5, weight: .semibold))
 
-                            if !draft.prodJenkinsJobs.isEmpty {
+                            if !draft.jenkinsJobs.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    ForEach(Array(draft.prodJenkinsJobs.enumerated()), id: \.offset) { idx, job in
+                                    ForEach(Array(draft.jenkinsJobs.enumerated()), id: \.offset) { idx, job in
                                         HStack(spacing: 8) {
-                                            Image(systemName: "bolt.horizontal.circle.fill")
+                                            Image(systemName: "hammer.fill")
                                                 .font(.system(size: 11))
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.accentColor)
                                             Text(job)
                                                 .font(.system(size: 12, design: .monospaced))
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
                                             Spacer()
                                             Button(role: .destructive) {
-                                                draft.prodJenkinsJobs.remove(at: idx)
+                                                draft.jenkinsJobs.remove(at: idx)
                                             } label: {
                                                 Image(systemName: "minus.circle.fill")
                                             }
@@ -1993,16 +2276,137 @@ private struct WorkspaceEditorFormView: View {
                             }
 
                             HStack(spacing: 8) {
-                                TextField("Prod job path, URL, or comma list e.g. 'PROD/app/api', 'PROD/app/web'", text: $vm.prodJobInput)
+                                TextField("Job path, URL, or comma list e.g. 'HS-1/app/api', 'HS-1/app/web'", text: $vm.stagingJobInput)
                                     .textFieldStyle(.roundedBorder)
-                                    .onSubmit { addProdJobsFromInput() }
-                                Button("Add Prod Job(s)") {
-                                    addProdJobsFromInput()
+                                    .onSubmit { addStagingJobsFromInput() }
+                                Button("Add Staging Job(s)") {
+                                    addStagingJobsFromInput()
                                 }
-                                .disabled(vm.prodJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .disabled(vm.stagingJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                 .fixedSize()
                             }
                         }
+
+                        // Production Jenkins Jobs (Multi mode)
+                        if draft.environmentMode == "multi" {
+                            Divider()
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Production Jenkins Jobs (triggered on '🚀 Yes, deploy on prod')")
+                                    .font(.system(size: 12.5, weight: .semibold))
+
+                                if !draft.prodJenkinsJobs.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ForEach(Array(draft.prodJenkinsJobs.enumerated()), id: \.offset) { idx, job in
+                                            HStack(spacing: 8) {
+                                                Image(systemName: "bolt.horizontal.circle.fill")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.purple)
+                                                Text(job)
+                                                    .font(.system(size: 12, design: .monospaced))
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                                Spacer()
+                                                Button(role: .destructive) {
+                                                    draft.prodJenkinsJobs.remove(at: idx)
+                                                } label: {
+                                                    Image(systemName: "minus.circle.fill")
+                                                }
+                                                .buttonStyle(.borderless)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.primary.opacity(0.04))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+
+                                HStack(spacing: 8) {
+                                    TextField("Prod job path, URL, or comma list e.g. 'PROD/app/api', 'PROD/app/web'", text: $vm.prodJobInput)
+                                        .textFieldStyle(.roundedBorder)
+                                        .onSubmit { addProdJobsFromInput() }
+                                    Button("Add Prod Job(s)") {
+                                        addProdJobsFromInput()
+                                    }
+                                    .disabled(vm.prodJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    .fixedSize()
+                                }
+                            }
+                        }
+                    } else if draft.ciProvider == "github" {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(draft.environmentMode == "multi" ? "GitHub Actions Workflows (Staging & Production)" : "GitHub Actions Workflow")
+                                .font(.system(size: 12.5, weight: .semibold))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("GitHub Repository (owner/repo or slug, optional if remote configured)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField("e.g. acme/service or leave blank to detect from git remote", text: $draft.githubRepo)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(draft.environmentMode == "multi" ? "Staging Workflow File" : "Workflow File")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    TextField("deploy.yml or ci.yml", text: $draft.githubWorkflow)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                if draft.environmentMode == "multi" {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Production Workflow File")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        TextField("deploy-prod.yml", text: $draft.prodGithubWorkflow)
+                                            .textFieldStyle(.roundedBorder)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                    } else if draft.ciProvider == "google" {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(draft.environmentMode == "multi" ? "Google Cloud Build Triggers (Staging & Production)" : "Google Cloud Build Trigger")
+                                .font(.system(size: 12.5, weight: .semibold))
+
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(draft.environmentMode == "multi" ? "Staging Trigger ID / Name" : "Trigger ID / Name")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    TextField("staging-deploy-trigger", text: $draft.gcpTrigger)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                if draft.environmentMode == "multi" {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Production Trigger ID / Name")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        TextField("prod-deploy-trigger", text: $draft.prodGcpTrigger)
+                                            .textFieldStyle(.roundedBorder)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                    } else {
+                        Divider()
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle")
+                                .foregroundColor(.accentColor)
+                            Text("Git-only mode: changes are committed and pushed directly to Git remotes without external CI runner dispatches.")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
 
@@ -2052,19 +2456,51 @@ private struct WorkspaceEditorFormView: View {
                                             .textFieldStyle(.roundedBorder)
                                             .frame(width: 155)
 
-                                        TextField("Staging Jenkins Job (e.g. HS-1/project/service)", text: $repo.jenkinsJob)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(maxWidth: .infinity)
-                                            .onChange(of: repo.jenkinsJob) { _, val in
-                                                if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
-                                                    repo.deployEnabled = true
-                                                }
-                                            }
-
-                                        if draft.environmentMode == "multi" {
-                                            TextField("Production Jenkins Job", text: $repo.prodJenkinsJob)
+                                        if draft.ciProvider == "jenkins" {
+                                            TextField("Staging Jenkins Job (e.g. HS-1/project/service)", text: $repo.jenkinsJob)
                                                 .textFieldStyle(.roundedBorder)
                                                 .frame(maxWidth: .infinity)
+                                                .onChange(of: repo.jenkinsJob) { _, val in
+                                                    if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
+                                                        repo.deployEnabled = true
+                                                    }
+                                                }
+
+                                            if draft.environmentMode == "multi" {
+                                                TextField("Production Jenkins Job", text: $repo.prodJenkinsJob)
+                                                    .textFieldStyle(.roundedBorder)
+                                                    .frame(maxWidth: .infinity)
+                                            }
+                                        } else if draft.ciProvider == "github" {
+                                            TextField("Workflow (e.g. deploy.yml)", text: $repo.githubWorkflow)
+                                                .textFieldStyle(.roundedBorder)
+                                                .frame(maxWidth: .infinity)
+                                                .onChange(of: repo.githubWorkflow) { _, val in
+                                                    if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
+                                                        repo.deployEnabled = true
+                                                    }
+                                                }
+
+                                            if draft.environmentMode == "multi" {
+                                                TextField("Prod Workflow", text: $repo.prodGithubWorkflow)
+                                                    .textFieldStyle(.roundedBorder)
+                                                    .frame(maxWidth: .infinity)
+                                            }
+                                        } else if draft.ciProvider == "google" {
+                                            TextField("GCP Trigger ID", text: $repo.gcpTrigger)
+                                                .textFieldStyle(.roundedBorder)
+                                                .frame(maxWidth: .infinity)
+                                                .onChange(of: repo.gcpTrigger) { _, val in
+                                                    if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
+                                                        repo.deployEnabled = true
+                                                    }
+                                                }
+
+                                            if draft.environmentMode == "multi" {
+                                                TextField("Prod Trigger ID", text: $repo.prodGcpTrigger)
+                                                    .textFieldStyle(.roundedBorder)
+                                                    .frame(maxWidth: .infinity)
+                                            }
                                         }
                                     }
                                 }

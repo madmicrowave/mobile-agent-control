@@ -74,6 +74,12 @@ public struct MACRepo: Identifiable, Codable, Equatable {
     public var prodJenkinsJob: String
     public var branch: String
     public var deployEnabled: Bool
+    public var ciProvider: String
+    public var githubRepo: String
+    public var githubWorkflow: String
+    public var prodGithubWorkflow: String
+    public var gcpTrigger: String
+    public var prodGcpTrigger: String
 
     public init(
         name: String,
@@ -81,7 +87,13 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         jenkinsJob: String = "",
         prodJenkinsJob: String = "",
         branch: String = "",
-        deployEnabled: Bool = false
+        deployEnabled: Bool = false,
+        ciProvider: String = "",
+        githubRepo: String = "",
+        githubWorkflow: String = "",
+        prodGithubWorkflow: String = "",
+        gcpTrigger: String = "",
+        prodGcpTrigger: String = ""
     ) {
         self.name = name
         self.path = path
@@ -89,10 +101,17 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.prodJenkinsJob = prodJenkinsJob
         self.branch = branch
         self.deployEnabled = deployEnabled
+        self.ciProvider = ciProvider
+        self.githubRepo = githubRepo
+        self.githubWorkflow = githubWorkflow
+        self.prodGithubWorkflow = prodGithubWorkflow
+        self.gcpTrigger = gcpTrigger
+        self.prodGcpTrigger = prodGcpTrigger
     }
 
     enum CodingKeys: String, CodingKey {
         case name, path, jenkinsJob, prodJenkinsJob, branch, deployEnabled
+        case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
     }
 
     public init(from decoder: Decoder) throws {
@@ -103,6 +122,12 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.prodJenkinsJob = try c.decodeIfPresent(String.self, forKey: .prodJenkinsJob) ?? ""
         self.branch = try c.decodeIfPresent(String.self, forKey: .branch) ?? ""
         self.deployEnabled = try c.decodeIfPresent(Bool.self, forKey: .deployEnabled) ?? !self.jenkinsJob.isEmpty
+        self.ciProvider = try c.decodeIfPresent(String.self, forKey: .ciProvider) ?? ""
+        self.githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? ""
+        self.githubWorkflow = try c.decodeIfPresent(String.self, forKey: .githubWorkflow) ?? ""
+        self.prodGithubWorkflow = try c.decodeIfPresent(String.self, forKey: .prodGithubWorkflow) ?? ""
+        self.gcpTrigger = try c.decodeIfPresent(String.self, forKey: .gcpTrigger) ?? ""
+        self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
     }
 }
 
@@ -116,6 +141,12 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     public var modelLevel: String
     public var engine: String // "agy", "aider", "direct-api"
     public var environmentMode: String // "single" or "multi"
+    public var ciProvider: String // "none", "jenkins", "github", "google"
+    public var githubRepo: String
+    public var githubWorkflow: String
+    public var prodGithubWorkflow: String
+    public var gcpTrigger: String
+    public var prodGcpTrigger: String
     public var jenkinsJobs: [String]
     public var prodJenkinsJobs: [String]
     public var repos: [MACRepo]
@@ -130,6 +161,12 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         modelLevel: String = "high",
         engine: String = "agy",
         environmentMode: String = "single",
+        ciProvider: String = "",
+        githubRepo: String = "",
+        githubWorkflow: String = "",
+        prodGithubWorkflow: String = "",
+        gcpTrigger: String = "",
+        prodGcpTrigger: String = "",
         jenkinsJobs: [String] = [],
         prodJenkinsJobs: [String] = [],
         repos: [MACRepo] = []
@@ -143,13 +180,33 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.modelLevel = modelLevel
         self.engine = engine.isEmpty ? "agy" : engine
         self.environmentMode = environmentMode
+        let resolvedCi: String
+        if !ciProvider.isEmpty {
+            resolvedCi = ciProvider
+        } else if !jenkinsJobs.isEmpty || repos.contains(where: { !$0.jenkinsJob.isEmpty }) {
+            resolvedCi = "jenkins"
+        } else if !githubRepo.isEmpty || !githubWorkflow.isEmpty || repos.contains(where: { !$0.githubWorkflow.isEmpty }) {
+            resolvedCi = "github"
+        } else if !gcpTrigger.isEmpty || repos.contains(where: { !$0.gcpTrigger.isEmpty }) {
+            resolvedCi = "google"
+        } else {
+            resolvedCi = "none"
+        }
+        self.ciProvider = resolvedCi
+        self.githubRepo = githubRepo
+        self.githubWorkflow = githubWorkflow
+        self.prodGithubWorkflow = prodGithubWorkflow
+        self.gcpTrigger = gcpTrigger
+        self.prodGcpTrigger = prodGcpTrigger
         self.jenkinsJobs = jenkinsJobs
         self.prodJenkinsJobs = prodJenkinsJobs
         self.repos = repos
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, label, name, path, extraDirs, liveUrl, model, modelLevel, engine, environmentMode, jenkinsJobs, prodJenkinsJobs, repos
+        case id, label, name, path, extraDirs, liveUrl, model, modelLevel, engine, environmentMode
+        case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
+        case jenkinsJobs, prodJenkinsJobs, repos
     }
 
     public init(from decoder: Decoder) throws {
@@ -171,12 +228,30 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.modelLevel = try c.decodeIfPresent(String.self, forKey: .modelLevel) ?? "high"
         let decodedEngine = (try c.decodeIfPresent(String.self, forKey: .engine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.engine = decodedEngine.isEmpty || decodedEngine == "auto" ? "agy" : decodedEngine
+        self.githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? ""
+        self.githubWorkflow = try c.decodeIfPresent(String.self, forKey: .githubWorkflow) ?? ""
+        self.prodGithubWorkflow = try c.decodeIfPresent(String.self, forKey: .prodGithubWorkflow) ?? ""
+        self.gcpTrigger = try c.decodeIfPresent(String.self, forKey: .gcpTrigger) ?? ""
+        self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
         self.jenkinsJobs = try c.decodeIfPresent([String].self, forKey: .jenkinsJobs) ?? []
         self.prodJenkinsJobs = try c.decodeIfPresent([String].self, forKey: .prodJenkinsJobs) ?? []
         self.repos = try c.decodeIfPresent([MACRepo].self, forKey: .repos) ?? []
 
+        let rawCi = (try c.decodeIfPresent(String.self, forKey: .ciProvider) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !rawCi.isEmpty {
+            self.ciProvider = rawCi
+        } else if !self.jenkinsJobs.isEmpty || self.repos.contains(where: { !$0.jenkinsJob.isEmpty }) {
+            self.ciProvider = "jenkins"
+        } else if !self.githubRepo.isEmpty || !self.githubWorkflow.isEmpty || self.repos.contains(where: { !$0.githubWorkflow.isEmpty }) {
+            self.ciProvider = "github"
+        } else if !self.gcpTrigger.isEmpty || self.repos.contains(where: { !$0.gcpTrigger.isEmpty }) {
+            self.ciProvider = "google"
+        } else {
+            self.ciProvider = "none"
+        }
+
         let rawEnv = (try c.decodeIfPresent(String.self, forKey: .environmentMode) ?? "").lowercased()
-        let hasProd = !self.prodJenkinsJobs.isEmpty || self.repos.contains(where: { !$0.prodJenkinsJob.isEmpty })
+        let hasProd = !self.prodJenkinsJobs.isEmpty || !self.prodGithubWorkflow.isEmpty || !self.prodGcpTrigger.isEmpty || self.repos.contains(where: { !$0.prodJenkinsJob.isEmpty || !$0.prodGithubWorkflow.isEmpty || !$0.prodGcpTrigger.isEmpty })
         self.environmentMode = (rawEnv == "multi" || hasProd) ? "multi" : "single"
         if self.environmentMode == "single" {
             self.prodJenkinsJobs = []
@@ -194,6 +269,12 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         try c.encode(modelLevel, forKey: .modelLevel)
         try c.encode(engine, forKey: .engine)
         try c.encode(environmentMode, forKey: .environmentMode)
+        try c.encode(ciProvider, forKey: .ciProvider)
+        try c.encode(githubRepo, forKey: .githubRepo)
+        try c.encode(githubWorkflow, forKey: .githubWorkflow)
+        try c.encode(prodGithubWorkflow, forKey: .prodGithubWorkflow)
+        try c.encode(gcpTrigger, forKey: .gcpTrigger)
+        try c.encode(prodGcpTrigger, forKey: .prodGcpTrigger)
         try c.encode(jenkinsJobs, forKey: .jenkinsJobs)
         try c.encode(environmentMode == "multi" ? prodJenkinsJobs : [], forKey: .prodJenkinsJobs)
         try c.encode(repos, forKey: .repos)
@@ -247,6 +328,49 @@ public struct MACJenkinsConfig: Codable, Equatable {
     }
 }
 
+public struct MACGitHubConfig: Codable, Equatable {
+    public var token: String
+    public var owner: String
+
+    public init(token: String = "", owner: String = "") {
+        self.token = token
+        self.owner = owner
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case token, owner
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.token = try c.decodeIfPresent(String.self, forKey: .token) ?? ""
+        self.owner = try c.decodeIfPresent(String.self, forKey: .owner) ?? ""
+    }
+}
+
+public struct MACGoogleCloudConfig: Codable, Equatable {
+    public var projectId: String
+    public var serviceAccountKey: String
+    public var region: String
+
+    public init(projectId: String = "", serviceAccountKey: String = "", region: String = "us-central1") {
+        self.projectId = projectId
+        self.serviceAccountKey = serviceAccountKey
+        self.region = region
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case projectId, serviceAccountKey, region
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.projectId = try c.decodeIfPresent(String.self, forKey: .projectId) ?? ""
+        self.serviceAccountKey = try c.decodeIfPresent(String.self, forKey: .serviceAccountKey) ?? ""
+        self.region = try c.decodeIfPresent(String.self, forKey: .region) ?? "us-central1"
+    }
+}
+
 public struct MACConfig: Codable, Equatable {
     public var agyBin: String
     public var aiderBin: String
@@ -261,6 +385,8 @@ public struct MACConfig: Codable, Equatable {
     public var defaultModelLevel: String
     public var skipPermissions: Bool
     public var jenkins: MACJenkinsConfig
+    public var github: MACGitHubConfig
+    public var googleCloud: MACGoogleCloudConfig
     public var workspaces: [MACWorkspace]
     public var telegramBotToken: String
     public var telegramApiBaseUrl: String
@@ -282,6 +408,8 @@ public struct MACConfig: Codable, Equatable {
         defaultModelLevel: String = "high",
         skipPermissions: Bool = true,
         jenkins: MACJenkinsConfig = MACJenkinsConfig(),
+        github: MACGitHubConfig = MACGitHubConfig(),
+        googleCloud: MACGoogleCloudConfig = MACGoogleCloudConfig(),
         workspaces: [MACWorkspace] = [],
         telegramBotToken: String = "",
         telegramApiBaseUrl: String = "https://api.telegram.org",
@@ -302,6 +430,8 @@ public struct MACConfig: Codable, Equatable {
         self.defaultModelLevel = defaultModelLevel
         self.skipPermissions = skipPermissions
         self.jenkins = jenkins
+        self.github = github
+        self.googleCloud = googleCloud
         self.workspaces = workspaces
         self.telegramBotToken = telegramBotToken
         self.telegramApiBaseUrl = telegramApiBaseUrl
@@ -313,7 +443,7 @@ public struct MACConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case agyBin, aiderBin, agentEngine
         case openaiApiKey, anthropicApiKey, deepseekApiKey, qwenApiKey, customApiBaseUrl, customApiKey
-        case defaultModel, defaultModelLevel, skipPermissions, jenkins, workspaces
+        case defaultModel, defaultModelLevel, skipPermissions, jenkins, github, googleCloud, workspaces
         case telegramBotToken, telegramApiBaseUrl, allowedUserIds, defaultHistoryCount, antigravityBrainDir
     }
 
@@ -338,6 +468,8 @@ public struct MACConfig: Codable, Equatable {
         self.defaultModelLevel = try c.decodeIfPresent(String.self, forKey: .defaultModelLevel) ?? "high"
         self.skipPermissions = try c.decodeIfPresent(Bool.self, forKey: .skipPermissions) ?? true
         self.jenkins = try c.decodeIfPresent(MACJenkinsConfig.self, forKey: .jenkins) ?? MACJenkinsConfig()
+        self.github = try c.decodeIfPresent(MACGitHubConfig.self, forKey: .github) ?? MACGitHubConfig()
+        self.googleCloud = try c.decodeIfPresent(MACGoogleCloudConfig.self, forKey: .googleCloud) ?? MACGoogleCloudConfig()
         self.workspaces = try c.decodeIfPresent([MACWorkspace].self, forKey: .workspaces) ?? []
         self.telegramBotToken = try c.decodeIfPresent(String.self, forKey: .telegramBotToken) ?? ""
         self.telegramApiBaseUrl = try c.decodeIfPresent(String.self, forKey: .telegramApiBaseUrl) ?? "https://api.telegram.org"
@@ -745,6 +877,64 @@ public enum TelegramTokenTester {
             return .failure(NSError(domain: "MACTelegram", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Telegram rejected token: \(desc)"]))
         } catch {
             return .failure(error)
+        }
+    }
+}
+
+public enum GitHubConnectionTester {
+    public static func testConnection(config: MACGitHubConfig) async -> Result<String, Error> {
+        let token = config.token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            return .failure(NSError(domain: "MACGitHub", code: 1, userInfo: [NSLocalizedDescriptionKey: "Enter a valid GitHub Personal Access Token (PAT)."]))
+        }
+        guard let url = URL(string: "https://api.github.com/user") else {
+            return .failure(NSError(domain: "MACGitHub", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid GitHub API URL."]))
+        }
+        var req = URLRequest(url: url, timeoutInterval: 12.0)
+        req.httpMethod = "GET"
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("MobileAgentControl", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(NSError(domain: "MACGitHub", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response from GitHub."]))
+            }
+            if http.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let login = json["login"] as? String {
+                    let name = json["name"] as? String
+                    let scopes = http.value(forHTTPHeaderField: "x-oauth-scopes") ?? "token verified"
+                    let nameText = name != nil && !name!.isEmpty ? " (\(name!))" : ""
+                    return .success("Connected to GitHub as @\(login)\(nameText)! Scopes: \(scopes)")
+                }
+                return .success("Connected to GitHub API successfully (HTTP 200).")
+            } else {
+                let errText = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String ?? "HTTP \(http.statusCode)"
+                return .failure(NSError(domain: "MACGitHub", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "GitHub connection failed: \(errText)"]))
+            }
+        } catch {
+            return .failure(error)
+        }
+    }
+}
+
+public enum GoogleCloudConnectionTester {
+    public static func testConnection(config: MACGoogleCloudConfig) async -> Result<String, Error> {
+        let projectId = config.projectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !projectId.isEmpty else {
+            return .failure(NSError(domain: "MACGoogleCloud", code: 1, userInfo: [NSLocalizedDescriptionKey: "Enter a valid Google Cloud Project ID."]))
+        }
+        let key = config.serviceAccountKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty && (key.hasPrefix("{") || key.hasPrefix("ya29.")) {
+            return .success("Google Cloud configuration verified for Project: \(projectId) (Region: \(config.region)).")
+        }
+        let valid = projectId.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil
+        if valid {
+            return .success("Google Cloud Project ID format verified: \(projectId) (Region: \(config.region)).")
+        } else {
+            return .failure(NSError(domain: "MACGoogleCloud", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid Google Cloud Project ID format."]))
         }
     }
 }

@@ -15,8 +15,13 @@ import { BotController } from './bot-controller.mjs';
 import {
   runAddIdeWizard,
   runConfigureJenkinsWizard,
+  runConfigureGithubWizard,
+  runConfigureGoogleCloudWizard,
+  runConfigureAiEnginesWizard,
   runSetupWizard,
-  runTestJenkinsConsole
+  runTestJenkinsConsole,
+  runTestGithubConsole,
+  runTestGoogleCloudConsole
 } from './setup.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -216,7 +221,12 @@ export async function executeConsoleCommand(
     return { handled: true, command: 'add-ide' };
   }
 
-  if (cmd === 'update-jenkins' || cmd === 'set-jenkins' || cmd === 'jenkins') {
+  if (
+    cmd === 'update-jenkins' ||
+    cmd === 'set-jenkins' ||
+    cmd === 'jenkins' ||
+    cmd === 'jenkins-add-user'
+  ) {
     await runConfigureJenkinsWizard({
       dataDir,
       store: configStore,
@@ -227,10 +237,10 @@ export async function executeConsoleCommand(
       ...(jenkinsFactory ? { jenkinsFactory } : {}),
       showBanner: true
     });
-    return { handled: true, command: 'update-jenkins' };
+    return { handled: true, command: 'jenkins-add-user' };
   }
 
-  if (cmd === 'test-jenkins') {
+  if (cmd === 'test-jenkins' || cmd === 'jenkins-test-access') {
     await runTestJenkinsConsole({
       dataDir,
       store: configStore,
@@ -238,7 +248,82 @@ export async function executeConsoleCommand(
       log,
       warn
     });
-    return { handled: true, command: 'test-jenkins' };
+    return { handled: true, command: 'jenkins-test-access' };
+  }
+
+  if (
+    cmd === 'update-github' ||
+    cmd === 'set-github' ||
+    cmd === 'github' ||
+    cmd === 'github-add-user'
+  ) {
+    await runConfigureGithubWizard({
+      dataDir,
+      store: configStore,
+      ask,
+      log,
+      warn,
+      testGithub: true,
+      showBanner: true
+    });
+    return { handled: true, command: 'github-add-user' };
+  }
+
+  if (cmd === 'test-github' || cmd === 'github-test-access') {
+    await runTestGithubConsole({
+      dataDir,
+      store: configStore,
+      log,
+      warn
+    });
+    return { handled: true, command: 'github-test-access' };
+  }
+
+  if (
+    cmd === 'update-google-cloud' ||
+    cmd === 'set-google-cloud' ||
+    cmd === 'google-cloud' ||
+    cmd === 'google-cloud-add-user' ||
+    cmd === 'gcp-add-user' ||
+    cmd === 'gcp'
+  ) {
+    await runConfigureGoogleCloudWizard({
+      dataDir,
+      store: configStore,
+      ask,
+      log,
+      warn,
+      testGcp: true,
+      showBanner: true
+    });
+    return { handled: true, command: 'google-cloud-add-user' };
+  }
+
+  if (
+    cmd === 'test-google-cloud' ||
+    cmd === 'google-cloud-test-access' ||
+    cmd === 'test-gcp' ||
+    cmd === 'gcp-test-access'
+  ) {
+    await runTestGoogleCloudConsole({
+      dataDir,
+      store: configStore,
+      log,
+      warn
+    });
+    return { handled: true, command: 'google-cloud-test-access' };
+  }
+
+  if (cmd === 'ai-engines' || cmd === 'engines' || cmd === 'models') {
+    await runConfigureAiEnginesWizard({
+      dataDir,
+      store: configStore,
+      ask,
+      log,
+      warn,
+      showBanner: true
+    });
+    return { handled: true, command: 'ai-engines' };
   }
 
   if (cmd === 'setup') {
@@ -259,15 +344,23 @@ export async function executeConsoleCommand(
       (cfg.workspaces || [])
         .map(
           (w, idx) =>
-            `    ${idx + 1}) ${w.label || w.id} (${w.id}) — ${w.path} [${w.model || 'gemini-3.8-flash-high'}:${w.modelLevel || 'high'}]`
+            `    ${idx + 1}) ${w.label || w.id} (${w.id}) — ${w.path} [${w.model || 'gemini-3.8-flash-high'}:${w.modelLevel || 'high'}] [CI: ${w.ciProvider || 'none'}]`
         )
         .join('\n') || '    (none configured)';
     const jenkinsOk = Boolean(cfg.jenkins?.username && cfg.jenkins?.apiToken);
+    const githubOk = Boolean(cfg.github?.token);
+    const gcpOk = Boolean(cfg.googleCloud?.projectId);
     log('');
     log(`  Registered Workspaces (${(cfg.workspaces || []).length}):`);
     log(ideLines);
     log(
       `  Jenkins: ${cfg.jenkins?.baseUrl || '(not configured)'}${cfg.jenkins?.baseUrl ? ` (${jenkinsOk ? `configured as ${cfg.jenkins.username}` : 'credentials not set'})` : ''}`
+    );
+    log(
+      `  GitHub: ${cfg.github?.token ? 'Configured ✓' : '(not configured)'}${cfg.github?.owner ? ` (owner: ${cfg.github.owner})` : ''}`
+    );
+    log(
+      `  Google Cloud: ${cfg.googleCloud?.projectId ? `Configured ✓ (${cfg.googleCloud.projectId}, ${cfg.googleCloud.region || 'us-central1'})` : '(not configured)'}`
     );
     log('');
     return { handled: true, command: 'status' };
@@ -276,17 +369,22 @@ export async function executeConsoleCommand(
   if (cmd === 'help' || cmd === '?') {
     log('');
     log('  Available Console Commands:');
-    log('    add-workspace   Scan & register an available Workspace (or edit existing)');
-    log('    update-jenkins  Update Jenkins URL, username & API token, and test connection');
-    log('    test-jenkins    Test Jenkins connection right now');
-    log('    setup           Run full setup wizard');
-    log('    status          Show configured Workspaces, AI models & Jenkins status');
+    log('    add-workspace            Scan & register a Workspace (or edit existing)');
+    log('    jenkins-add-user         Configure Jenkins URL, user & API token');
+    log('    jenkins-test-access      Test Jenkins connection right now');
+    log('    github-add-user          Configure GitHub token & default org');
+    log('    github-test-access       Test GitHub REST API connection');
+    log('    google-cloud-add-user    Configure Google Cloud Project ID & key');
+    log('    google-cloud-test-access Test Google Cloud Build access');
+    log('    ai-engines               Configure AI CLI runners, API keys & models');
+    log('    setup                    Run full interactive setup wizard');
+    log('    status                   Show configured Workspaces, AI models & CI/CD status');
     log('');
     return { handled: true, command: 'help' };
   }
 
   warn(
-    `  Unknown console command "${rawCmd}". Type "add-ide", "update-jenkins", "test-jenkins", "setup", "status", or "help".`
+    `  Unknown console command "${rawCmd}". Type "setup", "add-workspace", "jenkins-add-user", "github-add-user", "google-cloud-add-user", "status", or "help".`
   );
   return { handled: false };
 }

@@ -19,6 +19,11 @@ import {
   rewriteToBaseOrigin
 } from '../src/jenkins-client.mjs';
 import {
+  GitHubClient,
+  parseGitHubRepoSlug
+} from '../src/github-client.mjs';
+import { GoogleCloudClient } from '../src/google-cloud-client.mjs';
+import {
   VALID_MODEL_LEVELS,
   GEMINI_MODEL_FAMILIES,
   DEFAULT_AGENT_MODEL_FAMILIES,
@@ -59,7 +64,12 @@ import {
   runSetupWizard,
   runAddIdeWizard,
   runConfigureJenkinsWizard,
-  runTestJenkinsConsole
+  runConfigureGithubWizard,
+  runConfigureGoogleCloudWizard,
+  runConfigureAiEnginesWizard,
+  runTestJenkinsConsole,
+  runTestGithubConsole,
+  runTestGoogleCloudConsole
 } from '../src/setup.mjs';
 import { buildLaunchdPlistXml } from '../src/service.mjs';
 
@@ -742,7 +752,18 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
         'https://jenkins.example.com',// 4. Jenkins Base URL
         'deploy-bot',                 // 5. Jenkins Username
         'jenkins-api-tok-xyz',        // 6. Jenkins API Token
-        wsDir,                        // 7. Paste workspace directory
+        'ghp_mock_token_12345',       // 7. GitHub Personal Access Token (PAT)
+        'acme-org',                   // 8. Default GitHub Owner / Org
+        'my-gcp-project',             // 9. Google Cloud Project ID
+        '-',                          // 10. Service Account Key JSON
+        'us-central1',                // 11. Google Cloud Region
+        'gemini-3.8-flash',           // 12. Default AI Model Family
+        'high',                       // 13. Default Effort Level
+        '1',                          // 14. AI Execution Engine (1: agy)
+        '',                           // 15. Antigravity CLI path (keep default)
+        '',                           // 16. Aider CLI path (keep default)
+        'n',                          // 17. Configure Direct API keys? -> No
+        wsDir,                        // 18. Paste workspace directory
         'stack',                      // Workspace short name
         'My Stack',                   // Workspace display label
         'gemini 3.8',                 // Gemini model
@@ -793,6 +814,10 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       assert.equal(store.config.defaultHistoryCount, 8);
       assert.equal(store.config.jenkins.baseUrl, 'https://jenkins.example.com');
       assert.equal(store.config.jenkins.username, 'deploy-bot');
+      assert.equal(store.config.github.token, 'ghp_mock_token_12345');
+      assert.equal(store.config.github.owner, 'acme-org');
+      assert.equal(store.config.googleCloud.projectId, 'my-gcp-project');
+      assert.equal(store.config.googleCloud.region, 'us-central1');
 
       assert.equal(store.config.workspaces.length, 1);
       const ws = store.config.workspaces[0];
@@ -826,6 +851,82 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       assert.equal(sharedRepo.prodJenkinsJob, '');
     } finally {
       await fsp.rm(tmpSetupRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('supports GitHub & Google Cloud CI/CD clients, repo parsing, and console access commands', async () => {
+    // 1. Repo slug parsing
+    assert.deepEqual(parseGitHubRepoSlug('owner/repo'), { owner: 'owner', repo: 'repo', fullName: 'owner/repo' });
+    assert.deepEqual(parseGitHubRepoSlug('repo', 'default-org'), { owner: 'default-org', repo: 'repo', fullName: 'default-org/repo' });
+    assert.deepEqual(parseGitHubRepoSlug('https://github.com/my-org/my-project.git'), { owner: 'my-org', repo: 'my-project', fullName: 'my-org/my-project' });
+
+    // 2. Google Cloud client validation & mock trigger
+    const gcp = new GoogleCloudClient({ projectId: 'demo-gcp-project', region: 'europe-west1' });
+    const gcpConn = await gcp.testConnection();
+    assert.equal(gcpConn.ok, true);
+    assert.equal(gcpConn.projectId, 'demo-gcp-project');
+    assert.equal(gcpConn.region, 'europe-west1');
+
+    const gcpBuild = await gcp.triggerBuild({ triggerId: 'my-trigger', branch: 'master' });
+    assert.equal(gcpBuild.ok, true);
+    assert.equal(gcpBuild.status, 'SUCCESS');
+    assert.equal(gcpBuild.triggerId, 'my-trigger');
+
+    // 3. GitHub client error when token missing
+    const ghMissing = new GitHubClient({ token: '' });
+    await assert.rejects(async () => ghMissing.testConnection(), /GitHub Personal Access Token is required/);
+
+    // 4. Test console commands routing via executeConsoleCommand
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ci-cmd-test-'));
+    try {
+      const store = new ConfigStore(path.join(tmpDir, 'data'));
+      await store.init();
+
+      // Test github-test-access when unconfigured
+      const logs = [];
+      const warns = [];
+      const testRes = await runTestGithubConsole({
+        store,
+        log: (m) => logs.push(m),
+        warn: (m) => warns.push(m)
+      });
+      assert.equal(testRes.ok, false);
+
+      // Test google-cloud-test-access
+      store.config.googleCloud.projectId = 'valid-gcp-project';
+      const gcpTestRes = await runTestGoogleCloudConsole({
+        store,
+        log: (m) => logs.push(m),
+        warn: (m) => warns.push(m)
+      });
+      assert.equal(gcpTestRes.ok, true);
+
+      // Verify executeConsoleCommand handles the new commands
+      const resGh = await executeConsoleCommand('github-test-access', {
+        configStore: store,
+        log: () => {},
+        warn: () => {}
+      });
+      assert.equal(resGh.handled, true);
+      assert.equal(resGh.command, 'github-test-access');
+
+      const resGcp = await executeConsoleCommand('google-cloud-test-access', {
+        configStore: store,
+        log: () => {},
+        warn: () => {}
+      });
+      assert.equal(resGcp.handled, true);
+      assert.equal(resGcp.command, 'google-cloud-test-access');
+
+      const resJnk = await executeConsoleCommand('jenkins-test-access', {
+        configStore: store,
+        log: () => {},
+        warn: () => {}
+      });
+      assert.equal(resJnk.handled, true);
+      assert.equal(resJnk.command, 'jenkins-test-access');
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true });
     }
   });
 });

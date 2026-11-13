@@ -4,7 +4,7 @@
 
 # Mobile Agent Control (`mac.app` / `MAC`) — Native macOS App for Telegram AI Coding
 
-**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen, and Personal Local Models via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production Jenkins CI/CD straight from Telegram.**
+**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen, and Personal Local Models via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production CI/CD (Jenkins, GitHub Actions, Google Cloud Build) straight from Telegram.**
 
 [![CI](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml/badge.svg)](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/madmicrowave/mobile-agent-control?label=Download%20mac.app&logo=apple)](https://github.com/madmicrowave/mobile-agent-control/releases/latest)
@@ -23,7 +23,7 @@
 
 **Mobile Agent Control (`mac.app`)** is a lightweight, 100% open-source **native macOS application** that places a bold **`MAC`** icon right next to your macOS menu bar clock (matching [Sticky-AI](https://github.com/madmicrowave/sticky-ai)'s `SAI` badge) and connects your local coding Workspaces directly to **Telegram** on your iPhone or Android.
 
-You can code, debug, review git diffs, commit, push, and deploy to Jenkins from anywhere using your choice of frontier AI models:
+You can code, debug, review git diffs, commit, push, and deploy to Jenkins, GitHub Actions, or Google Cloud Build from anywhere using your choice of frontier AI models:
 - **Google Gemini**: Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon (low, medium, high effort levels)
 - **Anthropic Claude**: Claude Opus 5.5, Claude Sonnet 5.5, Claude 3.7 Sonnet, Claude 3.5 Sonnet
 - **DeepSeek**: DeepSeek V3 (`deepseek-chat`), DeepSeek R1 (`deepseek-reasoner`)
@@ -37,7 +37,7 @@ Whether you are away from your desk, commuting, or testing a mobile build on you
 3. **Iterate with "Add Fix" in the Same Process**: Review changed files (`M` / `A` / `D`), tap **`Add Fix`** to supply follow-up instructions without committing or resetting state, or tap **`✅ Yes`** to commit & push.
 4. **Autonomous CI/CD & Error Recovery**:
    - **Git-Only Workspaces (No Jenkins Required)**: Commits & pushes to your configured branch or a new **Custom Branch** right from Telegram.
-   - **Single or Multi-Environment Jenkins CI/CD**: Run Staging, inspect failure logs, tap **`↩️ Revert`** for an instant rollback deploy, or tap **`Fix Error`** to have AI automatically diagnose the build log, apply fixes, commit, and prompt to redeploy!
+   - **Single or Multi-Environment CI/CD (Jenkins, GitHub Actions, Google Cloud Build)**: Run Staging, inspect failure logs, tap **`↩️ Revert`** for an instant rollback deploy, or tap **`Fix Error`** to have AI automatically diagnose the build log, apply fixes, commit, and prompt to redeploy!
 
 Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero uploading private source code to third-party cloud sandboxes, and **automatic MacBook sleep prevention** whenever the bot is running.
 
@@ -142,11 +142,12 @@ The local model reasons, inspects files, applies changes, and returns a formatte
        - *CLI Runner Tabs*: Define your local executable path for `agy` or `aider` using the **Browse...** button.
        - *Direct API Subtabs*: Click between **DeepSeek**, **OpenAI**, **Anthropic**, **Qwen**, and **Custom / Local** to enter provider API keys or connect personal local models (e.g. `http://localhost:11434/v1` for Ollama, with zero API key needed).
      - **2. Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**. Lock down access by pasting allowed numeric Telegram User IDs (`@userinfobot`).
-     - **3. Jenkins**: *(Optional)* Enter your CI/CD server URL, username & API token, and click **Test Jenkins Connection**. Click **Save General Settings**.
+     - **3. CI/CD Deployment**: *(Optional)* Switch between **Jenkins**, **GitHub Actions**, and **Google Cloud Build** tabs, enter credentials/tokens, and click 1-click test buttons (**Test Jenkins Connection**, **Test GitHub Access**, **Test Google Cloud**). Click **Save General Settings**.
 2. **Open `Workspaces` Tab & Click `+`**:
    - Click **`+`** in the left sidebar to create a new Workspace draft.
    - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Scan Git Repos**.
-   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
+   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models).
+   - Choose your **CI/CD Provider** (**Git-only**, **Jenkins**, **GitHub Actions**, or **Google Cloud**) and Environment Mode (**Single** or **Multi: Staging → Production**), then click **Create Workspace**.
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
    - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
@@ -171,10 +172,10 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 1. **`⚙️ General`** — Structured into 3 clear cards:
    - **1. AI Engines & Models**: Default Model Family & Effort Level, tabbed engine selection with live configured status (`[ AGY CLI (✓) ] [ Aider CLI ] [ Direct API (✓) ]`), binary file path pickers with **Browse...**, and Direct API subtabs (`DeepSeek`, `OpenAI`, `Anthropic`, `Qwen`, and `Custom / Local` for Ollama, LM Studio, vLLM, OpenRouter).
    - **2. Telegram**: Bot token, 1-click token verify, allowed numeric Telegram User IDs (`@userinfobot`), and message history count.
-   - **3. Jenkins**: CI/CD server URL, username & API token, build timeout, and 1-click connection test.
-2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
+   - **3. CI/CD Deployment**: Sub-tabs for **Jenkins** (server URL, user, API token, timeout), **GitHub Actions** (PAT token, default owner/org), and **Google Cloud Build** (Project ID, key JSON/token, region) with live connection test buttons and status indicators.
+2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub Actions**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
-4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and Jenkins builds.
+4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and CI/CD builds.
 
 ---
 
@@ -310,6 +311,27 @@ No. Clicking <b>Start...</b> acquires a native macOS <code>PreventUserIdleSystem
 <br />
 Yes. All configuration stays strictly on your local Mac in <code>data/config.json</code> with <code>0600</code> owner-only POSIX permissions. Tokens and API keys are never sent to external servers other than the respective official API endpoints (Telegram, Anthropic, OpenAI, DeepSeek, Jenkins). Furthermore, session access requires a fresh RAM-only password set on every launch.
 </details>
+
+---
+
+## Terminal CLI & Configuration Commands
+
+In addition to the 100% native GUI in `mac.app`, you can configure and test all integrations directly from your terminal:
+
+```bash
+# Full interactive setup wizard (walks through Telegram, Jenkins, GitHub, Google Cloud, AI Engines, and Workspaces)
+npm run setup
+
+# Workspace & CI/CD management
+npm run add-workspace             # Register / scan an available Workspace folder or edit existing
+npm run jenkins-add-user          # Configure Jenkins URL, user & API token
+npm run jenkins-test-access       # Test Jenkins connection
+npm run github-add-user           # Configure GitHub Personal Access Token & default owner
+npm run github-test-access        # Test GitHub REST API connection & verify scopes
+npm run google-cloud-add-user     # Configure Google Cloud Build Project ID & key
+npm run google-cloud-test-access  # Test Google Cloud Build access
+npm run ai-engines                # Configure local CLI binaries (agy, aider) & Direct API keys
+```
 
 ---
 

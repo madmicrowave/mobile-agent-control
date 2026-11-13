@@ -352,6 +352,41 @@ export class ConfigStore {
     ) {
       this.config.jenkins.jobPrefix = process.env.JENKINS_JOB_PREFIX.trim();
     }
+    if (!this.config.github) {
+      this.config.github = {
+        token: '',
+        owner: ''
+      };
+    }
+    if (process.env.GITHUB_TOKEN && !this.config.github.token) {
+      this.config.github.token = process.env.GITHUB_TOKEN.trim();
+    }
+    if (process.env.GITHUB_OWNER && !this.config.github.owner) {
+      this.config.github.owner = process.env.GITHUB_OWNER.trim();
+    }
+    this.config.githubToken = this.config.github.token || this.config.githubToken || '';
+    this.config.githubOwner = this.config.github.owner || this.config.githubOwner || '';
+
+    if (!this.config.googleCloud) {
+      this.config.googleCloud = {
+        projectId: '',
+        serviceAccountKey: '',
+        region: 'us-central1'
+      };
+    }
+    if (process.env.GCP_PROJECT_ID && !this.config.googleCloud.projectId) {
+      this.config.googleCloud.projectId = process.env.GCP_PROJECT_ID.trim();
+    }
+    if (process.env.GCP_KEY && !this.config.googleCloud.serviceAccountKey) {
+      this.config.googleCloud.serviceAccountKey = process.env.GCP_KEY.trim();
+    }
+    if (process.env.GCP_REGION && !this.config.googleCloud.region) {
+      this.config.googleCloud.region = process.env.GCP_REGION.trim();
+    }
+    this.config.gcpProjectId = this.config.googleCloud.projectId || this.config.gcpProjectId || '';
+    this.config.gcpKey = this.config.googleCloud.serviceAccountKey || this.config.gcpKey || '';
+    this.config.gcpRegion = this.config.googleCloud.region || this.config.gcpRegion || 'us-central1';
+
     if (!Array.isArray(this.config.workspaces)) {
       this.config.workspaces = [];
     }
@@ -384,6 +419,23 @@ export class ConfigStore {
       }
       const rawEngine = String(ws.engine || '').trim().toLowerCase();
       ws.engine = ['agy', 'aider', 'direct-api'].includes(rawEngine) ? rawEngine : 'agy';
+
+      if (typeof ws.ciProvider !== 'string' || !ws.ciProvider.trim()) {
+        const hasJenkins = (ws.jenkinsJobs && ws.jenkinsJobs.length > 0) ||
+          (ws.repos && ws.repos.some((r) => r.jenkinsJob));
+        const hasGithub = Boolean(ws.githubRepo || ws.githubWorkflow || (ws.repos && ws.repos.some((r) => r.githubWorkflow)));
+        const hasGcp = Boolean(ws.gcpTrigger || (ws.repos && ws.repos.some((r) => r.gcpTrigger)));
+        ws.ciProvider = hasGithub ? 'github' : (hasGcp ? 'google' : (hasJenkins ? 'jenkins' : 'none'));
+      } else {
+        const normCi = ws.ciProvider.trim().toLowerCase();
+        ws.ciProvider = ['jenkins', 'github', 'google', 'none'].includes(normCi) ? normCi : 'none';
+      }
+      ws.githubRepo = String(ws.githubRepo || '').trim();
+      ws.githubWorkflow = String(ws.githubWorkflow || '').trim();
+      ws.prodGithubWorkflow = String(ws.prodGithubWorkflow || '').trim();
+      ws.gcpTrigger = String(ws.gcpTrigger || '').trim();
+      ws.prodGcpTrigger = String(ws.prodGcpTrigger || '').trim();
+
       if (!Array.isArray(ws.repos)) {
         ws.repos = [];
       }
@@ -393,6 +445,17 @@ export class ConfigStore {
         } else {
           r.prodJenkinsJob = r.prodJenkinsJob.trim();
         }
+        if (typeof r.ciProvider !== 'string' || !r.ciProvider.trim()) {
+          r.ciProvider = r.githubWorkflow ? 'github' : (r.gcpTrigger ? 'google' : (r.jenkinsJob ? 'jenkins' : (ws.ciProvider || 'none')));
+        } else {
+          const normRepoCi = r.ciProvider.trim().toLowerCase();
+          r.ciProvider = ['jenkins', 'github', 'google', 'none'].includes(normRepoCi) ? normRepoCi : ws.ciProvider;
+        }
+        r.githubRepo = String(r.githubRepo || ws.githubRepo || '').trim();
+        r.githubWorkflow = String(r.githubWorkflow || '').trim();
+        r.prodGithubWorkflow = String(r.prodGithubWorkflow || '').trim();
+        r.gcpTrigger = String(r.gcpTrigger || '').trim();
+        r.prodGcpTrigger = String(r.prodGcpTrigger || '').trim();
       }
 
       const rawEnvMode = String(ws.environmentMode || '').trim().toLowerCase();
@@ -445,6 +508,15 @@ export class ConfigStore {
           insecureTls: false,
           pollIntervalMs: 3000,
           buildTimeoutMs: 25 * 60 * 1000
+        },
+        github: {
+          token: process.env.GITHUB_TOKEN || '',
+          owner: process.env.GITHUB_OWNER || ''
+        },
+        googleCloud: {
+          projectId: process.env.GCP_PROJECT_ID || '',
+          serviceAccountKey: process.env.GCP_KEY || '',
+          region: process.env.GCP_REGION || 'us-central1'
         },
         workspaces: []
       };

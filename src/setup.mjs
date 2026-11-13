@@ -21,6 +21,8 @@ import {
 } from './agy-runner.mjs';
 import { runGit } from './git-manager.mjs';
 import { JenkinsClient } from './jenkins-client.mjs';
+import { GitHubClient } from './github-client.mjs';
+import { GoogleCloudClient } from './google-cloud-client.mjs';
 import { TelegramApi } from './telegram-api.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -346,6 +348,421 @@ export async function runConfigureJenkinsWizard({
   if (showBanner) {
     log('');
     log(`Saved Jenkins configuration to ${activeStore.configFile} (permissions 0600).`);
+    log('');
+  }
+
+  return activeStore;
+}
+
+/**
+ * Tests GitHub API access using the configured Personal Access Token.
+ */
+export async function runTestGithubConsole({
+  dataDir = path.join(PROJECT_ROOT, 'data'),
+  store = null,
+  cfg = null,
+  githubFactory = (opts) => new GitHubClient(opts),
+  log = console.log,
+  warn = console.warn
+} = {}) {
+  let activeCfg = cfg;
+  if (!activeCfg) {
+    loadProjectDotEnv(PROJECT_ROOT);
+    const resolvedStore = store || new ConfigStore(dataDir);
+    if (!store) {
+      await resolvedStore.init();
+    }
+    activeCfg = resolvedStore.config;
+  }
+
+  const token = String(activeCfg?.github?.token || activeCfg?.githubToken || '').trim();
+  if (!token) {
+    warn('  ⚠️  GitHub Personal Access Token is not configured yet.');
+    return { ok: false, error: 'GitHub Token is not configured' };
+  }
+
+  log('  🔌 Testing GitHub API access with token ...');
+  try {
+    const client = githubFactory({ token });
+    const res = await client.testConnection();
+    log(`  ✅ GitHub Connected! Authenticated as @${res.user}${res.name ? ` (${res.name})` : ''}.`);
+    log(`     Scopes: ${res.scopes}`);
+    return { ok: true, user: res.user, scopes: res.scopes };
+  } catch (err) {
+    const message = err.message || String(err);
+    warn(`  ❌ GitHub Connection Failed: ${message}`);
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Interactive console prompt to configure/update GitHub Personal Access Token (PAT)
+ * and optional default Owner/Org.
+ */
+export async function runConfigureGithubWizard({
+  dataDir = path.join(PROJECT_ROOT, 'data'),
+  store = null,
+  ask,
+  log = console.log,
+  warn = console.warn,
+  testGithub = true,
+  githubFactory = (opts) => new GitHubClient(opts),
+  stepOffset = null,
+  showBanner = false
+} = {}) {
+  loadProjectDotEnv(PROJECT_ROOT);
+
+  const activeStore = store || new ConfigStore(dataDir);
+  if (!store) {
+    await activeStore.init();
+  }
+  const cfg = activeStore.config;
+  if (!cfg.github) cfg.github = { token: '', owner: '' };
+
+  if (showBanner) {
+    log('');
+    log('============================================================');
+    log('  Mobile Agent Control — Configure GitHub User & Access (Console)');
+    log('============================================================');
+    log('Press Enter on any prompt to keep the current value in [brackets].');
+    log('');
+  }
+
+  const n1 = stepOffset !== null ? `${stepOffset}. ` : '1. ';
+  const n2 = stepOffset !== null ? `${stepOffset + 1}. ` : '2. ';
+
+  while (true) {
+    const curTok = cfg.github.token || cfg.githubToken || '';
+    const tokAns = (
+      await ask(`${n1}GitHub Personal Access Token (PAT, or "-" for none) [${maskSecret(curTok)}]: `)
+    ).trim();
+    if (tokAns === '-' || tokAns.toLowerCase() === 'none') {
+      cfg.github.token = '';
+      cfg.githubToken = '';
+    } else if (tokAns) {
+      cfg.github.token = tokAns;
+      cfg.githubToken = tokAns;
+    }
+
+    const curOwner = cfg.github.owner || cfg.githubOwner || 'none';
+    const ownerAns = (
+      await ask(`${n2}Default GitHub Owner / Org (optional, "-" for none) [${curOwner}]: `)
+    ).trim();
+    if (ownerAns === '-' || ownerAns.toLowerCase() === 'none') {
+      cfg.github.owner = '';
+      cfg.githubOwner = '';
+    } else if (ownerAns) {
+      cfg.github.owner = ownerAns;
+      cfg.githubOwner = ownerAns;
+    }
+
+    await activeStore.saveConfig();
+
+    if (testGithub && cfg.github.token) {
+      const shouldTest = parseYesNo(
+        await ask('   Test GitHub connection now? (y/n) [y]: '),
+        true
+      );
+      if (shouldTest) {
+        const testRes = await runTestGithubConsole({
+          cfg,
+          githubFactory,
+          log,
+          warn
+        });
+        if (!testRes.ok) {
+          const retry = parseYesNo(
+            await ask('   Re-enter GitHub token? (y/n) [n]: '),
+            false
+          );
+          if (retry) {
+            log('');
+            continue;
+          }
+        }
+      }
+    }
+
+    break;
+  }
+
+  if (showBanner) {
+    log('');
+    log(`Saved GitHub configuration to ${activeStore.configFile} (permissions 0600).`);
+    log('');
+  }
+
+  return activeStore;
+}
+
+/**
+ * Tests Google Cloud Build configuration in the terminal console.
+ */
+export async function runTestGoogleCloudConsole({
+  dataDir = path.join(PROJECT_ROOT, 'data'),
+  store = null,
+  cfg = null,
+  gcpFactory = (opts) => new GoogleCloudClient(opts),
+  log = console.log,
+  warn = console.warn
+} = {}) {
+  let activeCfg = cfg;
+  if (!activeCfg) {
+    loadProjectDotEnv(PROJECT_ROOT);
+    const resolvedStore = store || new ConfigStore(dataDir);
+    if (!store) {
+      await resolvedStore.init();
+    }
+    activeCfg = resolvedStore.config;
+  }
+
+  const projectId = String(activeCfg?.googleCloud?.projectId || activeCfg?.gcpProjectId || '').trim();
+  if (!projectId) {
+    warn('  ⚠️  Google Cloud Project ID is not configured yet.');
+    return { ok: false, error: 'Google Cloud Project ID is not configured' };
+  }
+
+  log(`  🔌 Testing Google Cloud configuration for project "${projectId}" ...`);
+  try {
+    const client = gcpFactory(activeCfg.googleCloud || {});
+    const res = await client.testConnection();
+    log(`  ✅ Google Cloud Verified! Project: ${res.projectId} (Region: ${res.region})`);
+    return { ok: true, projectId: res.projectId };
+  } catch (err) {
+    const message = err.message || String(err);
+    warn(`  ❌ Google Cloud Verification Failed: ${message}`);
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Interactive console prompt to configure Google Cloud Build Project ID, Key, and Region.
+ */
+export async function runConfigureGoogleCloudWizard({
+  dataDir = path.join(PROJECT_ROOT, 'data'),
+  store = null,
+  ask,
+  log = console.log,
+  warn = console.warn,
+  testGcp = true,
+  gcpFactory = (opts) => new GoogleCloudClient(opts),
+  stepOffset = null,
+  showBanner = false
+} = {}) {
+  loadProjectDotEnv(PROJECT_ROOT);
+
+  const activeStore = store || new ConfigStore(dataDir);
+  if (!store) {
+    await activeStore.init();
+  }
+  const cfg = activeStore.config;
+  if (!cfg.googleCloud) cfg.googleCloud = { projectId: '', serviceAccountKey: '', region: 'us-central1' };
+
+  if (showBanner) {
+    log('');
+    log('============================================================');
+    log('  Mobile Agent Control — Configure Google Cloud Build (Console)');
+    log('============================================================');
+    log('Press Enter on any prompt to keep the current value in [brackets].');
+    log('');
+  }
+
+  const n1 = stepOffset !== null ? `${stepOffset}. ` : '1. ';
+  const n2 = stepOffset !== null ? `${stepOffset + 1}. ` : '2. ';
+  const n3 = stepOffset !== null ? `${stepOffset + 2}. ` : '3. ';
+
+  while (true) {
+    const curProject = cfg.googleCloud.projectId || cfg.gcpProjectId || 'none';
+    const projAns = (
+      await ask(`${n1}Google Cloud Project ID (e.g. my-project, or "-" for none) [${curProject}]: `)
+    ).trim();
+    if (projAns === '-' || projAns.toLowerCase() === 'none') {
+      cfg.googleCloud.projectId = '';
+      cfg.gcpProjectId = '';
+    } else if (projAns) {
+      cfg.googleCloud.projectId = projAns;
+      cfg.gcpProjectId = projAns;
+    }
+
+    const curKey = cfg.googleCloud.serviceAccountKey || cfg.gcpKey || '';
+    const keyAns = (
+      await ask(`${n2}Service Account Key JSON or Token (optional, "-" for none) [${maskSecret(curKey)}]: `)
+    ).trim();
+    if (keyAns === '-' || keyAns.toLowerCase() === 'none') {
+      cfg.googleCloud.serviceAccountKey = '';
+      cfg.gcpKey = '';
+    } else if (keyAns) {
+      cfg.googleCloud.serviceAccountKey = keyAns;
+      cfg.gcpKey = keyAns;
+    }
+
+    const curRegion = cfg.googleCloud.region || cfg.gcpRegion || 'us-central1';
+    const regAns = (
+      await ask(`${n3}Google Cloud Region [${curRegion}]: `)
+    ).trim();
+    if (regAns) {
+      cfg.googleCloud.region = regAns;
+      cfg.gcpRegion = regAns;
+    }
+
+    await activeStore.saveConfig();
+
+    if (testGcp && cfg.googleCloud.projectId) {
+      const shouldTest = parseYesNo(
+        await ask('   Test Google Cloud configuration now? (y/n) [y]: '),
+        true
+      );
+      if (shouldTest) {
+        const testRes = await runTestGoogleCloudConsole({
+          cfg,
+          gcpFactory,
+          log,
+          warn
+        });
+        if (!testRes.ok) {
+          const retry = parseYesNo(
+            await ask('   Re-enter Google Cloud settings? (y/n) [n]: '),
+            false
+          );
+          if (retry) {
+            log('');
+            continue;
+          }
+        }
+      }
+    }
+
+    break;
+  }
+
+  if (showBanner) {
+    log('');
+    log(`Saved Google Cloud configuration to ${activeStore.configFile} (permissions 0600).`);
+    log('');
+  }
+
+  return activeStore;
+}
+
+/**
+ * Interactive console prompt to configure AI Engines & Models (CLI binary paths, API keys, and local models).
+ */
+export async function runConfigureAiEnginesWizard({
+  dataDir = path.join(PROJECT_ROOT, 'data'),
+  store = null,
+  ask,
+  log = console.log,
+  warn = console.warn,
+  stepOffset = null,
+  showBanner = false
+} = {}) {
+  loadProjectDotEnv(PROJECT_ROOT);
+
+  const activeStore = store || new ConfigStore(dataDir);
+  if (!store) {
+    await activeStore.init();
+  }
+  const cfg = activeStore.config;
+
+  if (showBanner) {
+    log('');
+    log('============================================================');
+    log('  Mobile Agent Control — Configure AI Engines & Models (Console)');
+    log('============================================================');
+    log('Press Enter on any prompt to keep the current value in [brackets].');
+    log('');
+  }
+
+  const p = (idx, text) => (stepOffset !== null ? `${stepOffset + idx}. ${text}` : `${idx + 1}. ${text}`);
+
+  // 1. Default Model
+  const curModel = cfg.defaultModel || 'gemini-3.8-flash';
+  const modelAns = (
+    await ask(`${p(0, 'Default AI Model Family')} [${curModel}]: `)
+  ).trim();
+  if (modelAns) {
+    cfg.defaultModel = modelAns;
+  }
+
+  // 2. Default Effort Level
+  const curLevel = cfg.defaultModelLevel || 'high';
+  const levelAns = (
+    await ask(`${p(1, 'Default Effort Level (low / medium / high)')} [${curLevel}]: `)
+  ).trim().toLowerCase();
+  if (['low', 'medium', 'high'].includes(levelAns)) {
+    cfg.defaultModelLevel = levelAns;
+  }
+
+  // 3. Agent Engine
+  const curEngine = cfg.agentEngine || 'agy';
+  const engineAns = (
+    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: aider, 3: direct-api)')} [${curEngine}]: `)
+  ).trim().toLowerCase();
+  if (['1', 'agy'].includes(engineAns)) {
+    cfg.agentEngine = 'agy';
+  } else if (['2', 'aider'].includes(engineAns)) {
+    cfg.agentEngine = 'aider';
+  } else if (['3', 'direct-api', 'api', 'direct'].includes(engineAns)) {
+    cfg.agentEngine = 'direct-api';
+  }
+
+  // 4. CLI Binaries
+  const curAgy = cfg.agyBin || '~/.local/bin/agy';
+  const agyAns = (
+    await ask(`${p(3, 'Antigravity CLI Binary Path (agy)')} [${curAgy}]: `)
+  ).trim();
+  if (agyAns) {
+    cfg.agyBin = expandUserPath(agyAns);
+  }
+
+  const curAider = cfg.aiderBin || 'aider';
+  const aiderAns = (
+    await ask(`${p(4, 'Aider CLI Binary Path (aider)')} [${curAider}]: `)
+  ).trim();
+  if (aiderAns) {
+    cfg.aiderBin = expandUserPath(aiderAns);
+  }
+
+  // 5. Direct API Keys & Local Endpoints
+  const hasAnyKey = Boolean(
+    cfg.deepseekApiKey || cfg.openaiApiKey || cfg.anthropicApiKey || cfg.qwenApiKey || cfg.customApiBaseUrl
+  );
+  const configKeysChoice = parseYesNo(
+    await ask(`   Configure Direct API keys & local models (DeepSeek, OpenAI, Claude, Qwen, Ollama)? (y/n) [${hasAnyKey ? 'y' : 'n'}]: `),
+    hasAnyKey
+  );
+
+  if (configKeysChoice) {
+    const dsAns = (await ask(`     DeepSeek API Key (or "-" for none) [${maskSecret(cfg.deepseekApiKey)}]: `)).trim();
+    if (dsAns === '-' || dsAns.toLowerCase() === 'none') cfg.deepseekApiKey = '';
+    else if (dsAns) cfg.deepseekApiKey = dsAns;
+
+    const oaiAns = (await ask(`     OpenAI API Key (or "-" for none) [${maskSecret(cfg.openaiApiKey)}]: `)).trim();
+    if (oaiAns === '-' || oaiAns.toLowerCase() === 'none') cfg.openaiApiKey = '';
+    else if (oaiAns) cfg.openaiApiKey = oaiAns;
+
+    const antAns = (await ask(`     Anthropic Claude API Key (or "-" for none) [${maskSecret(cfg.anthropicApiKey)}]: `)).trim();
+    if (antAns === '-' || antAns.toLowerCase() === 'none') cfg.anthropicApiKey = '';
+    else if (antAns) cfg.anthropicApiKey = antAns;
+
+    const qwenAns = (await ask(`     Qwen / DashScope API Key (or "-" for none) [${maskSecret(cfg.qwenApiKey)}]: `)).trim();
+    if (qwenAns === '-' || qwenAns.toLowerCase() === 'none') cfg.qwenApiKey = '';
+    else if (qwenAns) cfg.qwenApiKey = qwenAns;
+
+    const customUrlAns = (await ask(`     Custom / Local API Base URL (e.g. http://localhost:11434/v1, "-" for none) [${cfg.customApiBaseUrl || 'none'}]: `)).trim();
+    if (customUrlAns === '-' || customUrlAns.toLowerCase() === 'none') cfg.customApiBaseUrl = '';
+    else if (customUrlAns) cfg.customApiBaseUrl = customUrlAns;
+
+    const customKeyAns = (await ask(`     Custom API Key (optional, blank for local models) [${maskSecret(cfg.customApiKey)}]: `)).trim();
+    if (customKeyAns === '-' || customKeyAns.toLowerCase() === 'none') cfg.customApiKey = '';
+    else if (customKeyAns) cfg.customApiKey = customKeyAns;
+  }
+
+  await activeStore.saveConfig();
+
+  if (showBanner) {
+    log('');
+    log(`Saved AI engines configuration to ${activeStore.configFile} (permissions 0600).`);
     log('');
   }
 
@@ -901,7 +1318,14 @@ export async function runSetupWizard({
   warn = console.warn,
   verifyTelegram = true,
   testJenkins = undefined,
-  jenkinsFactory = (j) => new JenkinsClient(j)
+  testGithub = undefined,
+  testGcp = undefined,
+  configureGithub = true,
+  configureGoogleCloud = true,
+  configureAiEngines = true,
+  jenkinsFactory = (j) => new JenkinsClient(j),
+  githubFactory = (opts) => new GitHubClient(opts),
+  gcpFactory = (opts) => new GoogleCloudClient(opts)
 } = {}) {
   loadProjectDotEnv(PROJECT_ROOT);
 
@@ -913,14 +1337,14 @@ export async function runSetupWizard({
 
   log('');
   log('============================================================');
-  log('  Antigravity IDE — Telegram Bot Setup Wizard');
+  log('  Mobile Agent Control — Complete Terminal Setup Wizard');
   log('============================================================');
   log('Press Enter on any prompt to accept the value shown in [brackets].');
-  log('(IDE registration & Jenkins auth live strictly in console setup — never in Telegram.)');
+  log('(Credentials & workspaces live strictly in local config — never in Telegram.)');
   log('(Session password is entered fresh each time you run "npm start".)');
   log('');
 
-  // ── Steps 1–3: Core Bot & History Count ────────────────────────────────────
+  // ── Steps 1–3: Core Telegram Bot & History Count ───────────────────────────
   const tokenAns = (
     await ask(`1. Telegram Bot Token from @BotFather [${maskSecret(cfg.telegramBotToken)}]: `)
   ).trim();
@@ -950,7 +1374,7 @@ export async function runSetupWizard({
 
   await activeStore.saveConfig();
 
-  // ── Steps 4–6: Jenkins Auth + Console Connection Test ──────────────────────
+  // ── Steps 4–6: Jenkins CI/CD ───────────────────────────────────────────────
   const effectiveTestJenkins =
     testJenkins !== undefined ? Boolean(testJenkins) : Boolean(verifyTelegram);
 
@@ -966,7 +1390,56 @@ export async function runSetupWizard({
     showBanner: false
   });
 
-  // ── Step 7+: Register Available IDEs, Gemini Models & Repo Jobs ────────────
+  // ── Steps 7–8: GitHub Actions CI/CD ────────────────────────────────────────
+  if (configureGithub !== false) {
+    const effectiveTestGithub =
+      testGithub !== undefined ? Boolean(testGithub) : Boolean(verifyTelegram);
+
+    await runConfigureGithubWizard({
+      dataDir,
+      store: activeStore,
+      ask,
+      log,
+      warn,
+      testGithub: effectiveTestGithub,
+      githubFactory,
+      stepOffset: 7,
+      showBanner: false
+    });
+  }
+
+  // ── Steps 9–11: Google Cloud Build CI/CD ───────────────────────────────────
+  if (configureGoogleCloud !== false) {
+    const effectiveTestGcp =
+      testGcp !== undefined ? Boolean(testGcp) : Boolean(verifyTelegram);
+
+    await runConfigureGoogleCloudWizard({
+      dataDir,
+      store: activeStore,
+      ask,
+      log,
+      warn,
+      testGcp: effectiveTestGcp,
+      gcpFactory,
+      stepOffset: 9,
+      showBanner: false
+    });
+  }
+
+  // ── Steps 12–16: AI Engines & Models ───────────────────────────────────────
+  if (configureAiEngines !== false) {
+    await runConfigureAiEnginesWizard({
+      dataDir,
+      store: activeStore,
+      ask,
+      log,
+      warn,
+      stepOffset: 12,
+      showBanner: false
+    });
+  }
+
+  // ── Step 17+: Register Available Workspaces, AI Models & CI/CD Jobs ────────
   await runWorkspacesWizard({
     dataDir,
     store: activeStore,
@@ -998,9 +1471,13 @@ export async function runSetupWizard({
   log('Start the bot anytime with:');
   log('  npm start');
   log('Additional console-only management commands:');
-  log('  npm run add-ide        — Register/add or edit an IDE workspace');
-  log('  npm run update-jenkins — Update Jenkins URL/auth & test connection');
-  log('  npm run test-jenkins   — Test Jenkins connection');
+  log('  npm run add-workspace       — Register/add or edit a Workspace');
+  log('  npm run jenkins-add-user    — Configure Jenkins URL/auth & test connection');
+  log('  npm run jenkins-test-access — Test Jenkins connection');
+  log('  npm run github-add-user     — Configure GitHub token/org & test access');
+  log('  npm run github-test-access  — Test GitHub API access');
+  log('  npm run google-cloud-add-user    — Configure Google Cloud Build');
+  log('  npm run google-cloud-test-access — Test Google Cloud Build access');
   log('');
 
   return activeStore;
@@ -1009,8 +1486,29 @@ export async function runSetupWizard({
 async function main() {
   const subcommand = String(process.argv[2] || 'setup').trim().toLowerCase();
 
-  if (subcommand === 'test-jenkins') {
+  if (subcommand === 'test-jenkins' || subcommand === 'jenkins-test-access') {
     const res = await runTestJenkinsConsole();
+    if (!res.ok) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (subcommand === 'test-github' || subcommand === 'github-test-access') {
+    const res = await runTestGithubConsole();
+    if (!res.ok) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (
+    subcommand === 'test-google-cloud' ||
+    subcommand === 'test-gcp' ||
+    subcommand === 'google-cloud-test-access' ||
+    subcommand === 'gcp-test-access'
+  ) {
+    const res = await runTestGoogleCloudConsole();
     if (!res.ok) {
       process.exitCode = 1;
     }
@@ -1020,14 +1518,42 @@ async function main() {
   const rl = readline.createInterface({ input, output });
   try {
     const ask = (q) => rl.question(q);
-    if (subcommand === 'add-ide' || subcommand === 'register-ide' || subcommand === 'workspaces') {
+    if (subcommand === 'add-ide' || subcommand === 'add-workspace' || subcommand === 'register-ide' || subcommand === 'workspaces') {
       await runAddIdeWizard({ ask });
       return;
     }
-    if (subcommand === 'update-jenkins' || subcommand === 'set-jenkins' || subcommand === 'jenkins') {
+    if (subcommand === 'update-jenkins' || subcommand === 'jenkins-add-user' || subcommand === 'jenkins') {
       await runConfigureJenkinsWizard({
         ask,
         testJenkins: true,
+        showBanner: true
+      });
+      return;
+    }
+    if (subcommand === 'update-github' || subcommand === 'github-add-user' || subcommand === 'github') {
+      await runConfigureGithubWizard({
+        ask,
+        testGithub: true,
+        showBanner: true
+      });
+      return;
+    }
+    if (
+      subcommand === 'update-google-cloud' ||
+      subcommand === 'google-cloud-add-user' ||
+      subcommand === 'gcp-add-user' ||
+      subcommand === 'gcp'
+    ) {
+      await runConfigureGoogleCloudWizard({
+        ask,
+        testGcp: true,
+        showBanner: true
+      });
+      return;
+    }
+    if (subcommand === 'ai-engines' || subcommand === 'engines' || subcommand === 'models') {
+      await runConfigureAiEnginesWizard({
+        ask,
         showBanner: true
       });
       return;
