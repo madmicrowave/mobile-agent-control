@@ -1077,7 +1077,7 @@ private struct GeneralTabView: View {
                 default:
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Custom Endpoint (Ollama, vLLM, OpenRouter, Local LLMs)")
+                            Text("Custom / Local Endpoint (Ollama, LM Studio, vLLM, OpenRouter)")
                                 .font(.system(size: 12, weight: .semibold))
                             Spacer()
                             Text(vm.isCustomConfigured ? "Configured ✓" : "Optional")
@@ -1088,10 +1088,10 @@ private struct GeneralTabView: View {
                             .textFieldStyle(.roundedBorder)
                         HStack(spacing: 6) {
                             if vm.showCustomKey {
-                                TextField("API Key (optional)", text: $vm.customApiKey)
+                                TextField("API Key (optional, blank for local models)", text: $vm.customApiKey)
                                     .textFieldStyle(.roundedBorder)
                             } else {
-                                SecureField("API Key (optional)", text: $vm.customApiKey)
+                                SecureField("API Key (optional, blank for local models)", text: $vm.customApiKey)
                                     .textFieldStyle(.roundedBorder)
                             }
                             Button(vm.showCustomKey ? "Hide" : "Show") {
@@ -1099,6 +1099,9 @@ private struct GeneralTabView: View {
                             }
                             .fixedSize()
                         }
+                        Text("Connect 100% private local models (Ollama, LM Studio, vLLM, Jan) via http://localhost:11434/v1 with zero API key required.")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -2271,9 +2274,10 @@ private struct TutorialTabView: View {
                     icon: "folder.fill.badge.gearshape",
                     accent: .purple,
                     bullets: [
-                        "In General → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom). Each tab displays a green checkmark (✓) when configured.",
+                        "In General → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom / Local). Each tab displays a live configured indicator.",
+                        "Connect Personal Local Models: Under Direct API → Custom / Local, connect private local models (Ollama, LM Studio, vLLM, LocalAI, Jan) via http://localhost:11434/v1 — 100% offline and air-gapped with zero API keys required!",
                         "Open the 'Workspaces' tab, click '+' in the left sidebar to add a Workspace, enter a Label, and click 'Browse...' to select your project folder.",
-                        "Select your Workspace's AI Engine (AGY CLI [default], Aider CLI, or Direct API), 1-click 'Scan Git Repos', and pick your AI Model (Gemini, Claude, DeepSeek, OpenAI, Qwen).",
+                        "Select your Workspace's AI Engine (AGY CLI [default], Aider CLI, or Direct API), 1-click 'Scan Git Repos', and pick your AI Model (Gemini, Claude, DeepSeek, OpenAI, Qwen, or Local).",
                         "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in General → Jenkins."
                     ],
                     actionTitle: nil,

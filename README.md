@@ -4,7 +4,7 @@
 
 # Mobile Agent Control (`mac.app` / `MAC`) — Native macOS App for Telegram AI Coding
 
-**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production Jenkins CI/CD straight from Telegram.**
+**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen, and Personal Local Models via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production Jenkins CI/CD straight from Telegram.**
 
 [![CI](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml/badge.svg)](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/madmicrowave/mobile-agent-control?label=Download%20mac.app&logo=apple)](https://github.com/madmicrowave/mobile-agent-control/releases/latest)
@@ -29,7 +29,7 @@ You can code, debug, review git diffs, commit, push, and deploy to Jenkins from 
 - **DeepSeek**: DeepSeek V3 (`deepseek-chat`), DeepSeek R1 (`deepseek-reasoner`)
 - **OpenAI**: GPT-4o, o3-mini, o1
 - **Alibaba Qwen**: Qwen 2.5 Coder 32B, Qwen 2.5 72B
-- **Local / Open-Source**: Ollama, vLLM, OpenRouter, or GPT-OSS 120B
+- **Personal Local AI Models (100% Offline & Private)**: Ollama (`llama3.3`, `qwen2.5-coder:32b`, `deepseek-r1:32b`, `mistral`, `codellama`), LM Studio, vLLM, LocalAI, Jan, or OpenRouter
 
 Whether you are away from your desk, commuting, or testing a mobile build on your phone, you can:
 1. **Switch between any local Mac Workspace** in one tap (`🔀 Workspace`) — each with its own AI model, effort level, active chat, and Git repositories.
@@ -45,22 +45,22 @@ Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero u
 
 ## Supported AI Models & Dual-Engine Architecture
 
-In `mac.app` **General → AI Engines & Models**, you can run workflows using a modern tabbed layout where each tab displays a live **`✓` checkmark** when enabled and configured:
+In `mac.app` **General → AI Engines & Models**, you can configure and run workflows using a modern tabbed layout where each tab displays a live **`✓` checkmark circle** on the right side when configured:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                 Mobile Agent Control Multi-Engine Architecture              │
 ├──────────────────────────────────────┬──────────────────────────────────────┤
 │  CLI Runner Tabs (Option 1)          │  Direct API Subtabs (Option 2)       │
-│  [ AGY CLI ✓ ]    [ Aider CLI ✓ ]    │  [ Direct API ✓ ]                    │
+│  [ AGY CLI (✓) ]   [ Aider CLI ]     │  [ Direct API (✓) ]                  │
 ├──────────────────────────────────────┼──────────────────────────────────────┤
-│ • AGY CLI (Google Antigravity):      │ Subtabs with live ✓ status:          │
-│   Native support for Gemini 3.8/4,   │ • DeepSeek Subtab: V3 & R1           │
-│   Gemini 4 Carbon, Claude Opus 5.5   │ • OpenAI Subtab: GPT-4o, o3-mini, o1 │
-│ • Aider CLI:                         │ • Anthropic Subtab: Claude 3.7 / 3.5 │
-│   Multi-model headless terminal agent│ • Qwen Subtab: Qwen 2.5 Coder 32B/72B│
-│ • Custom binary path selector with   │ • Custom / Local: Ollama, vLLM, etc. │
-│   1-click Browse... button           │ • Autonomous file & command loop     │
+│ • AGY CLI (Google Antigravity):      │ Subtabs with live configured status: │
+│   Native support for Gemini 3.8/4,   │ • DeepSeek: V3 & R1                  │
+│   Gemini 4 Carbon, Claude Opus 5.5   │ • OpenAI: GPT-4o, o3-mini, o1        │
+│ • Aider CLI:                         │ • Anthropic: Claude 3.7 / 3.5 Sonnet │
+│   Multi-model headless terminal agent│ • Qwen: Qwen 2.5 Coder 32B / 72B     │
+│ • Custom binary path selector with   │ • Custom / Local: Ollama, LM Studio, │
+│   1-click Browse... button           │   vLLM, LocalAI, Jan, OpenRouter     │
 ├──────────────────────────────────────┴──────────────────────────────────────┤
 │  Per-Workspace AI Engine: Each Workspace independently selects its engine   │
 │  (AGY CLI, Aider CLI, or Direct API) — defaulting to AGY for your projects! │
@@ -68,6 +68,30 @@ In `mac.app` **General → AI Engines & Models**, you can run workflows using a 
 ```
 
 Both CLI tools and Direct API connect into the exact same Git inspection, diff review, Add Fix, and Telegram commit pipeline!
+
+### Connect Personal Local AI Models (Ollama, LM Studio, vLLM, LocalAI, Jan)
+
+Want to run your AI coding agent **100% privately, locally, and offline** without sending code, prompts, or git diffs to any external cloud provider or paying API fees?
+
+Mobile Agent Control natively supports connecting to any local OpenAI-compatible inference server:
+
+| Local Server | Default URL | Setup Command / Instructions |
+| :--- | :--- | :--- |
+| **Ollama** | `http://localhost:11434/v1` | `ollama run qwen2.5-coder:32b` or `ollama run llama3.3` (leave API key blank) |
+| **LM Studio** | `http://localhost:1234/v1` | Start server on the *Local Server* tab (`localhost:1234`) |
+| **vLLM** | `http://localhost:8000/v1` | `vllm serve <model_name> --port 8000` |
+| **LocalAI / Jan** | `http://localhost:8080/v1` or `http://localhost:1337/v1` | Start local API server |
+| **OpenRouter** | `https://openrouter.ai/api/v1` | Enter your OpenRouter API key |
+
+#### Autonomous Tool-Calling Agent Loop
+When you select **Direct API** with your personal local endpoint, `mac.app`'s built-in engine executes an **autonomous tool-calling loop** directly on your Mac:
+- **`read_file`**: Reads target files and inspects surrounding code.
+- **`list_dir`**: Explores directory trees and workspace structure.
+- **`write_file`**: Creates new files or overwrites existing files.
+- **`edit_file`**: Performs surgical search-and-replace patches.
+- **`run_command`**: Runs local shell commands, builds, or automated test suites (e.g. `npm test`, `pytest`, `cargo test`).
+
+The local model reasons, inspects files, applies changes, and returns a formatted summary to your phone. You review the git diff directly in Telegram, provide follow-up feedback via **➕ Add Fix**, or commit & push with **✅ Yes**!
 
 ---
 
@@ -80,12 +104,12 @@ Both CLI tools and Direct API connect into the exact same Git inspection, diff r
     <td width="50%" align="center">
       <img src="./assets/macos-general-tab.png" alt="mac.app General Tab — Jenkins, Telegram &amp; AI Engines Settings" width="100%" />
       <br />
-      <sub><b>Tab 1: General</b> — Unified <b>Jenkins</b>, <b>Telegram</b>, <b>AI Engines (CLI + API Keys)</b>, 1-click connection checks, Login Item toggle &amp; live sleep-prevention indicator.</sub>
+      <sub><b>Tab 1: General</b> — Unified <b>1. AI Engines &amp; Models</b> (CLI + API keys + local models), <b>2. Telegram</b> (token &amp; 1-click verify), <b>3. Jenkins</b> (CI/CD server URL &amp; test), Login Item toggle &amp; live sleep-prevention indicator.</sub>
     </td>
     <td width="50%" align="center">
       <img src="./assets/macos-workspaces-tab.png" alt="mac.app Workspaces Tab — Inline + Workspace Creation, AI Models, Multi-Env Jenkins &amp; Git Repos" width="100%" />
       <br />
-      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models (Gemini, Claude, DeepSeek, OpenAI, Qwen), and choose Git-only or Staging → Prod Jenkins.</sub>
+      <sub><b>Tab 2: Workspaces</b> — Click <b><code>+</code></b> to add Workspaces inline, scan single or multi-repo folders, pick AI models (Gemini, Claude, DeepSeek, OpenAI, Qwen, Local), and choose Git-only or Staging → Prod Jenkins.</sub>
     </td>
   </tr>
 </table>
@@ -111,17 +135,18 @@ Both CLI tools and Direct API connect into the exact same Git inspection, diff r
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
 1. **Click `MAC` Next to Your Clock → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
-   - In the **`General`** tab:
-     - **Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**.
-     - **AI Engines**:
-       - *Tabs*: Click between **AGY CLI**, **Aider CLI**, and **Direct API** — each tab shows a green checkmark (`✓`) when configured.
-       - *CLI Tabs*: Specify your local binary path for `agy` or `aider` with the **Browse...** button.
-       - *Direct API Subtabs*: Click between **DeepSeek**, **OpenAI**, **Anthropic**, **Qwen**, and **Custom / Local** to enter provider API keys and optional custom base URLs.
-     - *(Optional)* Enter allowed numeric Telegram User IDs (`@userinfobot`) and **Jenkins** server credentials. Click **Save General Settings**.
+   - In the **`General`** tab (organized into 3 clear cards):
+     - **1. AI Engines & Models**:
+       - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
+       - *AI Engine Tabs*: Click between **AGY CLI**, **Aider CLI**, and **Direct API** — each tab displays a green checkmark circle (`✓`) on the right when configured.
+       - *CLI Runner Tabs*: Define your local executable path for `agy` or `aider` using the **Browse...** button.
+       - *Direct API Subtabs*: Click between **DeepSeek**, **OpenAI**, **Anthropic**, **Qwen**, and **Custom / Local** to enter provider API keys or connect personal local models (e.g. `http://localhost:11434/v1` for Ollama, with zero API key needed).
+     - **2. Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**. Lock down access by pasting allowed numeric Telegram User IDs (`@userinfobot`).
+     - **3. Jenkins**: *(Optional)* Enter your CI/CD server URL, username & API token, and click **Test Jenkins Connection**. Click **Save General Settings**.
 2. **Open `Workspaces` Tab & Click `+`**:
    - Click **`+`** in the left sidebar to create a new Workspace draft.
    - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Scan Git Repos**.
-   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
+   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
    - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
@@ -143,7 +168,10 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 
 ### Inside the 4 `mac.app` Window Tabs
 
-1. **`⚙️ General`** — Combines **Jenkins** (server URL, credentials, timeout, 1-click test), **Telegram** (bot token, 1-click verify, user lock), and **AI Engines** with tabbed navigation and live configured checkmarks (`AGY CLI ✓`, `Aider CLI ✓`, `Direct API ✓` with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom endpoints).
+1. **`⚙️ General`** — Structured into 3 clear cards:
+   - **1. AI Engines & Models**: Default Model Family & Effort Level, tabbed engine selection with live configured status (`[ AGY CLI (✓) ] [ Aider CLI ] [ Direct API (✓) ]`), binary file path pickers with **Browse...**, and Direct API subtabs (`DeepSeek`, `OpenAI`, `Anthropic`, `Qwen`, and `Custom / Local` for Ollama, LM Studio, vLLM, OpenRouter).
+   - **2. Telegram**: Bot token, 1-click token verify, allowed numeric Telegram User IDs (`@userinfobot`), and message history count.
+   - **3. Jenkins**: CI/CD server URL, username & API token, build timeout, and 1-click connection test.
 2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
 4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and Jenkins builds.
@@ -222,12 +250,24 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 - A free **Telegram Bot Token** from [`@BotFather`](https://t.me/BotFather)
 - Either:
   - **Option 1**: Local CLI binary (`agy` or `aider`), **OR**
-  - **Option 2**: API key for your chosen model (DeepSeek, OpenAI, Anthropic Claude, Qwen, or Custom)
+  - **Option 2**: API key for cloud models (DeepSeek, OpenAI, Anthropic Claude, Qwen) or a personal local AI model runner (Ollama, LM Studio, vLLM, LocalAI) with zero API keys required
 - *(Optional)* **Jenkins** server with parameterized `VERSION` build jobs (not required for Git-only Workspaces)
 
 ---
 
 ## Frequently Asked Questions (FAQ)
+
+<details>
+<summary><b>Can I connect and use my own personal local AI models (Ollama, LM Studio, vLLM)?</b></summary>
+<br />
+Yes! In <b>General → AI Engines &amp; Models → Direct API</b>, select the <b>Custom / Local</b> subtab and enter your local endpoint (e.g. <code>http://localhost:11434/v1</code> for Ollama or <code>http://localhost:1234/v1</code> for LM Studio). Leave the API key blank. The runner executes an autonomous tool-calling agent loop (<code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, <code>list_dir</code>, <code>run_command</code>) 100% locally on your Mac with zero code, prompts, or diffs sent to any cloud provider.
+</details>
+
+<details>
+<summary><b>How does the autonomous agent tool loop work with local models or Direct API?</b></summary>
+<br />
+When executing with Direct API (including personal local models), <code>mac.app</code> provides an OpenAI-compatible function-calling loop. The model can inspect directories, read specific files, apply diff-based edits, and run shell commands (like unit tests or builds). Once the model signals completion, <code>mac.app</code> gathers all git diffs across your repository, formats a clean summary, and presents changed files (<code>M</code> / <code>A</code> / <code>D</code>) to your phone via Telegram.
+</details>
 
 <details>
 <summary><b>Can I use DeepSeek, OpenAI, or Claude without installing terminal tools?</b></summary>
