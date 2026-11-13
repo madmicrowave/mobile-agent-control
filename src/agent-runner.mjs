@@ -652,7 +652,7 @@ export function runUnifiedAgentTurn({
     });
   }
 
-  // 2. Auto Engine Selection (Recommended)
+  // 2. Fallback Engine Resolution
   // If model is Gemini or Native AGY Claude, prefer `agy` CLI
   if ((isGemini || isNativeAgyClaude) && agyBin) {
     return runAgyTurn({
@@ -775,3 +775,4 @@ export function runUnifiedAgentTurn({
     onStepEvent
   });
 }
+

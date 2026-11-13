@@ -114,6 +114,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     public var liveUrl: String
     public var model: String
     public var modelLevel: String
+    public var engine: String // "agy", "aider", "direct-api"
     public var environmentMode: String // "single" or "multi"
     public var jenkinsJobs: [String]
     public var prodJenkinsJobs: [String]
@@ -127,6 +128,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         liveUrl: String = "",
         model: String = "gemini-3.8-flash-high",
         modelLevel: String = "high",
+        engine: String = "agy",
         environmentMode: String = "single",
         jenkinsJobs: [String] = [],
         prodJenkinsJobs: [String] = [],
@@ -139,6 +141,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.liveUrl = liveUrl
         self.model = model
         self.modelLevel = modelLevel
+        self.engine = engine.isEmpty ? "agy" : engine
         self.environmentMode = environmentMode
         self.jenkinsJobs = jenkinsJobs
         self.prodJenkinsJobs = prodJenkinsJobs
@@ -146,7 +149,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, label, name, path, extraDirs, liveUrl, model, modelLevel, environmentMode, jenkinsJobs, prodJenkinsJobs, repos
+        case id, label, name, path, extraDirs, liveUrl, model, modelLevel, engine, environmentMode, jenkinsJobs, prodJenkinsJobs, repos
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +169,8 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.liveUrl = try c.decodeIfPresent(String.self, forKey: .liveUrl) ?? ""
         self.model = try c.decodeIfPresent(String.self, forKey: .model) ?? "gemini-3.8-flash-high"
         self.modelLevel = try c.decodeIfPresent(String.self, forKey: .modelLevel) ?? "high"
+        let decodedEngine = (try c.decodeIfPresent(String.self, forKey: .engine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.engine = decodedEngine.isEmpty || decodedEngine == "auto" ? "agy" : decodedEngine
         self.jenkinsJobs = try c.decodeIfPresent([String].self, forKey: .jenkinsJobs) ?? []
         self.prodJenkinsJobs = try c.decodeIfPresent([String].self, forKey: .prodJenkinsJobs) ?? []
         self.repos = try c.decodeIfPresent([MACRepo].self, forKey: .repos) ?? []
@@ -187,6 +192,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         try c.encode(liveUrl, forKey: .liveUrl)
         try c.encode(model, forKey: .model)
         try c.encode(modelLevel, forKey: .modelLevel)
+        try c.encode(engine, forKey: .engine)
         try c.encode(environmentMode, forKey: .environmentMode)
         try c.encode(jenkinsJobs, forKey: .jenkinsJobs)
         try c.encode(environmentMode == "multi" ? prodJenkinsJobs : [], forKey: .prodJenkinsJobs)
@@ -265,7 +271,7 @@ public struct MACConfig: Codable, Equatable {
     public init(
         agyBin: String = MACPathUtils.defaultAgyBin(),
         aiderBin: String = MACPathUtils.defaultAiderBin(),
-        agentEngine: String = "auto",
+        agentEngine: String = "agy",
         openaiApiKey: String = "",
         anthropicApiKey: String = "",
         deepseekApiKey: String = "",
@@ -315,7 +321,8 @@ public struct MACConfig: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.agyBin = try c.decodeIfPresent(String.self, forKey: .agyBin) ?? MACPathUtils.defaultAgyBin()
         self.aiderBin = try c.decodeIfPresent(String.self, forKey: .aiderBin) ?? MACPathUtils.defaultAiderBin()
-        self.agentEngine = try c.decodeIfPresent(String.self, forKey: .agentEngine) ?? "auto"
+        let rawEng = (try c.decodeIfPresent(String.self, forKey: .agentEngine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.agentEngine = (rawEng.isEmpty || rawEng == "auto") ? "agy" : rawEng
         self.openaiApiKey = try c.decodeIfPresent(String.self, forKey: .openaiApiKey) ?? ""
         self.anthropicApiKey = try c.decodeIfPresent(String.self, forKey: .anthropicApiKey) ?? ""
         self.deepseekApiKey = try c.decodeIfPresent(String.self, forKey: .deepseekApiKey) ?? ""

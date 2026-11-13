@@ -1,64 +1,140 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="mac.app Window — 4 Tabs: General, Workspaces, Tutorial &amp; Live Bot Activity">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 370" width="1200" height="370" role="img" aria-label="mac.app Window — 4 Tabs: General, Workspaces, Tutorial &amp; Live Bot Activity with Engine Tabs and Checkmarks">
   <defs>
     <linearGradient id="winBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0b1222"/>
-      <stop offset="100%" stop-color="#131c33"/>
+      <stop offset="0%" stop-color="#0a101f"/>
+      <stop offset="100%" stop-color="#111a30"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#162444"/>
+      <stop offset="100%" stop-color="#121c35"/>
+    </linearGradient>
+    <linearGradient id="tabActive" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
     </linearGradient>
   </defs>
 
-  <rect width="1200" height="320" rx="18" fill="url(#winBg)" stroke="#334155" stroke-width="1.5"/>
+  <rect width="1200" height="370" rx="18" fill="url(#winBg)" stroke="#334155" stroke-width="1.5"/>
 
   <!-- Window Titlebar -->
   <circle cx="26" cy="24" r="6" fill="#ef4444"/>
   <circle cx="46" cy="24" r="6" fill="#f59e0b"/>
   <circle cx="66" cy="24" r="6" fill="#22c55e"/>
-  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc">MAC — Mobile Agent Control (mac.app Visual Setup &amp; Live Activity)</text>
+  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc">MAC — Mobile Agent Control (Native macOS Settings &amp; Multi-Engine Setup)</text>
   <line x1="0" y1="46" x2="1200" y2="46" stroke="#334155"/>
 
   <!-- 4 App Tabs Showcase -->
-  <g transform="translate(28, 68)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
+  <g transform="translate(24, 64)" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif">
     <!-- Tab 1: General -->
-    <rect x="0" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#3b82f6" stroke-width="1.4"/>
-    <text x="20" y="32" font-size="15" font-weight="700" fill="#60a5fa">⚙️ General</text>
-    <text x="20" y="60" font-size="12.5" fill="#cbd5e1">• Jenkins Server &amp; 1-Click Test</text>
-    <text x="20" y="84" font-size="12.5" fill="#cbd5e1">• Telegram Bot Token &amp; Verify</text>
-    <text x="20" y="108" font-size="12.5" fill="#cbd5e1">• Allowed User IDs &amp; History X</text>
-    <text x="20" y="132" font-size="12.5" fill="#cbd5e1">• AGY CLI Path &amp; Default Model</text>
-    <text x="20" y="156" font-size="12.5" fill="#cbd5e1">• Launch at Login &amp; Sleep Status</text>
-    <rect x="20" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
-    <text x="137" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#93c5fd">Jenkins · Telegram · AGY</text>
+    <rect x="0" y="0" width="276" height="280" rx="14" fill="url(#cardBg)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="18" y="30" font-size="15" font-weight="700" fill="#60a5fa">⚙️ General</text>
+    
+    <!-- Engine Tabs Pill Indicator -->
+    <g transform="translate(16, 44)">
+      <rect x="0" y="0" width="76" height="22" rx="5" fill="#2563eb"/>
+      <text x="38" y="15" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">AGY ✓</text>
+
+      <rect x="82" y="0" width="76" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="120" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#22c55e">Aider ✓</text>
+
+      <rect x="164" y="0" width="80" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="204" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#22c55e">API ✓</text>
+    </g>
+
+    <!-- Subtabs Badge Row -->
+    <g transform="translate(16, 74)">
+      <rect x="0" y="0" width="244" height="20" rx="4" fill="#0f172a"/>
+      <text x="122" y="14" text-anchor="middle" font-size="9.5" font-weight="600" fill="#94a3b8">Subtabs: DeepSeek · OpenAI · Anthropic · Qwen</text>
+    </g>
+
+    <text x="18" y="116" font-size="12" fill="#cbd5e1">• Jenkins &amp; 1-Click Connection Test</text>
+    <text x="18" y="138" font-size="12" fill="#cbd5e1">• Telegram Bot Token &amp; Verification</text>
+    <text x="18" y="160" font-size="12" fill="#cbd5e1">• Engine Tabs with Live Checkmarks (✓)</text>
+    <text x="18" y="182" font-size="12" fill="#cbd5e1">• API Key Fields &amp; Local CLI Paths</text>
+    <text x="18" y="204" font-size="12" fill="#cbd5e1">• Global Default Model &amp; Effort Level</text>
+    <text x="18" y="226" font-size="12" fill="#cbd5e1">• Login Item &amp; Sleep Assertion</text>
+
+    <rect x="16" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>
+    <text x="138" y="257" text-anchor="middle" font-size="11" font-weight="600" fill="#93c5fd">Configured Engine Indicators ✓</text>
 
     <!-- Tab 2: Workspaces -->
-    <rect x="290" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="310" y="32" font-size="15" font-weight="700" fill="#38bdf8">🗂 Workspaces (+)</text>
-    <text x="310" y="60" font-size="12.5" fill="#cbd5e1">• Click + to add new Workspace</text>
-    <text x="310" y="84" font-size="12.5" fill="#cbd5e1">• Folder picker &amp; --add-dir paths</text>
-    <text x="310" y="108" font-size="12.5" fill="#cbd5e1">• Gemini &amp; Claude AI models</text>
-    <text x="310" y="132" font-size="12.5" fill="#cbd5e1">• Single / Multi Staging → Prod</text>
-    <text x="310" y="156" font-size="12.5" fill="#cbd5e1">• 1-Click Scan Git Repositories</text>
-    <rect x="310" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
-    <text x="427" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#38bdf8">Hot-Reloads in Telegram</text>
+    <rect x="292" y="0" width="276" height="280" rx="14" fill="url(#cardBg)" stroke="#334155"/>
+    <text x="310" y="30" font-size="15" font-weight="700" fill="#38bdf8">🗂 Workspaces (+)</text>
+
+    <!-- Per-Workspace Engine Pill Indicator -->
+    <g transform="translate(308, 44)">
+      <rect x="0" y="0" width="76" height="22" rx="5" fill="#2563eb"/>
+      <text x="38" y="15" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">AGY CLI</text>
+
+      <rect x="82" y="0" width="76" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="120" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#94a3b8">Aider CLI</text>
+
+      <rect x="164" y="0" width="80" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="204" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#94a3b8">Direct API</text>
+    </g>
+
+    <!-- Workspace Sidebar Badge Preview -->
+    <g transform="translate(308, 74)">
+      <rect x="0" y="0" width="244" height="20" rx="4" fill="#0f172a"/>
+      <text x="122" y="14" text-anchor="middle" font-size="9.5" font-weight="600" fill="#38bdf8">Sidebar Tags: [AGY] · [AIDER] · [API]</text>
+    </g>
+
+    <text x="310" y="116" font-size="12" fill="#cbd5e1">• Click + to add new Workspace</text>
+    <text x="310" y="138" font-size="12" fill="#cbd5e1">• Per-Workspace Engine (AGY default)</text>
+    <text x="310" y="160" font-size="12" fill="#cbd5e1">• Folder picker &amp; --add-dir paths</text>
+    <text x="310" y="182" font-size="12" fill="#cbd5e1">• Gemini, Claude, DeepSeek, OpenAI, Qwen</text>
+    <text x="310" y="204" font-size="12" fill="#cbd5e1">• Single / Multi Staging → Production</text>
+    <text x="310" y="226" font-size="12" fill="#cbd5e1">• 1-Click Scan Git Repositories</text>
+
+    <rect x="308" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>
+    <text x="430" y="257" text-anchor="middle" font-size="11" font-weight="600" fill="#38bdf8">Hot-Reloads in Telegram</text>
 
     <!-- Tab 3: Tutorial -->
-    <rect x="580" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="600" y="32" font-size="15" font-weight="700" fill="#fbbf24">📖 Tutorial</text>
-    <text x="600" y="60" font-size="12.5" fill="#cbd5e1">• 1-Click open @BotFather</text>
-    <text x="600" y="84" font-size="12.5" fill="#cbd5e1">• 1-Click open @userinfobot</text>
-    <text x="600" y="108" font-size="12.5" fill="#cbd5e1">• Workspace &amp; CI/CD setup</text>
-    <text x="600" y="132" font-size="12.5" fill="#cbd5e1">• RAM-only session password</text>
-    <text x="600" y="156" font-size="12.5" fill="#cbd5e1">• Slash commands cheat sheet</text>
-    <rect x="600" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
-    <text x="717" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#fcd34d">2-Minute Onboarding</text>
+    <rect x="584" y="0" width="276" height="280" rx="14" fill="url(#cardBg)" stroke="#334155"/>
+    <text x="602" y="30" font-size="15" font-weight="700" fill="#fbbf24">📖 Tutorial</text>
+
+    <g transform="translate(600, 44)">
+      <rect x="0" y="0" width="244" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="122" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#fbbf24">Interactive 2-Minute Onboarding</text>
+    </g>
+
+    <g transform="translate(600, 74)">
+      <rect x="0" y="0" width="244" height="20" rx="4" fill="#0f172a"/>
+      <text x="122" y="14" text-anchor="middle" font-size="9.5" font-weight="600" fill="#e2e8f0">1-Click Deep Links to @BotFather</text>
+    </g>
+
+    <text x="602" y="116" font-size="12" fill="#cbd5e1">• 1-Click open @BotFather</text>
+    <text x="602" y="138" font-size="12" fill="#cbd5e1">• 1-Click open @userinfobot</text>
+    <text x="602" y="160" font-size="12" fill="#cbd5e1">• Dual-Engine Setup (CLI &amp; API)</text>
+    <text x="602" y="182" font-size="12" fill="#cbd5e1">• RAM-only session password</text>
+    <text x="602" y="204" font-size="12" fill="#cbd5e1">• Add Fix in process walkthrough</text>
+    <text x="602" y="226" font-size="12" fill="#cbd5e1">• Slash commands cheat sheet</text>
+
+    <rect x="600" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>
+    <text x="722" y="257" text-anchor="middle" font-size="11" font-weight="600" fill="#fcd34d">Zero Terminal Setup Needed</text>
 
     <!-- Tab 4: Live Bot Activity -->
-    <rect x="870" y="0" width="274" height="224" rx="14" fill="#131f38" stroke="#334155"/>
-    <text x="890" y="32" font-size="15" font-weight="700" fill="#34d399">🖥 Live Bot Activity</text>
-    <text x="890" y="60" font-size="12.5" fill="#cbd5e1">• Real-time bot polling stream</text>
-    <text x="890" y="84" font-size="12.5" fill="#cbd5e1">• Live Git &amp; Jenkins build logs</text>
-    <text x="890" y="108" font-size="12.5" fill="#cbd5e1">• Auto-scroll monospaced console</text>
-    <text x="890" y="132" font-size="12.5" fill="#cbd5e1">• Selectable text &amp; 1-Click Copy</text>
-    <text x="890" y="156" font-size="12.5" fill="#cbd5e1">• Instant Clear Logs control</text>
-    <rect x="890" y="178" width="234" height="28" rx="7" fill="#0f172a"/>
-    <text x="1007" y="196" text-anchor="middle" font-size="11.5" font-weight="600" fill="#34d399">Live Activity Stream</text>
+    <rect x="876" y="0" width="276" height="280" rx="14" fill="url(#cardBg)" stroke="#334155"/>
+    <text x="894" y="30" font-size="15" font-weight="700" fill="#34d399">🖥 Live Bot Activity</text>
+
+    <g transform="translate(892, 44)">
+      <rect x="0" y="0" width="244" height="22" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="122" y="15" text-anchor="middle" font-size="10.5" font-weight="600" fill="#34d399">Live Console &amp; Stream</text>
+    </g>
+
+    <g transform="translate(892, 74)">
+      <rect x="0" y="0" width="244" height="20" rx="4" fill="#0f172a"/>
+      <text x="122" y="14" text-anchor="middle" font-size="9.5" font-weight="600" fill="#a7f3d0">Real-Time Polling &amp; Tool Events</text>
+    </g>
+
+    <text x="894" y="116" font-size="12" fill="#cbd5e1">• Real-time bot polling stream</text>
+    <text x="894" y="138" font-size="12" fill="#cbd5e1">• Live Git &amp; Jenkins build logs</text>
+    <text x="894" y="160" font-size="12" fill="#cbd5e1">• AI Tool loop: read, edit, write, exec</text>
+    <text x="894" y="182" font-size="12" fill="#cbd5e1">• Auto-scroll monospaced console</text>
+    <text x="894" y="204" font-size="12" fill="#cbd5e1">• Selectable text &amp; 1-Click Copy</text>
+    <text x="894" y="226" font-size="12" fill="#cbd5e1">• Instant Clear Logs control</text>
+
+    <rect x="892" y="240" width="244" height="26" rx="6" fill="#0f172a" stroke="#1e293b"/>
+    <text x="1014" y="257" text-anchor="middle" font-size="11" font-weight="600" fill="#34d399">100% Native Swift Log Stream</text>
   </g>
 </svg>

@@ -45,26 +45,29 @@ Zero terminal windows to keep open, zero `ngrok` / VPN / port forwarding, zero u
 
 ## Supported AI Models & Dual-Engine Architecture
 
-In `mac.app` **General → AI Engines**, you can run any model using two flexible options:
+In `mac.app` **General → AI Engines & Models**, you can run workflows using a modern tabbed layout where each tab displays a live **`✓` checkmark** when enabled and configured:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Mobile Agent Control Execution Modes                     │
+│                 Mobile Agent Control Multi-Engine Architecture              │
 ├──────────────────────────────────────┬──────────────────────────────────────┤
-│  Option 1: Terminal CLI Runners     │  Option 2: Direct API Engine         │
-│  (agy, aider, etc.)                  │  (Zero CLI tools needed)             │
+│  CLI Runner Tabs (Option 1)          │  Direct API Subtabs (Option 2)       │
+│  [ AGY CLI ✓ ]    [ Aider CLI ✓ ]    │  [ Direct API ✓ ]                    │
 ├──────────────────────────────────────┼──────────────────────────────────────┤
-│ • Antigravity CLI (agy):             │ • DeepSeek API (V3 & R1)             │
-│   Native support for Gemini 3.8/4 &  │ • OpenAI API (GPT-4o, o3-mini, o1)   │
-│   Claude Opus/Sonnet 5.5             │ • Anthropic API (Claude 3.7/3.5)     │
-│ • Aider CLI (aider):                 │ • Qwen / DashScope / OpenRouter      │
-│   Multi-provider terminal coding CLI │ • Custom Base URL (Ollama, vLLM)     │
-│ • Custom binary paths with Browse... │ • Built-in file read, edit, write,   │
-│   button in General tab              │   command runner & tool loop         │
-└──────────────────────────────────────┴──────────────────────────────────────┘
+│ • AGY CLI (Google Antigravity):      │ Subtabs with live ✓ status:          │
+│   Native support for Gemini 3.8/4,   │ • DeepSeek Subtab: V3 & R1           │
+│   Gemini 4 Carbon, Claude Opus 5.5   │ • OpenAI Subtab: GPT-4o, o3-mini, o1 │
+│ • Aider CLI:                         │ • Anthropic Subtab: Claude 3.7 / 3.5 │
+│   Multi-model headless terminal agent│ • Qwen Subtab: Qwen 2.5 Coder 32B/72B│
+│ • Custom binary path selector with   │ • Custom / Local: Ollama, vLLM, etc. │
+│   1-click Browse... button           │ • Autonomous file & command loop     │
+├──────────────────────────────────────┴──────────────────────────────────────┤
+│  Per-Workspace AI Engine: Each Workspace independently selects its engine   │
+│  (AGY CLI, Aider CLI, or Direct API) — defaulting to AGY for your projects! │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Both options feed changes into the exact same Git inspection and Telegram commit review pipeline!
+Both CLI tools and Direct API connect into the exact same Git inspection, diff review, Add Fix, and Telegram commit pipeline!
 
 ---
 
@@ -111,13 +114,14 @@ Both options feed changes into the exact same Git inspection and Telegram commit
    - In the **`General`** tab:
      - **Telegram**: Click **Open `@BotFather`**, send `/newbot`, paste your token into **General → Telegram**, and click **Verify Token**.
      - **AI Engines**:
-       - *Option 1 (CLI)*: Define path to `agy` or `aider` CLI binary with **Browse...**.
-       - *Option 2 (Direct API)*: Enter your API key for **DeepSeek**, **OpenAI**, **Anthropic Claude**, or **Qwen**.
+       - *Tabs*: Click between **AGY CLI**, **Aider CLI**, and **Direct API** — each tab shows a green checkmark (`✓`) when configured.
+       - *CLI Tabs*: Specify your local binary path for `agy` or `aider` with the **Browse...** button.
+       - *Direct API Subtabs*: Click between **DeepSeek**, **OpenAI**, **Anthropic**, **Qwen**, and **Custom / Local** to enter provider API keys and optional custom base URLs.
      - *(Optional)* Enter allowed numeric Telegram User IDs (`@userinfobot`) and **Jenkins** server credentials. Click **Save General Settings**.
 2. **Open `Workspaces` Tab & Click `+`**:
    - Click **`+`** in the left sidebar to create a new Workspace draft.
    - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Scan Git Repos**.
-   - Pick the Workspace's **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
+   - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`). Leave Jenkins jobs blank for **Git-only push**, or add **Single** / **Multi (Staging → Production)** Jenkins jobs, then click **Create Workspace**.
 3. **Click `MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
    - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
@@ -139,8 +143,8 @@ Clicking the **`MAC`** badge next to your macOS clock provides instant lifecycle
 
 ### Inside the 4 `mac.app` Window Tabs
 
-1. **`⚙️ General`** — Combines **Jenkins** (server URL, credentials, timeout, 1-click test), **Telegram** (bot token, 1-click verify, user lock), and **AI Engines** (Option 1 CLI paths for `agy` and `aider`, Option 2 API keys for DeepSeek, OpenAI, Anthropic, Qwen, Custom URL, default AI model & effort level, Login Item toggle, sleep status).
-2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
+1. **`⚙️ General`** — Combines **Jenkins** (server URL, credentials, timeout, 1-click test), **Telegram** (bot token, 1-click verify, user lock), and **AI Engines** with tabbed navigation and live configured checkmarks (`AGY CLI ✓`, `Aider CLI ✓`, `Direct API ✓` with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom endpoints).
+2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, **Git-only push**, or **Single / Multi Staging → Production Jenkins**. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
 4. **`🖥 Live Bot Activity`** — Real-time, selectable, copyable monospaced log console streaming Telegram polling events, AI agent turns, Git pushes, and Jenkins builds.
 

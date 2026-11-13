@@ -1310,8 +1310,16 @@ export class BotController {
       };
     });
 
+    const engineLabel =
+      ws.engine === 'aider'
+        ? 'Aider CLI'
+        : ws.engine === 'direct-api'
+          ? 'Direct API'
+          : 'AGY CLI';
+
     const text =
-      `🧠 <b>AI Model — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `🧠 <b>AI Model & Engine — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `• <b>AI Engine:</b> <code>${escapeHtml(engineLabel)}</code>\n` +
       `• <b>AI Model:</b> <code>${escapeHtml(modelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
       `• <b>Model Level:</b> <code>${escapeHtml(modelInfo.effort || 'high')}</code>`;
 
@@ -1500,9 +1508,16 @@ export class BotController {
     const hasProd = prodJobs.length > 0;
     const modelInfo = this.resolveWorkspaceModel(ws);
 
+    const engineTag =
+      ws.engine === 'aider'
+        ? 'Aider CLI'
+        : ws.engine === 'direct-api'
+          ? 'Direct API'
+          : 'AGY';
+
     const infoSections = [
       `🗂 <b>Workspace Selected</b>\n<b>${escapeHtml(wsLabel)}</b>\n<code>${escapeHtml(ws.path)}</code>`,
-      `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code>`
+      `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code> [${escapeHtml(engineTag)}]`
     ];
 
     if (hasProd) {
@@ -1812,7 +1827,7 @@ export class BotController {
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
         aiderBin: this.configStore.config.aiderBin,
-        agentEngine: this.configStore.config.agentEngine,
+        agentEngine: ws.engine || this.configStore.config.agentEngine || 'agy',
         openaiApiKey: this.configStore.config.openaiApiKey,
         anthropicApiKey: this.configStore.config.anthropicApiKey,
         deepseekApiKey: this.configStore.config.deepseekApiKey,

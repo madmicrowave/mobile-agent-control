@@ -265,8 +265,8 @@ export class ConfigStore {
     if (!this.config.aiderBin) {
       this.config.aiderBin = process.env.AIDER_BIN || 'aider';
     }
-    if (!this.config.agentEngine) {
-      this.config.agentEngine = process.env.AGENT_ENGINE || 'auto';
+    if (!this.config.agentEngine || this.config.agentEngine === 'auto') {
+      this.config.agentEngine = process.env.AGENT_ENGINE || 'agy';
     }
     if (process.env.DEEPSEEK_API_KEY && !this.config.deepseekApiKey) {
       this.config.deepseekApiKey = process.env.DEEPSEEK_API_KEY.trim();
@@ -381,6 +381,8 @@ export class ConfigStore {
         const normLvl = ws.modelLevel.trim().toLowerCase();
         ws.modelLevel = ['low', 'medium', 'high'].includes(normLvl) ? normLvl : 'high';
       }
+      const rawEngine = String(ws.engine || '').trim().toLowerCase();
+      ws.engine = ['agy', 'aider', 'direct-api'].includes(rawEngine) ? rawEngine : 'agy';
       if (!Array.isArray(ws.repos)) {
         ws.repos = [];
       }
@@ -423,7 +425,7 @@ export class ConfigStore {
         defaultHistoryCount: Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6,
         agyBin: process.env.AGY_BIN || resolveDefaultAgyBin(),
         aiderBin: process.env.AIDER_BIN || 'aider',
-        agentEngine: process.env.AGENT_ENGINE || 'auto',
+        agentEngine: process.env.AGENT_ENGINE || 'agy',
         deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
         openaiApiKey: process.env.OPENAI_API_KEY || '',
         anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -465,6 +467,7 @@ export class ConfigStore {
             prodJenkinsJobs,
             model: seed.model || '',
             modelLevel: seed.modelLevel || '',
+            engine: seed.engine || 'agy',
             repos
           });
         }

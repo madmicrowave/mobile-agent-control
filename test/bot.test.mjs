@@ -1776,18 +1776,21 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.waitForBackgroundTasks();
     assert.equal(lastAgentCallArgs.model, 'gemini-3.8-flash-high');
     assert.equal(lastAgentCallArgs.modelLevel, 'high');
+    assert.equal(lastAgentCallArgs.agentEngine, 'agy');
 
     // Simulate external config.json edit on disk (e.g. from `npm run setup`) and verify hot-reload
     await new Promise((r) => setTimeout(r, 15));
     const diskCfg = JSON.parse(await fsp.readFile(configStore.configFile, 'utf8'));
     diskCfg.workspaces.find((w) => w.id === 'payments').model = 'claude-opus-5-5-low';
     diskCfg.workspaces.find((w) => w.id === 'payments').modelLevel = 'low';
+    diskCfg.workspaces.find((w) => w.id === 'payments').engine = 'aider';
     await fsp.writeFile(configStore.configFile, JSON.stringify(diskCfg, null, 2), 'utf8');
 
     await controller.handleUpdate(makeUserMsg('Second check after hot reload'));
     await controller.waitForBackgroundTasks();
     assert.equal(lastAgentCallArgs.model, 'claude-opus-5-5-low');
     assert.equal(lastAgentCallArgs.modelLevel, 'low');
+    assert.equal(lastAgentCallArgs.agentEngine, 'aider');
   });
 
   it('coalesces multi-photo albums + split big messages into a single agent run and caps uploads at 5 files', async () => {

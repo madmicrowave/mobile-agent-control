@@ -109,6 +109,86 @@ private struct MACSegmentedPicker<Value: Equatable>: View {
     }
 }
 
+private struct MACEngineTabButton: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let isConfigured: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: isConfigured ? "checkmark.circle.fill" : systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isConfigured ? (isSelected ? .white : .green) : (isSelected ? .white : .secondary))
+
+                Text(title)
+                    .font(.system(size: 12.5, weight: isSelected ? .bold : .medium))
+
+                if isConfigured {
+                    Text("✓")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundColor(isSelected ? .white : .green)
+                }
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.045))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.10), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct MACSubtabButton: View {
+    let title: String
+    let isSelected: Bool
+    let isConfigured: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 5) {
+                if isConfigured {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(isSelected ? .white : .green)
+                }
+                Text(title)
+                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
+                if isConfigured {
+                    Text("✓")
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundColor(isSelected ? .white : .green)
+                }
+            }
+            .foregroundColor(isSelected ? .white : .primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.09), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live Bot Activity)
 
 public struct MACSettingsRootView: View {
@@ -296,14 +376,16 @@ private final class GeneralTabVM: ObservableObject {
     @Published var tokenCheckMessage: String?
     @Published var tokenCheckSucceeded: Bool = false
 
-    // 3. AI Agent Runners & Models (Option 1: Terminal CLI, Option 2: Direct API)
+    // 3. AI Agent Runners & Models (Tabs: AGY CLI, Aider CLI, Direct API)
     @Published var agyBinPath: String = ""
     @Published var aiderBinPath: String = "aider"
-    @Published var agentEngine: String = "auto"
+    @Published var agentEngine: String = "agy"
+    @Published var selectedEngineTab: String = "agy" // "agy", "aider", "direct-api"
+    @Published var selectedDirectApiSubtab: String = "deepseek" // "deepseek", "openai", "anthropic", "qwen", "custom"
     @Published var defaultModelFamily: String = "gemini-3.8-flash"
     @Published var defaultModelLevel: String = "high"
 
-    // Option 2: Direct API Keys & Endpoints
+    // Direct API Keys & Endpoints
     @Published var deepseekApiKey: String = ""
     @Published var showDeepseekKey: Bool = false
     @Published var openaiApiKey: String = ""
@@ -315,6 +397,40 @@ private final class GeneralTabVM: ObservableObject {
     @Published var customApiBaseUrl: String = ""
     @Published var customApiKey: String = ""
     @Published var showCustomKey: Bool = false
+
+    var isAgyConfigured: Bool {
+        let p = MACPathUtils.expandPath(agyBinPath)
+        return !p.isEmpty && (FileManager.default.fileExists(atPath: p) || agyBinPath == "agy")
+    }
+
+    var isAiderConfigured: Bool {
+        let p = MACPathUtils.expandPath(aiderBinPath)
+        return !p.isEmpty
+    }
+
+    var isDirectApiConfigured: Bool {
+        isDeepSeekConfigured || isOpenAIConfigured || isAnthropicConfigured || isQwenConfigured || isCustomConfigured
+    }
+
+    var isDeepSeekConfigured: Bool {
+        !deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isOpenAIConfigured: Bool {
+        !openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isAnthropicConfigured: Bool {
+        !anthropicApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isQwenConfigured: Bool {
+        !qwenApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var isCustomConfigured: Bool {
+        !customApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !customApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var effectiveDefaultModelId: String {
         MACModelOption.normalizeFamilyAndLevel(rawModel: defaultModelFamily, rawLevel: defaultModelLevel).modelId
@@ -579,203 +695,54 @@ private struct GeneralTabView: View {
             }
             .fixedSize()
         } content: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Agent Execution Engine")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Picker("Engine", selection: $vm.agentEngine) {
-                    Text("Auto (Recommended)").tag("auto")
-                    Text("AGY CLI").tag("agy")
-                    Text("Aider CLI").tag("aider")
-                    Text("Direct API").tag("direct-api")
-                }
-                .pickerStyle(.segmented)
-            }
-
-            // Option 1: Terminal CLI Runners
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                    Text("Option 1: Terminal CLI Runner Binaries")
-                        .font(.system(size: 12.5, weight: .bold))
-                }
-                Text("Define paths to local CLI binaries to execute AI workflows via terminal.")
+                Text("AI Engine Tabs")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Antigravity CLI (agy)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
-                                .textFieldStyle(.roundedBorder)
-                            Button("Browse...") {
-                                if let chosen = chooseExecutableFile(initialPath: vm.agyBinPath, prompt: "Select agy Binary") {
-                                    vm.agyBinPath = chosen
-                                }
-                            }
-                            .fixedSize()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Aider CLI (aider)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            TextField("aider", text: $vm.aiderBinPath)
-                                .textFieldStyle(.roundedBorder)
-                            Button("Browse...") {
-                                if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {
-                                    vm.aiderBinPath = chosen
-                                }
-                            }
-                            .fixedSize()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-
-            // Option 2: Direct API Keys & Providers
-            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                    Text("Option 2: Direct API Keys & Custom Endpoints")
-                        .font(.system(size: 12.5, weight: .bold))
-                }
-                Text("Define API keys to use Claude, OpenAI, DeepSeek, or Qwen directly without external CLI setup.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("DeepSeek API Key (V3 & R1)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if vm.showDeepseekKey {
-                                TextField("sk-...", text: $vm.deepseekApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("sk-...", text: $vm.deepseekApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showDeepseekKey ? "Hide" : "Show") {
-                                vm.showDeepseekKey.toggle()
-                            }
-                            .fixedSize()
-                        }
+                    MACEngineTabButton(
+                        title: "AGY CLI",
+                        systemImage: "terminal.fill",
+                        isSelected: vm.selectedEngineTab == "agy",
+                        isConfigured: vm.isAgyConfigured
+                    ) {
+                        vm.selectedEngineTab = "agy"
+                        vm.agentEngine = "agy"
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("OpenAI API Key (GPT-4o, o3-mini, o1)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if vm.showOpenaiKey {
-                                TextField("sk-proj-...", text: $vm.openaiApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("sk-proj-...", text: $vm.openaiApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showOpenaiKey ? "Hide" : "Show") {
-                                vm.showOpenaiKey.toggle()
-                            }
-                            .fixedSize()
-                        }
+                    MACEngineTabButton(
+                        title: "Aider CLI",
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        isSelected: vm.selectedEngineTab == "aider",
+                        isConfigured: vm.isAiderConfigured
+                    ) {
+                        vm.selectedEngineTab = "aider"
+                        vm.agentEngine = "aider"
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
 
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Anthropic API Key (Claude 3.7 / 3.5 Sonnet)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if vm.showAnthropicKey {
-                                TextField("sk-ant-...", text: $vm.anthropicApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("sk-ant-...", text: $vm.anthropicApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showAnthropicKey ? "Hide" : "Show") {
-                                vm.showAnthropicKey.toggle()
-                            }
-                            .fixedSize()
-                        }
+                    MACEngineTabButton(
+                        title: "Direct API",
+                        systemImage: "key.fill",
+                        isSelected: vm.selectedEngineTab == "direct-api",
+                        isConfigured: vm.isDirectApiConfigured
+                    ) {
+                        vm.selectedEngineTab = "direct-api"
+                        vm.agentEngine = "direct-api"
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Qwen / DashScope / OpenRouter API Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if vm.showQwenKey {
-                                TextField("sk-...", text: $vm.qwenApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("sk-...", text: $vm.qwenApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showQwenKey ? "Hide" : "Show") {
-                                vm.showQwenKey.toggle()
-                            }
-                            .fixedSize()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Custom API Base URL (optional, e.g. Ollama, vLLM, OpenRouter)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField("http://localhost:11434/v1 or https://openrouter.ai/api/v1", text: $vm.customApiBaseUrl)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Custom API Key (optional)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if vm.showCustomKey {
-                                TextField("key...", text: $vm.customApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("key...", text: $vm.customApiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(vm.showCustomKey ? "Hide" : "Show") {
-                                vm.showCustomKey.toggle()
-                            }
-                            .fixedSize()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+
+            switch vm.selectedEngineTab {
+            case "agy":
+                agyTabContent
+            case "aider":
+                aiderTabContent
+            default:
+                directApiTabContent
+            }
+
+            Divider()
 
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -856,6 +823,299 @@ private struct GeneralTabView: View {
         }
     }
 
+    private var agyTabContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Google Antigravity CLI (agy)")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(vm.isAgyConfigured ? "Configured ✓" : "Path Required")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(vm.isAgyConfigured ? .green : .orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background((vm.isAgyConfigured ? Color.green : Color.orange).opacity(0.12))
+                    .cornerRadius(5)
+            }
+
+            Text("Executes coding tasks using the local Google Antigravity (agy) CLI. Native support for Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, and Claude Opus / Sonnet 5.5.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Antigravity Binary Path (agy)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Browse...") {
+                        if let chosen = chooseExecutableFile(initialPath: vm.agyBinPath, prompt: "Select agy Binary") {
+                            vm.agyBinPath = chosen
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    private var aiderTabContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Aider CLI (Terminal Coding Assistant)")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(vm.isAiderConfigured ? "Configured ✓" : "Path Required")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(vm.isAiderConfigured ? .green : .orange)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background((vm.isAiderConfigured ? Color.green : Color.orange).opacity(0.12))
+                    .cornerRadius(5)
+            }
+
+            Text("Runs non-interactive headless agent turns via the Aider CLI in your terminal, with automated file edits and git diffs.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Aider Binary Path (aider)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    TextField("aider", text: $vm.aiderBinPath)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Browse...") {
+                        if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {
+                            vm.aiderBinPath = chosen
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    private var directApiTabContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Direct API Integration (Zero Local CLI Dependencies)")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(vm.isDirectApiConfigured ? "API Ready ✓" : "No Keys Configured")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(vm.isDirectApiConfigured ? .green : .secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background((vm.isDirectApiConfigured ? Color.green : Color.primary).opacity(0.12))
+                    .cornerRadius(5)
+            }
+
+            Text("Connects directly to LLM providers via HTTP API. Includes autonomous tool execution (read/edit/write files and run shell commands in the workspace).")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // Subtabs: DeepSeek, OpenAI, Anthropic, Qwen, Custom / Local
+            HStack(spacing: 6) {
+                MACSubtabButton(
+                    title: "DeepSeek",
+                    isSelected: vm.selectedDirectApiSubtab == "deepseek",
+                    isConfigured: vm.isDeepSeekConfigured
+                ) {
+                    vm.selectedDirectApiSubtab = "deepseek"
+                }
+
+                MACSubtabButton(
+                    title: "OpenAI",
+                    isSelected: vm.selectedDirectApiSubtab == "openai",
+                    isConfigured: vm.isOpenAIConfigured
+                ) {
+                    vm.selectedDirectApiSubtab = "openai"
+                }
+
+                MACSubtabButton(
+                    title: "Anthropic",
+                    isSelected: vm.selectedDirectApiSubtab == "anthropic",
+                    isConfigured: vm.isAnthropicConfigured
+                ) {
+                    vm.selectedDirectApiSubtab = "anthropic"
+                }
+
+                MACSubtabButton(
+                    title: "Qwen",
+                    isSelected: vm.selectedDirectApiSubtab == "qwen",
+                    isConfigured: vm.isQwenConfigured
+                ) {
+                    vm.selectedDirectApiSubtab = "qwen"
+                }
+
+                MACSubtabButton(
+                    title: "Custom / Local",
+                    isSelected: vm.selectedDirectApiSubtab == "custom",
+                    isConfigured: vm.isCustomConfigured
+                ) {
+                    vm.selectedDirectApiSubtab = "custom"
+                }
+            }
+
+            // Subtab Content
+            Group {
+                switch vm.selectedDirectApiSubtab {
+                case "deepseek":
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("DeepSeek API (DeepSeek-V3 & DeepSeek-R1)")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(vm.isDeepSeekConfigured ? "Configured ✓" : "Key Required")
+                                .font(.caption2)
+                                .foregroundColor(vm.isDeepSeekConfigured ? .green : .secondary)
+                        }
+                        HStack(spacing: 6) {
+                            if vm.showDeepseekKey {
+                                TextField("sk-...", text: $vm.deepseekApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-...", text: $vm.deepseekApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showDeepseekKey ? "Hide" : "Show") {
+                                vm.showDeepseekKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                        Text("Default endpoint: https://api.deepseek.com/chat/completions")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
+                    }
+
+                case "openai":
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("OpenAI API (GPT-4o, o3-mini, o1)")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(vm.isOpenAIConfigured ? "Configured ✓" : "Key Required")
+                                .font(.caption2)
+                                .foregroundColor(vm.isOpenAIConfigured ? .green : .secondary)
+                        }
+                        HStack(spacing: 6) {
+                            if vm.showOpenaiKey {
+                                TextField("sk-proj-...", text: $vm.openaiApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-proj-...", text: $vm.openaiApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showOpenaiKey ? "Hide" : "Show") {
+                                vm.showOpenaiKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                        Text("Default endpoint: https://api.openai.com/v1/chat/completions")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
+                    }
+
+                case "anthropic":
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Anthropic Claude API (Claude 3.7 Sonnet & 3.5 Sonnet)")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(vm.isAnthropicConfigured ? "Configured ✓" : "Key Required")
+                                .font(.caption2)
+                                .foregroundColor(vm.isAnthropicConfigured ? .green : .secondary)
+                        }
+                        HStack(spacing: 6) {
+                            if vm.showAnthropicKey {
+                                TextField("sk-ant-...", text: $vm.anthropicApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-ant-...", text: $vm.anthropicApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showAnthropicKey ? "Hide" : "Show") {
+                                vm.showAnthropicKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                        Text("Default endpoint: https://api.anthropic.com/v1/messages")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
+                    }
+
+                case "qwen":
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Qwen API (Qwen 2.5 Coder 32B & Qwen 2.5 72B)")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(vm.isQwenConfigured ? "Configured ✓" : "Key Required")
+                                .font(.caption2)
+                                .foregroundColor(vm.isQwenConfigured ? .green : .secondary)
+                        }
+                        HStack(spacing: 6) {
+                            if vm.showQwenKey {
+                                TextField("sk-...", text: $vm.qwenApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("sk-...", text: $vm.qwenApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showQwenKey ? "Hide" : "Show") {
+                                vm.showQwenKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                        Text("Compatible with DashScope / OpenRouter API endpoints")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.secondary)
+                    }
+
+                default:
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Custom Endpoint (Ollama, vLLM, OpenRouter, Local LLMs)")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Text(vm.isCustomConfigured ? "Configured ✓" : "Optional")
+                                .font(.caption2)
+                                .foregroundColor(vm.isCustomConfigured ? .green : .secondary)
+                        }
+                        TextField("http://localhost:11434/v1 or https://openrouter.ai/api/v1", text: $vm.customApiBaseUrl)
+                            .textFieldStyle(.roundedBorder)
+                        HStack(spacing: 6) {
+                            if vm.showCustomKey {
+                                TextField("API Key (optional)", text: $vm.customApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                SecureField("API Key (optional)", text: $vm.customApiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            Button(vm.showCustomKey ? "Hide" : "Show") {
+                                vm.showCustomKey.toggle()
+                            }
+                            .fixedSize()
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.025)))
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
     private func loadFromAppState() {
         vm.jenkinsDraft = appState.config.jenkins
         vm.timeoutMinutes = max(5, vm.jenkinsDraft.buildTimeoutMs / 60_000)
@@ -867,7 +1127,9 @@ private struct GeneralTabView: View {
 
         vm.agyBinPath = appState.config.agyBin
         vm.aiderBinPath = appState.config.aiderBin
-        vm.agentEngine = appState.config.agentEngine
+        let loadedEngine = (appState.config.agentEngine == "auto" || appState.config.agentEngine.isEmpty) ? "agy" : appState.config.agentEngine
+        vm.agentEngine = loadedEngine
+        vm.selectedEngineTab = ["agy", "aider", "direct-api"].contains(loadedEngine) ? loadedEngine : "agy"
         vm.deepseekApiKey = appState.config.deepseekApiKey
         vm.openaiApiKey = appState.config.openaiApiKey
         vm.anthropicApiKey = appState.config.anthropicApiKey
@@ -1197,6 +1459,13 @@ private struct WorkspacesTabView: View {
             return entry.draft.environmentMode == "multi" ? .purple : .blue
         }()
 
+        let engineTag: String = {
+            let e = entry.draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if e == "aider" { return "AIDER" }
+            if e == "direct-api" { return "API" }
+            return "AGY"
+        }()
+
         return Button {
             vm.selectedUID = entry.uid
             if let savedId = entry.originalSavedId {
@@ -1217,16 +1486,28 @@ private struct WorkspacesTabView: View {
 
                     Spacer(minLength: 4)
 
-                    Text(badgeText)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(isSelected ? .white : badgeTint)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(isSelected ? Color.white.opacity(0.22) : badgeTint.opacity(0.16))
-                        )
-                        .fixedSize()
+                    HStack(spacing: 4) {
+                        Text(engineTag)
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .foregroundColor(isSelected ? .white : .secondary)
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                                    .fill(isSelected ? Color.white.opacity(0.18) : Color.primary.opacity(0.07))
+                            )
+
+                        Text(badgeText)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(isSelected ? .white : badgeTint)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(isSelected ? Color.white.opacity(0.22) : badgeTint.opacity(0.16))
+                            )
+                            .fixedSize()
+                    }
                 }
 
                 Text(entry.draft.displayModelSummary)
@@ -1268,6 +1549,8 @@ private struct WorkspacesTabView: View {
 
         normalized.label = normalized.label.trimmingCharacters(in: .whitespacesAndNewlines)
         normalized.path = MACPathUtils.expandPath(normalized.path)
+        let eng = normalized.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        normalized.engine = (eng.isEmpty || eng == "auto") ? "agy" : eng
 
         let rawSlug = MACPathUtils.slugifyWorkspaceId(
             normalized.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? normalized.label : normalized.id
@@ -1371,6 +1654,14 @@ private struct WorkspaceEditorFormView: View {
 
     private var levelOptions: [MACSegmentedOption<String>] {
         MACModelOption.validLevels.map { MACSegmentedOption(id: $0, title: $0, value: $0) }
+    }
+
+    private var workspaceEngineOptions: [MACSegmentedOption<String>] {
+        [
+            MACSegmentedOption(id: "agy", title: "AGY CLI", value: "agy"),
+            MACSegmentedOption(id: "aider", title: "Aider CLI", value: "aider"),
+            MACSegmentedOption(id: "direct-api", title: "Direct API", value: "direct-api")
+        ]
     }
 
     private var envModeOptions: [MACSegmentedOption<String>] {
@@ -1509,8 +1800,8 @@ private struct WorkspaceEditorFormView: View {
                     }
                 }
 
-                // 2. AI Model & Effort Level
-                MACSectionCard(title: "AI Model & Effort Level", systemImage: "brain") {
+                // 2. AI Execution Engine & Model
+                MACSectionCard(title: "AI Engine & Model", systemImage: "cpu.fill") {
                     HStack(spacing: 6) {
                         Text("CLI ID:")
                             .font(.system(size: 11, weight: .medium))
@@ -1525,63 +1816,91 @@ private struct WorkspaceEditorFormView: View {
                     }
                     .fixedSize()
                 } content: {
-                    HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("AI Model Family")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            HStack {
+                                Text("Execution Engine for this Workspace")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(draft.engine == "aider" ? "Aider CLI" : (draft.engine == "direct-api" ? "Direct API" : "Antigravity CLI (agy)"))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
 
-                            Menu {
-                                ForEach(MACModelOption.allOptions) { opt in
-                                    Button {
-                                        vm.selectedModelFamily = opt.id
-                                        syncModelFields()
-                                    } label: {
-                                        if vm.selectedModelFamily == opt.id {
-                                            Label(opt.label, systemImage: "checkmark")
-                                        } else {
-                                            Text(opt.label)
+                            MACSegmentedPicker(
+                                options: workspaceEngineOptions,
+                                selection: Binding(
+                                    get: {
+                                        let eng = draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                                        return (eng.isEmpty || eng == "auto") ? "agy" : eng
+                                    },
+                                    set: { draft.engine = $0 }
+                                )
+                            )
+                            .frame(maxWidth: 440, alignment: .leading)
+                        }
+
+                        Divider()
+
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("AI Model Family")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+
+                                Menu {
+                                    ForEach(MACModelOption.allOptions) { opt in
+                                        Button {
+                                            vm.selectedModelFamily = opt.id
+                                            syncModelFields()
+                                        } label: {
+                                            if vm.selectedModelFamily == opt.id {
+                                                Label(opt.label, systemImage: "checkmark")
+                                            } else {
+                                                Text(opt.label)
+                                            }
                                         }
                                     }
+                                } label: {
+                                    HStack {
+                                        Text(selectedModelDisplayTitle)
+                                            .font(.system(size: 12.5, weight: .medium))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .fill(Color.primary.opacity(0.07))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+                                    )
                                 }
-                            } label: {
-                                HStack {
-                                    Text(selectedModelDisplayTitle)
-                                        .font(.system(size: 12.5, weight: .medium))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .fill(Color.primary.opacity(0.07))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .stroke(Color.primary.opacity(0.14), lineWidth: 1)
-                                )
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Effort Level")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Effort Level")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
 
-                            MACSegmentedPicker(options: levelOptions, selection: $vm.selectedModelLevel)
-                                .onChange(of: vm.selectedModelLevel) { _, _ in
-                                    syncModelFields()
-                                }
+                                MACSegmentedPicker(options: levelOptions, selection: $vm.selectedModelLevel)
+                                    .onChange(of: vm.selectedModelLevel) { _, _ in
+                                        syncModelFields()
+                                    }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 
@@ -1938,7 +2257,7 @@ private struct TutorialTabView: View {
 
                 tutorialStepCard(
                     stepNumber: "2",
-                    title: "Lock Down Allowed Telegram User IDs (Recommended)",
+                    title: "Lock Down Allowed Telegram User IDs",
                     icon: "lock.shield.fill",
                     accent: .indigo,
                     bullets: [
@@ -1954,13 +2273,13 @@ private struct TutorialTabView: View {
 
                 tutorialStepCard(
                     stepNumber: "3",
-                    title: "Configure AI Engines (CLI or Direct API) & Workspaces",
+                    title: "Configure AI Engines (Tabs & Checkmarks) & Workspaces",
                     icon: "folder.fill.badge.gearshape",
                     accent: .purple,
                     bullets: [
-                        "In General → AI Engines, select your engine: Option 1 (CLI runners: agy, aider) or Option 2 (Direct API keys: Claude, OpenAI, DeepSeek, Qwen).",
+                        "In General → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom). Each tab displays a green checkmark (✓) when configured.",
                         "Open the 'Workspaces' tab, click '+' in the left sidebar to add a Workspace, enter a Label, and click 'Browse...' to select your project folder.",
-                        "Click 'Scan Git Repos' to auto-detect repos, and pick your preferred AI Model: Gemini, Claude (Opus 5.5, 3.7 Sonnet), DeepSeek (V3, R1), OpenAI (GPT-4o, o3-mini), or Qwen.",
+                        "Select your Workspace's AI Engine (AGY CLI [default], Aider CLI, or Direct API), 1-click 'Scan Git Repos', and pick your AI Model (Gemini, Claude, DeepSeek, OpenAI, Qwen).",
                         "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in General → Jenkins."
                     ],
                     actionTitle: nil,
