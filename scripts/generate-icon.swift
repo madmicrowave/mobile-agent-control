@@ -1,15 +1,5 @@
 import AppKit
 
-func condensedFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
-    if #available(macOS 13.0, *) {
-        return NSFont.systemFont(ofSize: size, weight: weight, width: .condensed)
-    } else {
-        let base = NSFont.systemFont(ofSize: size, weight: weight)
-        let desc = base.fontDescriptor.withSymbolicTraits(.condensed)
-        return NSFont(descriptor: desc, size: size) ?? base
-    }
-}
-
 func generateAppIcon(size: CGFloat) -> NSImage {
     let img = NSImage(size: NSSize(width: size, height: size))
     img.lockFocus()
@@ -76,12 +66,12 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     return img
 }
 
-/// Generates an 80x32 px (@2x = 40x16 pt, 144 DPI) rounded-pill menu bar template icon
-/// with punched-out inline "AI  MAC" in condensed font with bigger AI and clear spacing.
+/// Generates an 84x32 px (@2x = 42x16 pt, 144 DPI) rounded-pill menu bar template icon
+/// with punched-out inline "AI  MAC" in standard San Francisco system font (un-condensed).
 func saveMenuBarBadgePNG(path: String) {
-    let pixelWidth = 80
+    let pixelWidth = 84
     let pixelHeight = 32
-    let pointWidth: CGFloat = 40
+    let pointWidth: CGFloat = 42
     let pointHeight: CGFloat = 16
 
     guard let rep = NSBitmapImageRep(
@@ -98,7 +88,7 @@ func saveMenuBarBadgePNG(path: String) {
     ) else {
         fatalError("Failed to create NSBitmapImageRep for MenuBarIcon")
     }
-    // Setting size to 40x16 points encodes 144 DPI (@2x Retina) into the PNG!
+    // Setting size to 42x16 points encodes 144 DPI (@2x Retina) into the PNG!
     rep.size = NSSize(width: pointWidth, height: pointHeight)
 
     NSGraphicsContext.saveGraphicsState()
@@ -119,9 +109,9 @@ func saveMenuBarBadgePNG(path: String) {
     NSColor.black.setFill()
     pillPath.fill()
 
-    // Punch out inline "AI   MAC" with condensed bold font, bigger AI and clean spacing
-    let aiFont = condensedFont(size: 8.2, weight: .black)
-    let macFont = condensedFont(size: 9.6, weight: .black)
+    // Punch out inline "AI   MAC" with standard system font (not condensed), matching in-app typography
+    let aiFont = NSFont.systemFont(ofSize: 7.5, weight: .black)
+    let macFont = NSFont.systemFont(ofSize: 9.2, weight: .black)
     let aiVerticalOffset = (macFont.capHeight - aiFont.capHeight) / 2.0
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
@@ -133,12 +123,12 @@ func saveMenuBarBadgePNG(path: String) {
     let spaceAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.black,
-        .kern: 0.8
+        .kern: 0.5
     ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.black,
-        .kern: -0.15
+        .kern: -0.1
     ]
 
     let attrStr = NSMutableAttributedString(string: "AI", attributes: aiAttrs)
