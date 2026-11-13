@@ -2992,6 +2992,15 @@ private struct LiveActivityTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    private var formattedBufferLimit: String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: appState.maxLogLines)) ?? "\(appState.maxLogLines)"
+    }
+
     private var headerBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "terminal.fill")
@@ -3020,7 +3029,7 @@ private struct LiveActivityTabView: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text("Buffer: \(appState.maxLogLines.formatted())")
+                    Text("Buffer: \(formattedBufferLimit)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8))

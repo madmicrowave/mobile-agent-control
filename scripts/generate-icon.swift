@@ -26,21 +26,22 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     path.lineWidth = max(1.0, size * 0.015)
     path.stroke()
 
-    // Centered stacked layout:
-    // AI (top, blue, condensed font)
-    // MAC (bottom, white, bold condensed font)
-    let aiFont = condensedFont(size: size * 0.26, weight: .black)
-    let macFont = condensedFont(size: size * 0.36, weight: .black)
+    // Centered stacked layout (2 lines with space between rows):
+    // Same system font as in open app:
+    // Text("AI").font(.system(size: 12.5, weight: .black))
+    // Text("MAC").font(.system(size: 15.5, weight: .black))
+    let macFont = NSFont.systemFont(ofSize: size * 0.31, weight: .black)
+    let aiFont = NSFont.systemFont(ofSize: size * 0.25, weight: .black)
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
         .font: aiFont,
-        .foregroundColor: NSColor(calibratedRed: 0.22, green: 0.74, blue: 0.98, alpha: 1.0),
-        .kern: size * 0.008
+        .foregroundColor: NSColor(srgbRed: 0.0, green: 0.478, blue: 1.0, alpha: 1.0),
+        .kern: size * 0.005
     ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.white,
-        .kern: size * -0.012
+        .kern: size * -0.008
     ]
 
     let aiStr = NSAttributedString(string: "AI", attributes: aiAttrs)
@@ -51,7 +52,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
 
     let macCap = macFont.capHeight
     let aiCap = aiFont.capHeight
-    let visualGap = size * 0.054
+    let visualGap = size * 0.06
     let totalCapH = macCap + visualGap + aiCap
     let bottomOfMacY = (size - totalCapH) / 2.0
 
