@@ -310,6 +310,13 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(appState.status == .stopped, "Expected status == .stopped after Stop")
     expect(!appState.isSleepPrevented, "Expected sleep prevention released after Stop")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Stopped menu item states")
+
+    // Multi-monitor display confinement & safe menu update verification
+    let confinement = controller.confinementRect(for: controller.menu, on: NSScreen.main)
+    expect(confinement != .zero, "Expected non-zero confinementRect for status menu on multi-display setup")
+    controller.menuNeedsUpdate(controller.menu)
+    controller.menuWillOpen(controller.menu)
+    expect(controller.startMenuItem.isEnabled, "Menu update reflects current stopped state")
     print("✓ MACStatusBarController Start / Restart / Stop + Password Prompt + Sleep Prevention passed")
 }
 

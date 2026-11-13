@@ -48,12 +48,23 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         buildMenuItems()
         refreshUI()
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
         self.appState.onStateChanged = { [weak self] in
             self?.refreshUI()
         }
         self.appState.onRequestOpenSettings = { [weak self] tab in
             self?.openApp(tab: tab)
         }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     /// Only real `.app` bundles (`mac.app`) may promote `NSApp` to `.regular` in the macOS Dock.
@@ -170,11 +181,40 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         statusItem.menu = menu
     }
 
+    // MARK: - NSMenuDelegate
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshMenuItems()
+    }
+
+    public func menuWillOpen(_ menu: NSMenu) {
+        refreshMenuItems()
+    }
+
+    /// Multi-monitor confinement: ensures the dropdown menu is strictly confined to the display
+    /// where the user clicked the status bar icon, preventing macOS from accidentally spawning
+    /// the menu on a different display or space in multi-screen setups.
+    public func confinementRect(for menu: NSMenu, on screen: NSScreen?) -> NSRect {
+        let mouseLocation = NSEvent.mouseLocation
+        if let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
+            return targetScreen.visibleFrame
+        }
+        if let screen = screen {
+            return screen.visibleFrame
+        }
+        if let buttonScreen = statusItem.button?.window?.screen {
+            return buttonScreen.visibleFrame
+        }
+        return .zero
+    }
+
+    @objc private func handleScreenParametersChanged() {
         refreshUI()
     }
 
-    public func refreshUI() {
+    /// Updates only the menu item labels and enable/disable states.
+    /// Does not mutate `statusItem.button` to avoid invalidating WindowServer clone coordinates.
+    public func refreshMenuItems() {
         statusHeaderItem.title = appState.status.statusMenuTitle
 
         let active = appState.status.isRunningOrStarting
@@ -183,29 +223,36 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         stopMenuItem.isEnabled = active
 
         launchAtLoginMenuItem.state = appState.launchAtLogin ? .on : .off
+    }
 
-        if let button = statusItem.button {
-            if button.image != nil {
-                button.title = ""
-                button.imagePosition = .imageOnly
-            } else {
-                button.title = "MAC"
-            }
-            switch appState.status {
-            case .running(let username):
-                if let u = username, !u.isEmpty {
-                    button.toolTip = "AI MAC — Running (@\(u)) · Mac Sleep Prevented"
-                } else {
-                    button.toolTip = "AI MAC — Running · Mac Sleep Prevented"
-                }
-            case .starting:
-                button.toolTip = "AI MAC — Starting..."
-            case .error(let msg):
-                button.toolTip = "AI MAC — Error: \(msg)"
-            case .stopped:
-                button.toolTip = "AI MAC — Mobile Agent Control (Stopped)"
-            }
+    /// Updates the status bar button icon, title, and tooltip.
+    public func refreshStatusButton() {
+        guard let button = statusItem.button else { return }
+        if button.image != nil {
+            button.title = ""
+            button.imagePosition = .imageOnly
+        } else {
+            button.title = "MAC"
         }
+        switch appState.status {
+        case .running(let username):
+            if let u = username, !u.isEmpty {
+                button.toolTip = "AI MAC — Running (@\(u)) · Mac Sleep Prevented"
+            } else {
+                button.toolTip = "AI MAC — Running · Mac Sleep Prevented"
+            }
+        case .starting:
+            button.toolTip = "AI MAC — Starting..."
+        case .error(let msg):
+            button.toolTip = "AI MAC — Error: \(msg)"
+        case .stopped:
+            button.toolTip = "AI MAC — Mobile Agent Control (Stopped)"
+        }
+    }
+
+    public func refreshUI() {
+        refreshMenuItems()
+        refreshStatusButton()
     }
 
     @objc public func handleOpenAppClicked() {
