@@ -296,14 +296,13 @@ public struct MACSettingsRootView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    HStack(alignment: .center, spacing: 6) {
+                        Text("AI")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .foregroundColor(.accentColor)
                         Text("MAC")
                             .font(.system(size: 15, weight: .black, design: .rounded))
-                        Text("AI")
-                            .font(.system(size: 9.5, weight: .heavy, design: .rounded))
-                            .baselineOffset(5.5)
-                            .foregroundColor(.accentColor)
-                        Text(" — Mobile Agent Control")
+                        Text("— Mobile Agent Control")
                             .font(.system(size: 15, weight: .bold))
                     }
                     .fixedSize()
@@ -2923,9 +2922,36 @@ private struct MACParsedLogLine: Identifiable {
 }
 
 private final class LiveActivityTabVM: ObservableObject {
-    @Published var selectedCategory: MACLogCategory = .all
+    @Published var selectedCategories: Set<MACLogCategory> = [.all]
     @Published var searchText: String = ""
     @Published var autoScroll: Bool = true
+
+    func toggleCategory(_ cat: MACLogCategory) {
+        if cat == .all {
+            selectedCategories = [.all]
+            return
+        }
+
+        if selectedCategories.contains(.all) {
+            selectedCategories = [cat]
+        } else {
+            if selectedCategories.contains(cat) {
+                selectedCategories.remove(cat)
+                if selectedCategories.isEmpty {
+                    selectedCategories = [.all]
+                }
+            } else {
+                selectedCategories.insert(cat)
+            }
+        }
+    }
+
+    func isCategorySelected(_ cat: MACLogCategory) -> Bool {
+        if cat == .all {
+            return selectedCategories.contains(.all)
+        }
+        return selectedCategories.contains(cat)
+    }
 }
 
 private struct LiveActivityTabView: View {
@@ -2939,14 +2965,13 @@ private struct LiveActivityTabView: View {
     }
 
     private var filteredLines: [MACParsedLogLine] {
-        parsedLines.filter { item in
+        let isAll = vm.selectedCategories.contains(.all) || vm.selectedCategories.isEmpty
+        return parsedLines.filter { item in
             let matchesCategory: Bool
-            if vm.selectedCategory == .all {
+            if isAll {
                 matchesCategory = true
-            } else if vm.selectedCategory == .errors {
-                matchesCategory = item.source == .errors
             } else {
-                matchesCategory = (item.source == vm.selectedCategory)
+                matchesCategory = vm.selectedCategories.contains(item.source)
             }
 
             if !matchesCategory { return false }
@@ -2977,21 +3002,25 @@ private struct LiveActivityTabView: View {
                 .font(.system(size: 14.5, weight: .bold))
 
             Menu {
-                Button("Buffer limit: 250 lines") {
-                    appState.maxLogLines = 250
-                    appState.trimLogsToMax()
-                }
-                Button("Buffer limit: 500 lines") {
-                    appState.maxLogLines = 500
-                    appState.trimLogsToMax()
-                }
                 Button("Buffer limit: 1,000 lines") {
                     appState.maxLogLines = 1000
                     appState.trimLogsToMax()
                 }
+                Button("Buffer limit: 3,000 lines (default)") {
+                    appState.maxLogLines = 3000
+                    appState.trimLogsToMax()
+                }
+                Button("Buffer limit: 5,000 lines") {
+                    appState.maxLogLines = 5000
+                    appState.trimLogsToMax()
+                }
+                Button("Buffer limit: 10,000 lines") {
+                    appState.maxLogLines = 10000
+                    appState.trimLogsToMax()
+                }
             } label: {
                 HStack(spacing: 4) {
-                    Text("\(appState.logLines.count) / \(appState.maxLogLines) max")
+                    Text("Buffer: \(appState.maxLogLines.formatted())")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8))
@@ -3028,9 +3057,9 @@ private struct LiveActivityTabView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(MACLogCategory.allCases) { cat in
-                        let isSelected = (vm.selectedCategory == cat)
+                        let isSelected = vm.isCategorySelected(cat)
                         Button {
-                            vm.selectedCategory = cat
+                            vm.toggleCategory(cat)
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: cat.icon)
@@ -3143,7 +3172,8 @@ private struct LiveActivityTabView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     } else if filteredLines.isEmpty {
-                        Text("No logs matching '\(vm.selectedCategory.rawValue)' or search filter '\(vm.searchText)'.")
+                        let catLabel = vm.selectedCategories.contains(.all) ? "All" : vm.selectedCategories.map(\.rawValue).sorted().joined(separator: ", ")
+                        Text("No logs matching '\(catLabel)' or search filter '\(vm.searchText)'.")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundColor(.secondary)
                             .padding(.vertical, 8)

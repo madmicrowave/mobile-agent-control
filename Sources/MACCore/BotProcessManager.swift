@@ -58,7 +58,7 @@ public final class MACAppState: ObservableObject {
     @Published public var selectedTab: MACSettingsTab = .general
     @Published public var selectedWorkspaceId: String?
     @Published public var logLines: [String] = []
-    @Published public var maxLogLines: Int = 500
+    @Published public var maxLogLines: Int = 3000
     @Published public var statusBannerMessage: String?
     @Published public var activeStage: String = "Idle"
     @Published public var activeStageDetail: String = "Ready for Telegram requests"

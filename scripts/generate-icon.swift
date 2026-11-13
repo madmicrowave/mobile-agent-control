@@ -16,44 +16,60 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     path.lineWidth = max(1.0, size * 0.015)
     path.stroke()
 
-    let macFont = NSFont.systemFont(ofSize: size * 0.31, weight: .black)
-    let aiFont = NSFont.systemFont(ofSize: size * 0.165, weight: .black)
+    // Centered stacked layout:
+    // AI (top, blue, smaller font matching superscript)
+    // MAC (bottom, white, bold font)
+    let aiFont = NSFont.systemFont(ofSize: size * 0.175, weight: .black)
+    let macFont = NSFont.systemFont(ofSize: size * 0.32, weight: .black)
 
+    let aiAttrs: [NSAttributedString.Key: Any] = [
+        .font: aiFont,
+        .foregroundColor: NSColor(calibratedRed: 0.22, green: 0.74, blue: 0.98, alpha: 1.0),
+        .kern: size * 0.005
+    ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.white,
-        .kern: size * -0.01
-    ]
-    let aiAttrs: [NSAttributedString.Key: Any] = [
-        .font: aiFont,
-        .foregroundColor: NSColor(calibratedRed: 0.38, green: 0.72, blue: 1.0, alpha: 1.0),
-        .baselineOffset: size * 0.11,
-        .kern: size * -0.005
+        .kern: size * -0.015
     ]
 
-    let attrStr = NSMutableAttributedString(string: "MAC", attributes: macAttrs)
-    attrStr.append(NSAttributedString(string: "AI", attributes: aiAttrs))
-    let textSize = attrStr.size()
+    let aiStr = NSAttributedString(string: "AI", attributes: aiAttrs)
+    let macStr = NSAttributedString(string: "MAC", attributes: macAttrs)
 
-    let textRect = NSRect(
-        x: (size - textSize.width) / 2.0,
-        y: (size - textSize.height) / 2.0 + (size * 0.01),
-        width: textSize.width,
-        height: textSize.height
+    let aiSize = aiStr.size()
+    let macSize = macStr.size()
+
+    let gap = size * 0.018
+    let totalHeight = aiSize.height + gap + macSize.height
+    let startY = (size - totalHeight) / 2.0
+
+    // In Cocoa lockFocus, (0,0) is bottom-left: MAC at startY, AI at startY + macSize.height + gap
+    let macRect = NSRect(
+        x: (size - macSize.width) / 2.0,
+        y: startY,
+        width: macSize.width,
+        height: macSize.height
+    )
+    let aiRect = NSRect(
+        x: (size - aiSize.width) / 2.0,
+        y: startY + macSize.height + gap,
+        width: aiSize.width,
+        height: aiSize.height
     )
 
-    attrStr.draw(in: textRect)
+    macStr.draw(in: macRect)
+    aiStr.draw(in: aiRect)
 
     img.unlockFocus()
     return img
 }
 
-/// Generates a 72x32 px (@2x = 36x16 pt, 144 DPI) rounded-pill menu bar template icon
-/// with punched-out bold "MACᴬᴵ" big letters and superscript AI for the menu bar badge.
+/// Generates a 76x32 px (@2x = 38x16 pt, 144 DPI) rounded-pill menu bar template icon
+/// with punched-out inline "AI MAC" where AI is smaller font and both are vertically aligned.
 func saveMenuBarBadgePNG(path: String) {
-    let pixelWidth = 72
+    let pixelWidth = 76
     let pixelHeight = 32
-    let pointWidth: CGFloat = 36
+    let pointWidth: CGFloat = 38
     let pointHeight: CGFloat = 16
 
     guard let rep = NSBitmapImageRep(
@@ -70,7 +86,7 @@ func saveMenuBarBadgePNG(path: String) {
     ) else {
         fatalError("Failed to create NSBitmapImageRep for MenuBarIcon")
     }
-    // Setting size to 36x16 points encodes 144 DPI (@2x Retina) into the PNG!
+    // Setting size to 38x16 points encodes 144 DPI (@2x Retina) into the PNG!
     rep.size = NSSize(width: pointWidth, height: pointHeight)
 
     NSGraphicsContext.saveGraphicsState()
@@ -91,29 +107,30 @@ func saveMenuBarBadgePNG(path: String) {
     NSColor.black.setFill()
     pillPath.fill()
 
-    // Punch out "MACᴬᴵ" in bold black letters with superscript AI using .clear compositing
-    let macFont = NSFont.systemFont(ofSize: 9.6, weight: .black)
-    let aiFont = NSFont.systemFont(ofSize: 5.6, weight: .black)
+    // Punch out inline "AI MAC" where AI is smaller font and vertically centered with MAC
+    let aiFont = NSFont.systemFont(ofSize: 5.8, weight: .black)
+    let macFont = NSFont.systemFont(ofSize: 9.0, weight: .black)
+    let aiVerticalOffset = (macFont.capHeight - aiFont.capHeight) / 2.0
 
+    let aiAttrs: [NSAttributedString.Key: Any] = [
+        .font: aiFont,
+        .foregroundColor: NSColor.black,
+        .baselineOffset: aiVerticalOffset,
+        .kern: 0.1
+    ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.black,
         .kern: -0.3
     ]
-    let aiAttrs: [NSAttributedString.Key: Any] = [
-        .font: aiFont,
-        .foregroundColor: NSColor.black,
-        .baselineOffset: 3.2,
-        .kern: -0.2
-    ]
 
-    let attrStr = NSMutableAttributedString(string: "MAC", attributes: macAttrs)
-    attrStr.append(NSAttributedString(string: "AI", attributes: aiAttrs))
+    let attrStr = NSMutableAttributedString(string: "AI ", attributes: aiAttrs)
+    attrStr.append(NSAttributedString(string: "MAC", attributes: macAttrs))
     let textSize = attrStr.size()
 
     let textRect = NSRect(
         x: (pointWidth - textSize.width) / 2.0,
-        y: (pointHeight - textSize.height) / 2.0 + 0.15,
+        y: (pointHeight - textSize.height) / 2.0 + 0.2,
         width: textSize.width,
         height: textSize.height
     )

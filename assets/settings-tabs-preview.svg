@@ -20,7 +20,7 @@
   <circle cx="26" cy="24" r="6" fill="#ef4444"/>
   <circle cx="46" cy="24" r="6" fill="#f59e0b"/>
   <circle cx="66" cy="24" r="6" fill="#22c55e"/>
-  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc">MAC<tspan font-size="10" dy="-4" font-weight="800" fill="#38bdf8">AI</tspan><tspan font-size="14" dy="4" font-weight="700" fill="#f8fafc"> — Mobile Agent Control (Native macOS Settings &amp; Multi-Engine Setup)</tspan></text>
+  <text x="600" y="29" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" font-size="14" font-weight="700" fill="#f8fafc"><tspan font-size="11" font-weight="900" fill="#38bdf8">AI </tspan><tspan font-size="14" font-weight="700" fill="#f8fafc">MAC — Mobile Agent Control (Native macOS Settings &amp; Multi-Engine Setup)</tspan></text>
   <line x1="0" y1="46" x2="1200" y2="46" stroke="#334155"/>
 
   <!-- 4 App Tabs Showcase -->

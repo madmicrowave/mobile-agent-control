@@ -101,7 +101,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             button.image = iconImage
             button.imagePosition = .imageOnly
         } else {
-            button.title = "MACᴬᴵ"
+            button.title = "AI MAC"
         }
     }
 
@@ -267,7 +267,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             )
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "MACᴬᴵ — Mobile Agent Control"
+            window.title = "AI MAC — Mobile Agent Control"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 980, height: 700))
             window.minSize = NSSize(width: 800, height: 640)
