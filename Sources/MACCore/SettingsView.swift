@@ -3240,23 +3240,23 @@ private struct LiveActivityTabView: View {
                 TextField("Filter logs...", text: $vm.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11.5))
-                    .frame(width: 105)
-                if !vm.searchText.isEmpty {
-                    Button {
-                        vm.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                Button {
+                    vm.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
                 }
+                .buttonStyle(.plain)
+                .opacity(vm.searchText.isEmpty ? 0 : 1)
+                .disabled(vm.searchText.isEmpty)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.primary.opacity(0.04))
             .cornerRadius(6)
-            .fixedSize()
+            .frame(width: 150)
 
             Toggle(isOn: $vm.autoScroll) {
                 Text("Auto-scroll")
