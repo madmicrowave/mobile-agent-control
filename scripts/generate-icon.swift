@@ -16,21 +16,23 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     path.lineWidth = max(1.0, size * 0.015)
     path.stroke()
 
-    let text = "MAC"
-    let fontSize = size * 0.35
-    let font = NSFont.systemFont(ofSize: fontSize, weight: .black)
+    let macFont = NSFont.systemFont(ofSize: size * 0.31, weight: .black)
+    let aiFont = NSFont.systemFont(ofSize: size * 0.165, weight: .black)
 
-    let paragraphStyle = NSMutableParagraphStyle()
-    paragraphStyle.alignment = .center
-
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: font,
+    let macAttrs: [NSAttributedString.Key: Any] = [
+        .font: macFont,
         .foregroundColor: NSColor.white,
-        .paragraphStyle: paragraphStyle,
-        .kern: size * -0.012
+        .kern: size * -0.01
+    ]
+    let aiAttrs: [NSAttributedString.Key: Any] = [
+        .font: aiFont,
+        .foregroundColor: NSColor(calibratedRed: 0.38, green: 0.72, blue: 1.0, alpha: 1.0),
+        .baselineOffset: size * 0.11,
+        .kern: size * -0.005
     ]
 
-    let attrStr = NSAttributedString(string: text, attributes: attrs)
+    let attrStr = NSMutableAttributedString(string: "MAC", attributes: macAttrs)
+    attrStr.append(NSAttributedString(string: "AI", attributes: aiAttrs))
     let textSize = attrStr.size()
 
     let textRect = NSRect(
@@ -46,12 +48,12 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     return img
 }
 
-/// Generates a 64x32 px (@2x = 32x16 pt, 144 DPI) rounded-pill menu bar template icon
-/// with punched-out bold "MAC" big letters for the menu bar badge.
+/// Generates a 72x32 px (@2x = 36x16 pt, 144 DPI) rounded-pill menu bar template icon
+/// with punched-out bold "MACᴬᴵ" big letters and superscript AI for the menu bar badge.
 func saveMenuBarBadgePNG(path: String) {
-    let pixelWidth = 64
+    let pixelWidth = 72
     let pixelHeight = 32
-    let pointWidth: CGFloat = 32
+    let pointWidth: CGFloat = 36
     let pointHeight: CGFloat = 16
 
     guard let rep = NSBitmapImageRep(
@@ -68,7 +70,7 @@ func saveMenuBarBadgePNG(path: String) {
     ) else {
         fatalError("Failed to create NSBitmapImageRep for MenuBarIcon")
     }
-    // Setting size to 32x16 points encodes 144 DPI (@2x Retina) into the PNG!
+    // Setting size to 36x16 points encodes 144 DPI (@2x Retina) into the PNG!
     rep.size = NSSize(width: pointWidth, height: pointHeight)
 
     NSGraphicsContext.saveGraphicsState()
@@ -89,19 +91,24 @@ func saveMenuBarBadgePNG(path: String) {
     NSColor.black.setFill()
     pillPath.fill()
 
-    // Punch out "MAC" in big bold black-weight letters using .clear compositing
-    let text = "MAC"
-    let font = NSFont.systemFont(ofSize: 10.2, weight: .black)
-    let style = NSMutableParagraphStyle()
-    style.alignment = .center
+    // Punch out "MACᴬᴵ" in bold black letters with superscript AI using .clear compositing
+    let macFont = NSFont.systemFont(ofSize: 9.6, weight: .black)
+    let aiFont = NSFont.systemFont(ofSize: 5.6, weight: .black)
 
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: font,
+    let macAttrs: [NSAttributedString.Key: Any] = [
+        .font: macFont,
         .foregroundColor: NSColor.black,
-        .paragraphStyle: style,
-        .kern: -0.35
+        .kern: -0.3
     ]
-    let attrStr = NSAttributedString(string: text, attributes: attrs)
+    let aiAttrs: [NSAttributedString.Key: Any] = [
+        .font: aiFont,
+        .foregroundColor: NSColor.black,
+        .baselineOffset: 3.2,
+        .kern: -0.2
+    ]
+
+    let attrStr = NSMutableAttributedString(string: "MAC", attributes: macAttrs)
+    attrStr.append(NSAttributedString(string: "AI", attributes: aiAttrs))
     let textSize = attrStr.size()
 
     let textRect = NSRect(

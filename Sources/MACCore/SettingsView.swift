@@ -296,9 +296,17 @@ public struct MACSettingsRootView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text("MAC — Mobile Agent Control")
-                        .font(.system(size: 15, weight: .bold))
-                        .fixedSize()
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text("MAC")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                        Text("AI")
+                            .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                            .baselineOffset(5.5)
+                            .foregroundColor(.accentColor)
+                        Text(" — Mobile Agent Control")
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .fixedSize()
                     Text(appState.status.statusMenuTitle)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
@@ -2951,9 +2959,8 @@ private struct LiveActivityTabView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             headerBar
-            processStageCard
             filterAndControlsBar
             logConsoleBox
         }
@@ -2969,13 +2976,34 @@ private struct LiveActivityTabView: View {
             Text("Live App Logs")
                 .font(.system(size: 14.5, weight: .bold))
 
-            Text("\(appState.logLines.count) events")
-                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+            Menu {
+                Button("Buffer limit: 250 lines") {
+                    appState.maxLogLines = 250
+                    appState.trimLogsToMax()
+                }
+                Button("Buffer limit: 500 lines") {
+                    appState.maxLogLines = 500
+                    appState.trimLogsToMax()
+                }
+                Button("Buffer limit: 1,000 lines") {
+                    appState.maxLogLines = 1000
+                    appState.trimLogsToMax()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(appState.logLines.count) / \(appState.maxLogLines) max")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8))
+                }
                 .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.06))
                 .cornerRadius(5)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             Spacer()
 
@@ -2983,7 +3011,7 @@ private struct LiveActivityTabView: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Processing...")
+                    Text(appState.activeStage)
                         .font(.system(size: 11.5, weight: .semibold))
                         .foregroundColor(.accentColor)
                 }
@@ -2995,154 +3023,49 @@ private struct LiveActivityTabView: View {
         }
     }
 
-    private var processStageCard: some View {
-        HStack(spacing: 12) {
-            if appState.isTaskRunning {
-                ProgressView()
-                    .controlSize(.small)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(appState.activeStage)
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Active")
-                            .font(.system(size: 10.5, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.2))
-                            .foregroundColor(.accentColor)
-                            .cornerRadius(5)
-                    }
-                    Text(appState.activeStageDetail)
-                        .font(.system(size: 11.5))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            } else if appState.status.isRunningOrStarting {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 10, height: 10)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(appState.activeStage.isEmpty ? "Ready & Polling Telegram" : appState.activeStage)
-                            .font(.system(size: 13, weight: .bold))
-                        if case .running(let bot) = appState.status, let bot = bot, !bot.isEmpty {
-                            Text("@\(bot)")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.cyan)
-                        }
-                    }
-                    Text(appState.activeStageDetail.isEmpty ? "Listening for remote commands from your phone..." : appState.activeStageDetail)
-                        .font(.system(size: 11.5))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            } else {
-                Circle()
-                    .fill(Color.secondary)
-                    .frame(width: 10, height: 10)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Bot Controller Stopped")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.secondary)
-                    Text("Click 'Start...' (or 'Open App' from menu bar) to begin streaming.")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Spacer()
-
-            // Telemetry badges
-            HStack(spacing: 8) {
-                if let ws = appState.activeWorkspaceName ?? appState.config.workspaces.first?.label {
-                    HStack(spacing: 5) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 10.5))
-                            .foregroundColor(.accentColor)
-                        Text(ws)
-                            .font(.system(size: 11, weight: .semibold))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.05))
-                    .cornerRadius(6)
-                }
-
-                let currentModel = appState.activeModelName ?? appState.config.workspaces.first?.model ?? appState.config.defaultModel
-                if !currentModel.isEmpty {
-                    HStack(spacing: 5) {
-                        Image(systemName: "cpu.fill")
-                            .font(.system(size: 10.5))
-                            .foregroundColor(.purple)
-                        Text(currentModel)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.purple.opacity(0.12))
-                    .cornerRadius(6)
-                }
-
-                HStack(spacing: 5) {
-                    Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
-                        .font(.system(size: 10.5))
-                        .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
-                    Text(appState.isSleepPrevented ? "Sleep Prevented" : "Sleep Standby")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.primary.opacity(0.04))
-                .cornerRadius(6)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
-        )
-    }
-
     private var filterAndControlsBar: some View {
         HStack(spacing: 8) {
-            ForEach(MACLogCategory.allCases) { cat in
-                let isSelected = (vm.selectedCategory == cat)
-                Button {
-                    vm.selectedCategory = cat
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: cat.icon)
-                            .font(.system(size: 10.5, weight: .semibold))
-                        Text(cat.rawValue)
-                            .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
-                        Text("(\(countForCategory(cat)))")
-                            .font(.system(size: 10, design: .monospaced))
-                            .opacity(0.7)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(MACLogCategory.allCases) { cat in
+                        let isSelected = (vm.selectedCategory == cat)
+                        Button {
+                            vm.selectedCategory = cat
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: cat.icon)
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text(cat.rawValue)
+                                    .font(.system(size: 11.5, weight: isSelected ? .bold : .medium))
+                                    .lineLimit(1)
+                                Text("(\(countForCategory(cat)))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .opacity(0.7)
+                                    .lineLimit(1)
+                            }
+                            .lineLimit(1)
+                            .fixedSize()
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(isSelected ? cat.badgeColor : Color.primary.opacity(0.05))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(isSelected ? cat.badgeColor : Color.primary.opacity(0.08), lineWidth: 1)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
                     }
-                    .foregroundColor(isSelected ? .white : .primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isSelected ? cat.badgeColor : Color.primary.opacity(0.05))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(isSelected ? cat.badgeColor : Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 1)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -3151,7 +3074,7 @@ private struct LiveActivityTabView: View {
                 TextField("Filter logs...", text: $vm.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 11.5))
-                    .frame(width: 120)
+                    .frame(width: 105)
                 if !vm.searchText.isEmpty {
                     Button {
                         vm.searchText = ""
@@ -3167,10 +3090,16 @@ private struct LiveActivityTabView: View {
             .padding(.vertical, 4)
             .background(Color.primary.opacity(0.04))
             .cornerRadius(6)
+            .fixedSize()
 
-            Toggle("Auto-scroll", isOn: $vm.autoScroll)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 11.5))
+            Toggle(isOn: $vm.autoScroll) {
+                Text("Auto-scroll")
+                    .font(.system(size: 11.5))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .toggleStyle(.checkbox)
+            .fixedSize()
 
             Button {
                 let pb = NSPasteboard.general
@@ -3179,6 +3108,7 @@ private struct LiveActivityTabView: View {
                 pb.setString(textToCopy, forType: .string)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
+                    .lineLimit(1)
             }
             .controlSize(.small)
             .disabled(filteredLines.isEmpty)
@@ -3188,6 +3118,7 @@ private struct LiveActivityTabView: View {
                 appState.clearLogs()
             } label: {
                 Label("Clear", systemImage: "trash")
+                    .lineLimit(1)
             }
             .controlSize(.small)
             .disabled(appState.logLines.isEmpty)
