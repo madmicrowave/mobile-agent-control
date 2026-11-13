@@ -50,7 +50,8 @@ import {
 import {
   BotController,
   REPLY_BTN_SETTINGS,
-  REPLY_BTN_SWITCH_IDE
+  REPLY_BTN_SWITCH_IDE,
+  REPLY_BTN_SWITCH_WORKSPACE
 } from '../src/bot-controller.mjs';
 import { PassThrough } from 'node:stream';
 import {
@@ -1232,6 +1233,62 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(!sameChatBtns.some((b) => b.callback_data === 'ide:menu'));
 
     // Reset back to New Chat for the next test
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+  });
+
+  it('deletes latest workspaces and draws again when clicking workspaces while already in workspaces (refresh)', async () => {
+    // 1. Initial invocation shows workspaces menu
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeUserMsg('/workspaces'));
+    const firstMenu = mockTg.lastSent();
+    assert.match(firstMenu.text, /Select a Workspace/);
+    const firstMenuMsgId = firstMenu.message_id;
+    assert.ok(firstMenuMsgId);
+
+    // 2. User is already in workspaces and clicks "🔀 Workspace"
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE));
+    const secondMenu = mockTg.lastSent();
+    assert.match(secondMenu.text, /Select a Workspace/);
+    const secondMenuMsgId = secondMenu.message_id;
+    assert.notEqual(firstMenuMsgId, secondMenuMsgId);
+
+    // The first workspace menu message MUST have been deleted!
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === firstMenuMsgId),
+      'Expected first workspace menu message to be deleted on refresh'
+    );
+
+    // 3. User clicks "🔀 Workspace" again (another refresh)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE));
+    const thirdMenu = mockTg.lastSent();
+    assert.match(thirdMenu.text, /Select a Workspace/);
+    const thirdMenuMsgId = thirdMenu.message_id;
+    assert.notEqual(secondMenuMsgId, thirdMenuMsgId);
+
+    // The second workspace menu message MUST have been deleted!
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === secondMenuMsgId),
+      'Expected second workspace menu message to be deleted on second refresh'
+    );
+
+    // 4. User selects a workspace -> transitions away from workspaces
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    assert.match(mockTg.lastSent().text, /Workspace Selected/);
+
+    // 5. User clicks "🔀 Workspace" while in workspace details -> should NOT delete (not already in workspaces)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg(REPLY_BTN_SWITCH_WORKSPACE));
+    assert.match(mockTg.lastSent().text, /Select a Workspace/);
+    // None of the previous messages should be deleted here
+    assert.equal(mockTg.deletedMessages.length, 0);
+
+    // Reset back to New Chat for subsequent tests
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));
   });
 

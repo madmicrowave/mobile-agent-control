@@ -698,7 +698,10 @@ export class ConfigStore {
         unlockedAt: null,
         selectedWorkspaceId: null,
         inputMode: null,
-        inputTargetWsId: null
+        inputTargetWsId: null,
+        currentView: null,
+        lastWorkspaceMenuMessageId: null,
+        lastWorkspaceMenuChatId: null
       };
     }
     const sess = this.state.userSessions[key];
@@ -730,6 +733,9 @@ export class ConfigStore {
     sess.unlockedRunId = null;
     sess.inputMode = null;
     sess.inputTargetWsId = null;
+    sess.currentView = null;
+    sess.lastWorkspaceMenuMessageId = null;
+    sess.lastWorkspaceMenuChatId = null;
   }
 
   verifyPassword(candidate) {

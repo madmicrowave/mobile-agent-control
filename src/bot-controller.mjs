@@ -106,6 +106,9 @@ export class BotController {
     /** @type {Map<string, { atMs: number, mediaGroupId: string | null }>} */
     this.lastGateNoticeByWs = new Map();
 
+    /** @type {Map<string, { messageId: number, userId: string | number }>} */
+    this.lastWorkspaceMenuByChat = new Map();
+
     /** @type {Set<Promise<unknown>>} */
     this.activePromises = new Set();
   }
@@ -406,6 +409,7 @@ export class BotController {
 
     if (text === '/lock') {
       this.configStore.lockUser(userId);
+      this.lastWorkspaceMenuByChat.delete(chatId);
       await this.configStore.saveState();
       await this.telegram.sendMessage({
         chatId,
@@ -443,6 +447,9 @@ export class BotController {
     }
 
     if (text === '/model' || text.startsWith('/setmodel ')) {
+      sess.currentView = 'MODEL';
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
         await this.sendSettingsAndRegisterMenu(chatId, userId);
         return;
@@ -464,6 +471,9 @@ export class BotController {
         await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first to view messages:');
         return;
       }
+      sess.currentView = 'HISTORY';
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
       await this.sendLatestMessagesForWorkspace(chatId, sess.selectedWorkspaceId);
       return;
     }
@@ -473,6 +483,9 @@ export class BotController {
         await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
         return;
       }
+      sess.currentView = 'NEW_CHAT';
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
       await this.activateNewChat(chatId, sess.selectedWorkspaceId);
       return;
     }
@@ -483,6 +496,9 @@ export class BotController {
       await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
       return;
     }
+    sess.currentView = 'CHAT';
+    sess.lastWorkspaceMenuMessageId = null;
+    this.lastWorkspaceMenuByChat.delete(chatId);
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
@@ -878,6 +894,11 @@ export class BotController {
 
     await this.telegram.answerCallbackQuery(cbId);
     const sess = this.configStore.getUserSession(userId);
+    if (data !== 'ide:menu') {
+      sess.currentView = 'WORKSPACE_ACTION';
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
+    }
 
     try {
       if (data === 'ide:menu') {
@@ -1207,6 +1228,22 @@ export class BotController {
   // ── Menus: Select / Switch Workspaces & Per-Workspace AI Model Settings ────
   async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select a Workspace:</b>') {
     const sess = this.configStore.getUserSession(userId);
+
+    const prevMenuMessageId =
+      sess.lastWorkspaceMenuMessageId || this.lastWorkspaceMenuByChat.get(chatId)?.messageId;
+    const isAlreadyInWorkspaces = sess.currentView === 'WORKSPACES' && Boolean(prevMenuMessageId);
+
+    if (isAlreadyInWorkspaces) {
+      const delChatId = sess.lastWorkspaceMenuChatId || chatId;
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
+      try {
+        await this.telegram.deleteMessage(delChatId, prevMenuMessageId);
+      } catch {
+        // Ignore if already deleted or expired
+      }
+    }
+
     const rows = [];
     const workspaces = this.configStore.config.workspaces || [];
 
@@ -1231,7 +1268,7 @@ export class BotController {
       rows.push([settingsBtn]);
     }
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text:
         workspaces.length > 0
@@ -1239,10 +1276,21 @@ export class BotController {
           : `No Workspaces configured yet.\n\nOpen <b>MAC → Settings</b> in your macOS menu bar to add a Workspace.`,
       replyMarkup: { inline_keyboard: rows }
     });
+
+    if (sent?.message_id) {
+      sess.currentView = 'WORKSPACES';
+      sess.lastWorkspaceMenuMessageId = sent.message_id;
+      sess.lastWorkspaceMenuChatId = chatId;
+      this.lastWorkspaceMenuByChat.set(chatId, { messageId: sent.message_id, userId });
+      await this.configStore.saveState();
+    }
   }
 
   async sendSettingsAndRegisterMenu(chatId, userId) {
     const sess = this.configStore.getUserSession(userId);
+    sess.currentView = 'SETTINGS';
+    sess.lastWorkspaceMenuMessageId = null;
+    this.lastWorkspaceMenuByChat.delete(chatId);
     const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
     const allWorkspaces = this.configStore.config.workspaces || [];
 
@@ -1464,6 +1512,9 @@ export class BotController {
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     sess.selectedWorkspaceId = ws.id;
+    sess.currentView = 'WORKSPACE_DETAIL';
+    sess.lastWorkspaceMenuMessageId = null;
+    this.lastWorkspaceMenuByChat.delete(chatId);
 
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -1564,6 +1615,9 @@ export class BotController {
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     sess.selectedWorkspaceId = ws.id;
+    sess.currentView = 'WORKSPACE_DETAIL';
+    sess.lastWorkspaceMenuMessageId = null;
+    this.lastWorkspaceMenuByChat.delete(chatId);
 
     const st = this.configStore.getWorkspaceState(ws.id);
     if (!st.conversationId) {
