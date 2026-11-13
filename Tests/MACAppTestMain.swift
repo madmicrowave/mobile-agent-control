@@ -107,6 +107,39 @@ private func testConfigStoreRoundTrip() throws {
         migratedReloaded.antigravityBrainDir == MACPathUtils.defaultBrainDir(),
         "Expected legacy Desktop IDE brain dir to auto-migrate to .gemini/antigravity-cli/brain, got \(migratedReloaded.antigravityBrainDir)"
     )
+
+    // Directory paths (like /opt/homebrew/bin or /usr/local/bin) must NOT be considered executable binaries
+    expect(
+        MACPathUtils.isExecutableAvailable("/opt/homebrew/bin") == false,
+        "Directory path /opt/homebrew/bin must not be treated as executable binary"
+    )
+    expect(
+        MACPathUtils.isExecutableAvailable("/usr/local/bin") == false,
+        "Directory path /usr/local/bin must not be treated as executable binary"
+    )
+
+    // Uninstalled / non-resolvable default CLI paths must return empty string
+    if !MACPathUtils.isExecutableAvailable("codex") {
+        expect(MACPathUtils.defaultCodexBin() == "", "Uninstalled codex must return empty string")
+    }
+    if !MACPathUtils.isExecutableAvailable("cloud-code") {
+        expect(MACPathUtils.defaultCloudCodeBin() == "", "Uninstalled cloud-code must return empty string")
+    }
+
+    // Corrupted or invalid directory paths in config.json must be cleaned up to empty string on load
+    var dirInCfg = singleReloaded
+    dirInCfg.aiderBin = "/opt/homebrew/bin"
+    dirInCfg.codexBin = "codex"
+    dirInCfg.cloudCodeBin = "cloud-code"
+    try store.save(dirInCfg)
+    let cleanedReloaded = store.load()
+    expect(cleanedReloaded.aiderBin == "", "Invalid directory aiderBin must reset to empty string")
+    if !MACPathUtils.isExecutableAvailable("codex") {
+        expect(cleanedReloaded.codexBin == "", "Uninstalled codex must reset to empty string")
+    }
+    if !MACPathUtils.isExecutableAvailable("cloud-code") {
+        expect(cleanedReloaded.cloudCodeBin == "", "Uninstalled cloud-code must reset to empty string")
+    }
     print("✓ MACConfigFileStore atomic 0600 save/load round-trip & CLI brain dir migration passed")
 }
 

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./assets/banner.png" alt="Mobile Agent Control (mac.app / MAC) — Open-Source Native macOS Application to Control AI Coding Workspaces, Git &amp; Jenkins CI/CD via Telegram" width="100%" />
+<img src="./assets/banner.png" alt="Mobile Agent Control (mac.app / AI MAC) — Open-Source Native macOS Application to Control AI Coding Workspaces, Git &amp; Jenkins CI/CD via Telegram" width="100%" />
 
-# Mobile Agent Control (`mac.app` / `MAC`) — Native macOS App for Telegram AI Coding
+# Mobile Agent Control (`mac.app` / <small>AI</small> MAC) — Native macOS App for Telegram AI Coding
 
 **Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen, and Personal Local Models via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production CI/CD (Jenkins, GitHub, Google Cloud Build) straight from Telegram.**
 
@@ -139,7 +139,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
 
 ### 2. Configure `General` & `Workspaces` Inside `mac.app`
 
-1. **Click `MAC` in Menu Bar → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
+1. **Click `<small>AI</small> MAC` in Menu Bar → `Open App`** *(shows `mac.app` in your bottom Dock while open)*:
    - In the **`General`** tab (organized into 3 clear cards):
      - **1. AI Engines & Models**:
        - *Default Model & Effort*: Choose your default model family (e.g. `Gemini 3.8 Flash`, `Claude 3.7 Sonnet`, `DeepSeek V3`, `Qwen 2.5 Coder`) and effort level (`low`, `medium`, `high`).
@@ -153,7 +153,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
    - Enter a **Workspace Label** (e.g. `FRONTEND`, `BACKEND API`), click **Browse...** to pick your project folder, and click **Re-Scan**.
    - Select the Workspace's **AI Execution Engine** (**AGY CLI** [default], **Aider CLI**, **Codex CLI**, **Cloud Code**, or **Direct API**) and **AI Model & Effort Level** (e.g. `Gemini 4 Carbon (high)`, `DeepSeek V3`, `Claude 3.7 Sonnet`, `OpenAI GPT-4o`, `Qwen 2.5 Coder`, or Local models).
    - Choose **Git-only** or **CI/CD Deployment** (**Jenkins**, **GitHub**, or **Google Cloud**) and Environment Mode (**Single** or **Multi: Staging → Production**), then click **Save** (or **Create** for a new Workspace).
-3. **Click `MAC` → `Start...`**:
+3. **Click `<small>AI</small> MAC` → `Start...`**:
    - Set a fresh **session password** for this run (kept strictly in RAM, never written to disk).
    - Open your Telegram bot, send `/start`, and reply once with the session password (auto-deleted from chat). You are ready to code remotely!
 
@@ -161,16 +161,17 @@ The local model reasons, inspects files, applies changes, and returns a formatte
 
 ## macOS Menu Bar Controls & 4 App Tabs
 
-Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
+Clicking the **`<small>AI</small> MAC`** menu bar icon provides instant lifecycle control:
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
-| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Logs**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `MAC` running in the background. |
+| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Logs**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `<small>AI</small> MAC` running in the background. |
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts outbound Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot process, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and releases the macOS sleep assertion so your Mac sleeps normally again. |
-| **`Start Automatically at Login`** | Manages `~/Library/LaunchAgents/com.domonk.mac.plist` so `MAC` starts automatically whenever you log in to macOS. |
+| **`Start Automatically at Login`** | Manages `~/Library/LaunchAgents/com.domonk.mac.plist` so `<small>AI</small> MAC` starts automatically whenever you log in to macOS. |
 | **`About`** | Opens the native **DOMONK Factory** About panel with a clickable link to [https://domonk.com](https://domonk.com). |
+| **`Quit AI MAC`** | Stops the bot, removes all sleep prevention assertions, and terminates `mac.app` completely (`⌘Q`). |
 
 ### Inside the 4 `mac.app` Window Tabs
 
@@ -180,7 +181,7 @@ Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
    - **3. CI/CD Deployment**: Sub-tabs for **Jenkins** (server URL, user, API token, timeout), **GitHub** (PAT token, default owner/org), and **Google Cloud Build** (Project ID, key JSON/token, region) with live connection test buttons and status indicators.
 2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Aider CLI`, `Codex CLI`, `Cloud Code`, `Direct API`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
-4. **`🖥 Live Logs`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
+4. **`🖥 Live Logs`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[AI MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
 
 <div align="center">
   <img src="./assets/macos-live-logs-tab.png" alt="mac.app Live Logs — Real-time Multi-Colored Telemetry &amp; Process Stage Loaders" width="85%" />
@@ -191,7 +192,7 @@ Clicking the **`MAC`** menu bar icon provides instant lifecycle control:
 ## Controlling Workspaces via Telegram
 
 ```text
-Click [MAC] in Menu Bar -> "Start..." -> Enter RAM-Only Session Password
+Click [AI MAC] in Menu Bar -> "Start..." -> Enter RAM-Only Session Password
    │  (MacBook sleep prevention automatically active while running)
    ▼
 Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
@@ -244,7 +245,7 @@ Open Bot in Telegram (/start) -> Send Session Password (auto-deleted from chat)
 | Capability | Mobile Agent Control (`mac.app`) | SSH / Mobile Terminal | Cloud Agent Sandboxes |
 | :--- | :--- | :--- | :--- |
 | **Multi-Provider AI** | ✅ Gemini, Claude, DeepSeek, OpenAI, Qwen (CLI + Direct API) | ❌ Complex script setup | ⚠️ Vendor locked |
-| **macOS Experience** | ✅ Native SwiftUI menu bar (`MAC`) + Dock window | ❌ Manual SSH, `tmux` & `caffeinate` | ⚠️ Browser-only |
+| **macOS Experience** | ✅ Native SwiftUI menu bar (`<small>AI</small> MAC`) + Dock window | ❌ Manual SSH, `tmux` & `caffeinate` | ⚠️ Browser-only |
 | **Network Security** | ✅ Outbound Telegram HTTPS polling (zero open ports) | ❌ Requires VPN / Tailscale / port forward | ⚠️ Source code leaves your Mac |
 | **Real Local Workspaces** | ✅ Shares live Desktop chats, local monorepos & files | ✅ Local shell | ❌ Isolated remote container |
 | **Git & CI/CD Iteration**| ✅ "Add Fix", auto-revert & AI error recovery from phone | ❌ Clunky CLI typing | ⚠️ No local LAN Jenkins access |
@@ -312,7 +313,7 @@ No. <code>mac.app</code> uses outbound HTTPS long-polling (<code>getUpdates</cod
 <details>
 <summary><b>What happens when I click <code>Open App</code> vs closing the window with <code>✕</code>?</b></summary>
 <br />
-Clicking <b>Open App</b> in the <b>MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b>MAC</b> running in the menu bar.
+Clicking <b>Open App</b> in the <b><small>AI</small> MAC</b> menu bar icon opens the 4-tab window and temporarily places <b>mac.app</b> in your bottom macOS Dock so you can switch to it easily while working. Clicking the red <b>✕</b> close button hides the window and removes the Dock icon while keeping <b><small>AI</small> MAC</b> running in the menu bar.
 </details>
 
 <details>

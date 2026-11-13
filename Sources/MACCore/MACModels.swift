@@ -457,7 +457,12 @@ public struct MACConfig: Codable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.agyBin = try c.decodeIfPresent(String.self, forKey: .agyBin) ?? MACPathUtils.defaultAgyBin()
+        let decodedAgy = (try c.decodeIfPresent(String.self, forKey: .agyBin) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !decodedAgy.isEmpty && decodedAgy != "agy" && MACPathUtils.isExecutableAvailable(decodedAgy) {
+            self.agyBin = decodedAgy
+        } else {
+            self.agyBin = MACPathUtils.defaultAgyBin()
+        }
         let decodedAider = (try c.decodeIfPresent(String.self, forKey: .aiderBin) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !decodedAider.isEmpty && decodedAider != "aider" && MACPathUtils.isExecutableAvailable(decodedAider) {
             self.aiderBin = decodedAider
@@ -505,20 +510,34 @@ public struct MACConfig: Codable, Equatable {
 }
 
 public enum MACPathUtils {
+    public static func isExecutableFileOnDisk(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else {
+            return false
+        }
+        return FileManager.default.isExecutableFile(atPath: path)
+    }
+
     public static func defaultAgyBin() -> String {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/agy").path
-        return FileManager.default.fileExists(atPath: local) ? local : "agy"
+        if isExecutableFileOnDisk(local) { return local }
+        let brew = "/opt/homebrew/bin/agy"
+        if isExecutableFileOnDisk(brew) { return brew }
+        let usrLocal = "/usr/local/bin/agy"
+        if isExecutableFileOnDisk(usrLocal) { return usrLocal }
+        if let found = findExecutableInPath("agy") { return found }
+        return ""
     }
 
     public static func defaultAiderBin() -> String {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/aider").path
-        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
+        if isExecutableFileOnDisk(local) { return local }
         let brew = "/opt/homebrew/bin/aider"
-        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        if isExecutableFileOnDisk(brew) { return brew }
         let usrLocal = "/usr/local/bin/aider"
-        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if isExecutableFileOnDisk(usrLocal) { return usrLocal }
         if let found = findExecutableInPath("aider") { return found }
         return ""
     }
@@ -526,25 +545,25 @@ public enum MACPathUtils {
     public static func defaultCodexBin() -> String {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/codex").path
-        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
+        if isExecutableFileOnDisk(local) { return local }
         let brew = "/opt/homebrew/bin/codex"
-        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        if isExecutableFileOnDisk(brew) { return brew }
         let usrLocal = "/usr/local/bin/codex"
-        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if isExecutableFileOnDisk(usrLocal) { return usrLocal }
         if let found = findExecutableInPath("codex") { return found }
-        return "codex"
+        return ""
     }
 
     public static func defaultCloudCodeBin() -> String {
         let local = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/cloud-code").path
-        if FileManager.default.fileExists(atPath: local) && FileManager.default.isExecutableFile(atPath: local) { return local }
+        if isExecutableFileOnDisk(local) { return local }
         let brew = "/opt/homebrew/bin/cloud-code"
-        if FileManager.default.fileExists(atPath: brew) && FileManager.default.isExecutableFile(atPath: brew) { return brew }
+        if isExecutableFileOnDisk(brew) { return brew }
         let usrLocal = "/usr/local/bin/cloud-code"
-        if FileManager.default.fileExists(atPath: usrLocal) && FileManager.default.isExecutableFile(atPath: usrLocal) { return usrLocal }
+        if isExecutableFileOnDisk(usrLocal) { return usrLocal }
         if let found = findExecutableInPath("cloud-code") { return found }
-        return "cloud-code"
+        return ""
     }
 
     public static func isExecutableAvailable(_ pathOrCommand: String) -> Bool {
@@ -552,7 +571,7 @@ public enum MACPathUtils {
         guard !trimmed.isEmpty else { return false }
         let expanded = expandPath(trimmed)
         if expanded.contains("/") {
-            return FileManager.default.fileExists(atPath: expanded) && FileManager.default.isExecutableFile(atPath: expanded)
+            return isExecutableFileOnDisk(expanded)
         }
         return findExecutableInPath(trimmed) != nil
     }
@@ -562,10 +581,7 @@ public enum MACPathUtils {
         guard !trimmed.isEmpty else { return nil }
         let expanded = expandPath(trimmed)
         if expanded.contains("/") {
-            if FileManager.default.fileExists(atPath: expanded) && FileManager.default.isExecutableFile(atPath: expanded) {
-                return expanded
-            }
-            return nil
+            return isExecutableFileOnDisk(expanded) ? expanded : nil
         }
         let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
         var searchDirs = envPath.split(separator: ":").map(String.init)
@@ -581,7 +597,7 @@ public enum MACPathUtils {
         }
         for dir in searchDirs {
             let candidate = URL(fileURLWithPath: dir).appendingPathComponent(trimmed).path
-            if FileManager.default.fileExists(atPath: candidate) && FileManager.default.isExecutableFile(atPath: candidate) {
+            if isExecutableFileOnDisk(candidate) {
                 return candidate
             }
         }

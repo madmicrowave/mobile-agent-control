@@ -719,28 +719,34 @@ export async function runConfigureAiEnginesWizard({
     cfg.agyBin = expandUserPath(agyAns);
   }
 
-  const curAider = cfg.aiderBin || 'aider';
+  const curAider = cfg.aiderBin || '';
   const aiderAns = (
-    await ask(`${p(4, 'Aider CLI Binary Path (aider)')} [${curAider}]: `)
+    await ask(`${p(4, 'Aider CLI Binary Path (aider)')} [${curAider || 'none'}]: `)
   ).trim();
-  if (aiderAns) {
+  if (aiderAns === '-' || aiderAns.toLowerCase() === 'none') {
+    cfg.aiderBin = '';
+  } else if (aiderAns) {
     cfg.aiderBin = expandUserPath(aiderAns);
   }
 
   if (cfg.agentEngine === 'codex') {
-    const curCodex = cfg.codexBin || 'codex';
+    const curCodex = cfg.codexBin || '';
     const codexAns = (
-      await ask(`${p(5, 'OpenAI Codex CLI Binary Path (codex)')} [${curCodex}]: `)
+      await ask(`${p(5, 'OpenAI Codex CLI Binary Path (codex)')} [${curCodex || 'none'}]: `)
     ).trim();
-    if (codexAns) {
+    if (codexAns === '-' || codexAns.toLowerCase() === 'none') {
+      cfg.codexBin = '';
+    } else if (codexAns) {
       cfg.codexBin = expandUserPath(codexAns);
     }
   } else if (cfg.agentEngine === 'cloudcode') {
-    const curCloudCode = cfg.cloudCodeBin || 'cloud-code';
+    const curCloudCode = cfg.cloudCodeBin || '';
     const cloudCodeAns = (
-      await ask(`${p(5, 'Google Cloud Code CLI Binary Path (cloud-code)')} [${curCloudCode}]: `)
+      await ask(`${p(5, 'Google Cloud Code CLI Binary Path (cloud-code)')} [${curCloudCode || 'none'}]: `)
     ).trim();
-    if (cloudCodeAns) {
+    if (cloudCodeAns === '-' || cloudCodeAns.toLowerCase() === 'none') {
+      cfg.cloudCodeBin = '';
+    } else if (cloudCodeAns) {
       cfg.cloudCodeBin = expandUserPath(cloudCodeAns);
     }
   }

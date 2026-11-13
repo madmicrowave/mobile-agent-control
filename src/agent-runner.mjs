@@ -441,23 +441,37 @@ export function runDirectApiTurn({
 }
 
 /**
+ * Checks whether a path points to an executable regular file (not a directory).
+ */
+export function isExecutableFile(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return false;
+  try {
+    const s = fs.statSync(targetPath);
+    return s.isFile() && (s.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolves local aider binary if installed, or returns empty string if not found.
  */
 export function resolveDefaultAiderBin() {
   const home = os.homedir();
   const candidates = [
     path.join(home, '.local', 'bin', 'aider'),
+    '/opt/homebrew/bin', // note: check child aider below
     '/opt/homebrew/bin/aider',
     '/usr/local/bin/aider'
   ];
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    if (isExecutableFile(c)) return c;
   }
   return '';
 }
 
 /**
- * Resolves local codex binary if installed, or returns 'codex'.
+ * Resolves local codex binary if installed, or returns empty string if not found.
  */
 export function resolveDefaultCodexBin() {
   const home = os.homedir();
@@ -467,13 +481,13 @@ export function resolveDefaultCodexBin() {
     '/usr/local/bin/codex'
   ];
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    if (isExecutableFile(c)) return c;
   }
-  return 'codex';
+  return '';
 }
 
 /**
- * Resolves local cloud-code binary if installed, or returns 'cloud-code'.
+ * Resolves local cloud-code binary if installed, or returns empty string if not found.
  */
 export function resolveDefaultCloudCodeBin() {
   const home = os.homedir();
@@ -483,9 +497,9 @@ export function resolveDefaultCloudCodeBin() {
     '/usr/local/bin/cloud-code'
   ];
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    if (isExecutableFile(c)) return c;
   }
-  return 'cloud-code';
+  return '';
 }
 
 /**

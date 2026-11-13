@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { resolveDefaultAgyBin } from './agy-runner.mjs';
-import { resolveDefaultAiderBin, resolveDefaultCodexBin, resolveDefaultCloudCodeBin } from './agent-runner.mjs';
+import { isExecutableFile, resolveDefaultAiderBin, resolveDefaultCodexBin, resolveDefaultCloudCodeBin } from './agent-runner.mjs';
 
 export const INITIAL_WORKSPACES_SEED = [];
 
@@ -260,17 +260,17 @@ export class ConfigStore {
     if (!this.config.defaultHistoryCount) {
       this.config.defaultHistoryCount = Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6;
     }
-    if (!this.config.agyBin) {
-      this.config.agyBin = process.env.AGY_BIN || resolveDefaultAgyBin();
+    if (!this.config.agyBin || !isExecutableFile(this.config.agyBin)) {
+      this.config.agyBin = isExecutableFile(process.env.AGY_BIN) ? process.env.AGY_BIN : resolveDefaultAgyBin();
     }
-    if (this.config.aiderBin === undefined || this.config.aiderBin === 'aider') {
-      this.config.aiderBin = process.env.AIDER_BIN || resolveDefaultAiderBin();
+    if (this.config.aiderBin === undefined || this.config.aiderBin === 'aider' || !isExecutableFile(this.config.aiderBin)) {
+      this.config.aiderBin = isExecutableFile(process.env.AIDER_BIN) ? process.env.AIDER_BIN : resolveDefaultAiderBin();
     }
-    if (this.config.codexBin === undefined || this.config.codexBin === 'codex') {
-      this.config.codexBin = process.env.CODEX_BIN || resolveDefaultCodexBin();
+    if (this.config.codexBin === undefined || this.config.codexBin === 'codex' || !isExecutableFile(this.config.codexBin)) {
+      this.config.codexBin = isExecutableFile(process.env.CODEX_BIN) ? process.env.CODEX_BIN : resolveDefaultCodexBin();
     }
-    if (this.config.cloudCodeBin === undefined || this.config.cloudCodeBin === 'cloud-code') {
-      this.config.cloudCodeBin = process.env.CLOUD_CODE_BIN || resolveDefaultCloudCodeBin();
+    if (this.config.cloudCodeBin === undefined || this.config.cloudCodeBin === 'cloud-code' || !isExecutableFile(this.config.cloudCodeBin)) {
+      this.config.cloudCodeBin = isExecutableFile(process.env.CLOUD_CODE_BIN) ? process.env.CLOUD_CODE_BIN : resolveDefaultCloudCodeBin();
     }
     if (!this.config.agentEngine || this.config.agentEngine === 'auto') {
       this.config.agentEngine = process.env.AGENT_ENGINE || 'agy';
@@ -493,10 +493,10 @@ export class ConfigStore {
         telegramApiBaseUrl: process.env.TELEGRAM_API_BASE_URL || 'https://api.telegram.org',
         allowedUserIds: parseAllowedUserIds(process.env.ALLOWED_TELEGRAM_USER_IDS),
         defaultHistoryCount: Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6,
-        agyBin: process.env.AGY_BIN || resolveDefaultAgyBin(),
-        aiderBin: process.env.AIDER_BIN || resolveDefaultAiderBin(),
-        codexBin: process.env.CODEX_BIN || resolveDefaultCodexBin(),
-        cloudCodeBin: process.env.CLOUD_CODE_BIN || resolveDefaultCloudCodeBin(),
+        agyBin: isExecutableFile(process.env.AGY_BIN) ? process.env.AGY_BIN : resolveDefaultAgyBin(),
+        aiderBin: isExecutableFile(process.env.AIDER_BIN) ? process.env.AIDER_BIN : resolveDefaultAiderBin(),
+        codexBin: isExecutableFile(process.env.CODEX_BIN) ? process.env.CODEX_BIN : resolveDefaultCodexBin(),
+        cloudCodeBin: isExecutableFile(process.env.CLOUD_CODE_BIN) ? process.env.CLOUD_CODE_BIN : resolveDefaultCloudCodeBin(),
         agentEngine: process.env.AGENT_ENGINE || 'agy',
         deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
         openaiApiKey: process.env.OPENAI_API_KEY || '',

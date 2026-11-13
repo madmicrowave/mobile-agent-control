@@ -410,9 +410,9 @@ private final class GeneralTabVM: ObservableObject {
 
     // 3. AI Agent Runners & Models (Tabs: AGY CLI, Aider CLI, Codex CLI, Cloud Code, Direct API)
     @Published var agyBinPath: String = ""
-    @Published var aiderBinPath: String = "aider"
-    @Published var codexBinPath: String = "codex"
-    @Published var cloudCodeBinPath: String = "cloud-code"
+    @Published var aiderBinPath: String = ""
+    @Published var codexBinPath: String = ""
+    @Published var cloudCodeBinPath: String = ""
     @Published var agentEngine: String = "agy"
     @Published var selectedEngineTab: String = "agy" // "agy", "aider", "codex", "cloudcode", "direct-api"
     @Published var selectedDirectApiSubtab: String = "deepseek" // "deepseek", "openai", "anthropic", "qwen", "custom"
@@ -1092,7 +1092,7 @@ private struct GeneralTabView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(spacing: 8) {
-                    TextField("/Users/you/.local/bin/agy", text: $vm.agyBinPath)
+                    TextField("e.g. ~/.local/bin/agy (leave empty if not installed)", text: $vm.agyBinPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.agyBinPath, prompt: "Select agy Binary") {
@@ -1132,7 +1132,7 @@ private struct GeneralTabView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(spacing: 8) {
-                    TextField("e.g. /usr/local/bin/aider (or pip install aider-chat)", text: $vm.aiderBinPath)
+                    TextField("e.g. /usr/local/bin/aider (leave empty if not installed)", text: $vm.aiderBinPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.aiderBinPath, prompt: "Select aider Binary") {
@@ -1172,7 +1172,7 @@ private struct GeneralTabView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(spacing: 8) {
-                    TextField("codex", text: $vm.codexBinPath)
+                    TextField("e.g. /usr/local/bin/codex (leave empty if not installed)", text: $vm.codexBinPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.codexBinPath, prompt: "Select codex Binary") {
@@ -1212,7 +1212,7 @@ private struct GeneralTabView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(spacing: 8) {
-                    TextField("cloud-code", text: $vm.cloudCodeBinPath)
+                    TextField("e.g. /usr/local/bin/cloud-code (leave empty if not installed)", text: $vm.cloudCodeBinPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") {
                         if let chosen = chooseExecutableFile(initialPath: vm.cloudCodeBinPath, prompt: "Select cloud-code Binary") {
@@ -1511,25 +1511,20 @@ private struct GeneralTabView: View {
         appState.config.defaultHistoryCount = vm.historyCount
 
         let cleanAgy = MACPathUtils.expandPath(vm.agyBinPath)
-        if !cleanAgy.isEmpty {
-            appState.config.agyBin = cleanAgy
-            vm.agyBinPath = cleanAgy
-        }
+        appState.config.agyBin = cleanAgy
+        vm.agyBinPath = cleanAgy
+
         let cleanAider = MACPathUtils.expandPath(vm.aiderBinPath)
-        if !cleanAider.isEmpty {
-            appState.config.aiderBin = cleanAider
-            vm.aiderBinPath = cleanAider
-        }
+        appState.config.aiderBin = cleanAider
+        vm.aiderBinPath = cleanAider
+
         let cleanCodex = MACPathUtils.expandPath(vm.codexBinPath)
-        if !cleanCodex.isEmpty {
-            appState.config.codexBin = cleanCodex
-            vm.codexBinPath = cleanCodex
-        }
+        appState.config.codexBin = cleanCodex
+        vm.codexBinPath = cleanCodex
+
         let cleanCloudCode = MACPathUtils.expandPath(vm.cloudCodeBinPath)
-        if !cleanCloudCode.isEmpty {
-            appState.config.cloudCodeBin = cleanCloudCode
-            vm.cloudCodeBinPath = cleanCloudCode
-        }
+        appState.config.cloudCodeBin = cleanCloudCode
+        vm.cloudCodeBinPath = cleanCloudCode
         appState.config.agentEngine = vm.agentEngine
         appState.config.deepseekApiKey = vm.deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         appState.config.openaiApiKey = vm.openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1642,12 +1637,21 @@ private struct GeneralTabView: View {
         panel.prompt = prompt
         let expanded = MACPathUtils.expandPath(initialPath)
         if !expanded.isEmpty {
-            let parent = URL(fileURLWithPath: expanded).deletingLastPathComponent()
-            if FileManager.default.fileExists(atPath: parent.path) {
-                panel.directoryURL = parent
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
+                if isDir.boolValue {
+                    panel.directoryURL = URL(fileURLWithPath: expanded)
+                } else {
+                    panel.directoryURL = URL(fileURLWithPath: expanded).deletingLastPathComponent()
+                }
             }
         }
-        return panel.runModal() == .OK ? panel.url?.path : nil
+        guard panel.runModal() == .OK, let chosen = panel.url?.path else { return nil }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: chosen, isDirectory: &isDir), !isDir.boolValue {
+            return chosen
+        }
+        return nil
     }
 }
 
