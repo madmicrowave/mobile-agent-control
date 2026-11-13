@@ -29,7 +29,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
     // Centered stacked layout:
     // AI (top, blue, condensed font)
     // MAC (bottom, white, bold condensed font)
-    let aiFont = condensedFont(size: size * 0.24, weight: .black)
+    let aiFont = condensedFont(size: size * 0.26, weight: .black)
     let macFont = condensedFont(size: size * 0.36, weight: .black)
 
     let aiAttrs: [NSAttributedString.Key: Any] = [
@@ -51,7 +51,7 @@ func generateAppIcon(size: CGFloat) -> NSImage {
 
     let macCap = macFont.capHeight
     let aiCap = aiFont.capHeight
-    let visualGap = size * 0.038
+    let visualGap = size * 0.054
     let totalCapH = macCap + visualGap + aiCap
     let bottomOfMacY = (size - totalCapH) / 2.0
 
@@ -119,7 +119,7 @@ func saveMenuBarBadgePNG(path: String) {
     pillPath.fill()
 
     // Punch out inline "AI   MAC" with condensed bold font, bigger AI and clean spacing
-    let aiFont = condensedFont(size: 7.2, weight: .black)
+    let aiFont = condensedFont(size: 8.2, weight: .black)
     let macFont = condensedFont(size: 9.6, weight: .black)
     let aiVerticalOffset = (macFont.capHeight - aiFont.capHeight) / 2.0
 
@@ -132,7 +132,7 @@ func saveMenuBarBadgePNG(path: String) {
     let spaceAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,
         .foregroundColor: NSColor.black,
-        .kern: 2.2
+        .kern: 0.8
     ]
     let macAttrs: [NSAttributedString.Key: Any] = [
         .font: macFont,

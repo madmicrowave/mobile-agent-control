@@ -19,17 +19,17 @@ public enum MACBotRunStatus: Equatable {
     public var statusMenuTitle: String {
         switch self {
         case .stopped:
-            return "⚪ MAC — Stopped"
+            return "⚪ AI MAC — Stopped"
         case .starting:
-            return "🟡 MAC — Starting..."
+            return "🟡 AI MAC — Starting..."
         case .running(let username):
             if let u = username, !u.isEmpty {
-                return "🟢 Running (@\(u)) · Awake"
+                return "🟢 AI MAC — Running (@\(u)) · Awake"
             }
-            return "🟢 Running · Awake"
+            return "🟢 AI MAC — Running · Awake"
         case .error(let msg):
             let short = msg.count > 44 ? String(msg.prefix(44)) + "…" : msg
-            return "🔴 Error: \(short)"
+            return "🔴 AI MAC — Error: \(short)"
         }
     }
 }

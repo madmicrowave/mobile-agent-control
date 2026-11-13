@@ -194,16 +194,16 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             switch appState.status {
             case .running(let username):
                 if let u = username, !u.isEmpty {
-                    button.toolTip = "MAC — Running (@\(u)) · Mac Sleep Prevented"
+                    button.toolTip = "AI MAC — Running (@\(u)) · Mac Sleep Prevented"
                 } else {
-                    button.toolTip = "MAC — Running · Mac Sleep Prevented"
+                    button.toolTip = "AI MAC — Running · Mac Sleep Prevented"
                 }
             case .starting:
-                button.toolTip = "MAC — Starting..."
+                button.toolTip = "AI MAC — Starting..."
             case .error(let msg):
-                button.toolTip = "MAC — Error: \(msg)"
+                button.toolTip = "AI MAC — Error: \(msg)"
             case .stopped:
-                button.toolTip = "MAC — Mobile Agent Control (Stopped)"
+                button.toolTip = "AI MAC — Mobile Agent Control (Stopped)"
             }
         }
     }
@@ -426,7 +426,7 @@ private struct MACAboutView: View {
             }
 
             VStack(spacing: 4) {
-                Text("MAC — Mobile Agent Control")
+                Text("AI MAC — Mobile Agent Control")
                     .font(.system(size: 16, weight: .bold))
                 Text("Version \(version)")
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
