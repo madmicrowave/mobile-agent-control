@@ -174,9 +174,27 @@ let macBannerHTML = """
     font-weight: 900;
     font-size: 28px;
     letter-spacing: -0.9px;
-    padding: 8px 17px;
+    padding: 8px 18px;
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(255, 255, 255, 0.14);
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+  .mac-badge-lg small {
+    font-size: 0.60em;
+    font-weight: 900;
+    color: #0284c7;
+    margin-right: 5px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    transform: translateY(-0.5px);
+  }
+  .mac-badge-lg .mac-text {
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
   }
   .brand-title {
     font-size: 48px;
@@ -233,6 +251,18 @@ let macBannerHTML = """
     padding: 2px 7px;
     border-radius: 4px;
     letter-spacing: -0.3px;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+  .mac-menubar-pill small {
+    font-size: 0.72em;
+    font-weight: 800;
+    color: #0284c7;
+    margin-right: 2px;
+    display: inline-flex;
+    align-items: center;
+    transform: translateY(-0.5px);
   }
   .strip-caption {
     display: flex;
@@ -594,7 +624,7 @@ let macBannerHTML = """
       </div>
 
       <div class="brand-row">
-        <div class="mac-badge-lg"><span style="font-size: 0.65em; font-weight: 900; color: #0284c7; margin-right: 4px;">AI</span>MAC</div>
+        <div class="mac-badge-lg"><small>AI</small><span class="mac-text">MAC</span></div>
         <div class="brand-title">Mobile Agent Control</div>
       </div>
 
@@ -608,12 +638,12 @@ let macBannerHTML = """
         <div class="macos-menubar">
           <div class="menubar-left">
             <strong></strong>
-            <strong><span style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px;">AI</span>MAC</strong>
+            <strong><small style="font-size: 0.72em; font-weight: 800; color: #38bdf8; margin-right: 2px; display: inline-flex; align-items: center; transform: translateY(-0.5px);">AI</small>MAC</strong>
             <span>File</span>
             <span>Edit</span>
           </div>
           <div class="menubar-right">
-            <span class="mac-menubar-pill"><span style="font-size: 0.72em; font-weight: 800; color: #0284c7; margin-right: 2px;">AI</span>MAC</span>
+            <span class="mac-menubar-pill"><small>AI</small>MAC</span>
             <span>Tue 9:41 AM</span>
           </div>
         </div>
@@ -626,7 +656,7 @@ let macBannerHTML = """
       <div class="steps-grid">
         <div class="step-box">
           <h4>1. Open mac.app</h4>
-          <p>Lives next to clock as <b><span style="font-size: 0.75em; color: #38bdf8;">AI</span> MAC</b>; Open App appears in Dock.</p>
+          <p>Lives next to clock as <b><small style="font-size: 0.75em; color: #38bdf8; display: inline-flex; align-items: center; transform: translateY(-0.5px);">AI</small> MAC</b>; Open App appears in Dock.</p>
         </div>
         <div class="step-box">
           <h4>2. Add Workspaces</h4>
@@ -667,10 +697,10 @@ let macBannerHTML = """
               <div class="tg-header">
                 <div class="tg-back">‹</div>
                 <div class="tg-title-pill">
-                  <div class="name">Mobile Agent Control (<span style="font-size:0.75em;color:#38bdf8;">AI</span> MAC)</div>
+                  <div class="name">Mobile Agent Control (<small style="font-size:0.75em;color:#38bdf8;display:inline-flex;align-items:center;transform:translateY(-0.5px);">AI</small> MAC)</div>
                   <div class="sub">bot</div>
                 </div>
-                <div class="tg-avatar"><span style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;">AI</span>M</div>
+                <div class="tg-avatar"><small style="font-size:9px;font-weight:900;color:#bae6fd;margin-right:1px;display:inline-flex;align-items:center;transform:translateY(-0.5px);">AI</small>M</div>
               </div>
             </div>
 
