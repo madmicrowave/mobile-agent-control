@@ -4,7 +4,7 @@
 
 # Mobile Agent Control (`mac.app` / <small>AI</small> MAC) — Native macOS App for Telegram AI Coding
 
-**Free, open-source native Swift & SwiftUI macOS menu bar + Dock application (`mac.app`) to remotely control local AI coding Workspaces (Google Gemini, Anthropic Claude, DeepSeek, OpenAI, Qwen, and Personal Local Models via Terminal CLI or Direct API), push Git branches across single repos or monorepos, and run optional Staging → Production CI/CD (Jenkins, GitHub, Google Cloud Build) straight from Telegram.**
+**Control your local Mac coding agents (Gemini, Claude, DeepSeek, Codex, Ollama) remotely from your phone via Telegram — inspect diffs, approve commits, and trigger CI/CD deploys with zero port forwarding.**
 
 [![CI](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml/badge.svg)](https://github.com/madmicrowave/mobile-agent-control/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/madmicrowave/mobile-agent-control?label=Download%20mac.app&logo=apple)](https://github.com/madmicrowave/mobile-agent-control/releases/latest)
@@ -13,9 +13,28 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
 [![Powered by DOMONK Factory](https://img.shields.io/badge/Powered%20by-DOMONK%20Factory-7c3aed)](https://domonk.com)
 
-[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**App Screenshots**](#native-macos-application-preview) • [**AI Engines & Providers**](#supported-ai-models--dual-engine-architecture) • [**2-Minute Setup**](#easy-2-minute-setup-100-gui--no-cli-needed) • [**Menu Bar & 4 Tabs**](#macos-menu-bar-controls--4-app-tabs) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
+[**Download `mac.app`**](https://github.com/madmicrowave/mobile-agent-control/releases/latest) • [**Quickstart**](#-3-step-quickstart-under-1-minute) • [**App Screenshots**](#native-macos-application-preview) • [**AI Engines & Providers**](#supported-ai-models--dual-engine-architecture) • [**2-Minute Setup**](#easy-2-minute-setup-100-gui--no-cli-needed) • [**Telegram Workflow**](#controlling-workspaces-via-telegram) • [**FAQ**](#frequently-asked-questions-faq)
 
 </div>
+
+---
+
+### ⚡️ 3-Step Quickstart (Under 1 Minute)
+
+```bash
+# 1. Clone & launch the native macOS menu bar app (mac.app)
+git clone https://github.com/madmicrowave/mobile-agent-control.git && cd mobile-agent-control && npm start
+
+# 2. Paste your bot token from @BotFather into General → Telegram
+# 3. Open Telegram, send /start, and start coding remotely from your phone!
+```
+
+> **Prefer a prebuilt binary?** Download [**`mac-macOS.zip`** from Latest Releases](https://github.com/madmicrowave/mobile-agent-control/releases/latest), drag to `/Applications`, and double-click `mac.app`.
+
+---
+
+> [!TIP]
+> **What AI MAC is (and isn't):** AI MAC is **not** an ADB mobile phone UI automation tool. It is a **remote control bridge** that lets you operate your Mac's frontier coding agents (Gemini, Claude, DeepSeek, Codex, Aider, Ollama) from your mobile phone via an encrypted Telegram bot with zero open ports, zero ngrok, and automatic Mac sleep prevention.
 
 ---
 
