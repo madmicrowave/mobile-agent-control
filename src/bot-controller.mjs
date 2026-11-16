@@ -3364,7 +3364,7 @@ export class BotController {
     const progressMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🚀 <b>Triggered Jenkins deploy…</b>\n` +
+        `🚀 <b>Triggered Jenkins deploy…</b>\n\n` +
         `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `<code>${escapeHtml(jobNames)}</code>`
     });
@@ -3413,7 +3413,7 @@ export class BotController {
                   chatId,
                   messageId: progressMsgId,
                   text:
-                    `🚀 <b>Jenkins running…</b>\n` +
+                    `🚀 <b>Jenkins running…</b>\n\n` +
                     `<b>${escapeHtml(wsLabel)}</b>\n\n` +
                     `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
                 })
@@ -3704,7 +3704,7 @@ export class BotController {
     const progressMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🚀 <b>Triggered Production Jenkins deploy…</b>\n` +
+        `🚀 <b>Triggered Production Jenkins deploy…</b>\n\n` +
         `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `<code>${escapeHtml(jobNames)}</code>`
     });
@@ -3749,7 +3749,7 @@ export class BotController {
                   chatId,
                   messageId: progressMsgId,
                   text:
-                    `🚀 <b>Production Jenkins running…</b>\n` +
+                    `🚀 <b>Production Jenkins running…</b>\n\n` +
                     `<b>${escapeHtml(wsLabel)}</b>\n\n` +
                     `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
                 })
@@ -3974,7 +3974,7 @@ export class BotController {
     const statusMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🔧 <b>Fixing Jenkins build error with AI…</b>\n` +
+        `🔧 <b>Fixing Jenkins build error with AI…</b>\n\n` +
         `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `<i>Analyzing failure log and applying fixes…</i>`,
       replyMarkup: {
