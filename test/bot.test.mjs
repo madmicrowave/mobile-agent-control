@@ -1188,20 +1188,18 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.doesNotMatch(selectMsg.text, /Show Latest/i);
     assert.doesNotMatch(selectMsg.text, /is active by default/i);
     const selectRows = selectMsg.reply_markup.inline_keyboard;
-    assert.equal(selectRows.length, 3);
+    // When working tree is clean (no uncommitted diff), Intercept Desktop Session button must NOT appear
+    assert.equal(selectRows.length, 2);
     assert.deepEqual(
       selectRows[0].map((b) => b.text),
-      ['📥 Intercept Desktop Session']
-    );
-    assert.deepEqual(
-      selectRows[1].map((b) => b.text),
       ['✅ Same Chat •', '🆕 New Chat']
     );
-    assert.deepEqual(selectRows[2], [
+    assert.deepEqual(selectRows[1], [
       { text: '📜 History', callback_data: 'chat:hist:payments' },
       { text: '🧠 AI Model', callback_data: 'ide:cfg:payments' }
     ]);
     const flatButtons = selectRows.flat();
+    assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:intercept:')));
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:pick:')));
     assert.ok(!flatButtons.some((b) => /AI Model & Level/i.test(b.text)));
 
@@ -2433,11 +2431,26 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
   });
 
   it('intercepts Desktop IDE sessions, shows summary card, and continues via Telegram injecting desktop context', async () => {
-    // Select Payments Platform (which has conv-core-existing in brainDir)
+    // 1) Verify clean repo does NOT show Intercept Desktop Session button
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
-    const selectMsg = mockTg.lastSent();
-    const selectRows = selectMsg.reply_markup.inline_keyboard;
+    let selectMsg = mockTg.lastSent();
+    let selectRows = selectMsg.reply_markup.inline_keyboard;
+    assert.ok(!selectRows.flat().some((b) => b.callback_data.startsWith('chat:intercept:')));
+
+    // 2) Introduce an uncommitted diff in coreRepo working tree
+    await fsp.writeFile(
+      path.join(coreRepo.cloneDir, 'src', 'app.js'),
+      'export const version = 2;\n// uncommitted desktop diff\n',
+      'utf8'
+    );
+
+    // 3) Selecting workspace with active desktop session + uncommitted diff MUST show Intercept button!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    selectMsg = mockTg.lastSent();
+    selectRows = selectMsg.reply_markup.inline_keyboard;
+    assert.equal(selectRows.length, 3);
     assert.deepEqual(
       selectRows[0].map((b) => b.text),
       ['📥 Intercept Desktop Session']

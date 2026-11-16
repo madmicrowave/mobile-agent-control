@@ -10,7 +10,8 @@ import {
   commitAndPushRepoChanges,
   collectAgentCommitsAndPush,
   discardUncommittedTurnChanges,
-  revertAndPushTurnCommits
+  revertAndPushTurnCommits,
+  runGit
 } from './git-manager.mjs';
 import { JenkinsClient } from './jenkins-client.mjs';
 import {
@@ -32,7 +33,8 @@ import {
 import {
   getLatestConversationMessages,
   discoverRecentWorkspaceConversations,
-  findLatestDesktopSession
+  findLatestDesktopSession,
+  isDesktopSessionActive
 } from './transcript-reader.mjs';
 import { escapeHtml, markdownToTelegramHtml } from './telegram-api.mjs';
 
@@ -1025,13 +1027,15 @@ export class BotController {
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
+            const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
             await this.telegram.updateInlineKeyboard(
               chatId,
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
                 this.cachedDesktopSessionByWs.get(ws.id) || null,
-                this.configStore.getWorkspaceState(ws.id)
+                this.configStore.getWorkspaceState(ws.id),
+                hasDiff
               )
             );
           }
@@ -1048,13 +1052,15 @@ export class BotController {
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
+            const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
             await this.telegram.updateInlineKeyboard(
               chatId,
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
                 this.cachedDesktopSessionByWs.get(ws.id) || null,
-                this.configStore.getWorkspaceState(ws.id)
+                this.configStore.getWorkspaceState(ws.id),
+                hasDiff
               )
             );
           }
@@ -1079,13 +1085,15 @@ export class BotController {
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
+            const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
             await this.telegram.updateInlineKeyboard(
               chatId,
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
                 this.cachedDesktopSessionByWs.get(ws.id) || null,
-                this.configStore.getWorkspaceState(ws.id)
+                this.configStore.getWorkspaceState(ws.id),
+                hasDiff
               )
             );
           }
@@ -1102,13 +1110,15 @@ export class BotController {
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
           if (ws) {
+            const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
             await this.telegram.updateInlineKeyboard(
               chatId,
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
                 this.cachedDesktopSessionByWs.get(ws.id) || null,
-                this.configStore.getWorkspaceState(ws.id)
+                this.configStore.getWorkspaceState(ws.id),
+                hasDiff
               )
             );
           }
@@ -2028,7 +2038,8 @@ export class BotController {
     }
     await this.configStore.saveState();
 
-    const keyboard = this.buildIdeSelectedKeyboard(ws, desktopSession, st);
+    const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
+    const keyboard = this.buildIdeSelectedKeyboard(ws, desktopSession, st, hasDiff);
 
     const allJobs = this.getWorkspaceJenkinsJobs(ws);
     const shortJobsSummary = allJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
@@ -2070,13 +2081,39 @@ export class BotController {
     });
   }
 
-  buildIdeSelectedKeyboard(ws, desktopSession = null, st = {}) {
+  async hasWorkspaceUncommittedDiff(ws) {
+    if (!ws) return false;
+    const targetPaths = new Set();
+    if (ws.path) targetPaths.add(path.resolve(ws.path));
+    if (Array.isArray(ws.repos)) {
+      for (const repo of ws.repos) {
+        if (repo?.path) targetPaths.add(path.resolve(repo.path));
+      }
+    }
+
+    for (const repoPath of targetPaths) {
+      try {
+        const { stdout } = await runGit(repoPath, ['status', '--porcelain'], { timeoutMs: 10_000 });
+        if (stdout && stdout.trim().length > 0) {
+          return true;
+        }
+      } catch {
+        // Not a git repository or git error
+      }
+    }
+    return false;
+  }
+
+  buildIdeSelectedKeyboard(ws, desktopSession = null, st = {}, hasUncommittedDiff = false) {
     const isInterceptSelected = Boolean(st.isDesktopIntercepted);
     const isNewChatSelected = !isInterceptSelected && !st.conversationId && !st.continueLatest;
     const isSameChatSelected = !isInterceptSelected && !isNewChatSelected;
 
+    const isSessionActive = isDesktopSessionActive(desktopSession);
+    const shouldShowIntercept = (isSessionActive && Boolean(hasUncommittedDiff)) || isInterceptSelected;
+
     const rows = [];
-    if (desktopSession || isInterceptSelected) {
+    if (shouldShowIntercept) {
       rows.push([
         {
           text: `${isInterceptSelected ? '✅' : '📥'} Intercept Desktop Session${isInterceptSelected ? ' •' : ''}`,
@@ -2124,10 +2161,19 @@ export class BotController {
       }
     }
 
-    if (!desktopSession) {
+    if (!desktopSession || !isDesktopSessionActive(desktopSession)) {
       await this.telegram.sendMessage({
         chatId,
-        text: `⚠️ <b>No Active Desktop Session Found:</b>\n\nCould not find an active or recent desktop session for <b>${escapeHtml(wsLabel)}</b> on this Mac.`
+        text: `⚠️ <b>No Active Desktop Session Found:</b>\n\nCould not find an active desktop session for <b>${escapeHtml(wsLabel)}</b> on this Mac.`
+      });
+      return;
+    }
+
+    const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
+    if (!hasDiff) {
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⚠️ <b>No Uncommitted Diff Found:</b>\n\nThere is no uncommitted code diff in <b>${escapeHtml(wsLabel)}</b> to intercept.`
       });
       return;
     }

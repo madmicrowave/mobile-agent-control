@@ -201,6 +201,24 @@ export async function discoverRecentWorkspaceConversations(
   return matches;
 }
 
+export const ACTIVE_DESKTOP_SESSION_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+/**
+ * Checks whether a desktop session has recent activity within the active threshold.
+ */
+export function isDesktopSessionActive(
+  desktopSession,
+  maxAgeMs = ACTIVE_DESKTOP_SESSION_MAX_AGE_MS
+) {
+  if (!desktopSession || !desktopSession.conversationId) return false;
+  const mtime =
+    desktopSession.mtimeMs ||
+    (desktopSession.updatedAt ? new Date(desktopSession.updatedAt).getTime() : 0);
+  if (!mtime) return false;
+  const age = Date.now() - mtime;
+  return age >= 0 && age <= maxAgeMs;
+}
+
 /**
  * Scans the local Mac for recent Desktop agent sessions for `workspacePath`.
  * Checks:
@@ -294,6 +312,8 @@ export async function findLatestDesktopSession(
         const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
         const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant');
 
+        const isActive = now - stat.mtimeMs <= ACTIVE_DESKTOP_SESSION_MAX_AGE_MS;
+
         candidates.push({
           source: target.source,
           sourceLabel: target.label,
@@ -301,6 +321,7 @@ export async function findLatestDesktopSession(
           brainDir: target.brainDir,
           updatedAt: new Date(stat.mtimeMs).toISOString(),
           mtimeMs: stat.mtimeMs,
+          isActive,
           messageCount: msgs.length,
           lastUserMessage: lastUser || null,
           lastAssistantMessage: lastAsst || null,
@@ -330,6 +351,7 @@ export async function findLatestDesktopSession(
       }
 
       if (lastUserText || aRaw.trim().length > 0) {
+        const isActive = now - aStat.mtimeMs <= ACTIVE_DESKTOP_SESSION_MAX_AGE_MS;
         candidates.push({
           source: 'aider',
           sourceLabel: 'Aider CLI',
@@ -337,6 +359,7 @@ export async function findLatestDesktopSession(
           brainDir: normalizedWs,
           updatedAt: new Date(aStat.mtimeMs).toISOString(),
           mtimeMs: aStat.mtimeMs,
+          isActive,
           messageCount: 1,
           lastUserMessage: lastUserText ? { role: 'user', text: lastUserText, createdAt: null } : null,
           lastAssistantMessage: null,
