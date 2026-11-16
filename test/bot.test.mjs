@@ -1181,7 +1181,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(REPLY_BTN_SWITCH_IDE, '🔀 Workspace');
     assert.match(
       selectMsg.text,
-      /🗂 <b>Workspace Selected<\/b>\n<b>Payments Platform<\/b>\n<code>[^<]+<\/code>\n\n🧠 AI Model:/
+      /🗂 <b>Workspace Selected:<\/b>\n\n<b>Payments Platform<\/b>\n<code>[^<]+<\/code>\n\n🧠 AI Model:/
     );
     assert.doesNotMatch(selectMsg.text, /📁/);
     assert.doesNotMatch(selectMsg.text, /\bIDE\b/);
@@ -2447,7 +2447,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('chat:intercept:payments'));
     const interceptMsg = mockTg.lastSent();
-    assert.match(interceptMsg.text, /📥 <b>Intercepted Desktop Session in Payments Platform<\/b>/);
+    assert.match(
+      interceptMsg.text,
+      /📥 <b>Intercepted Desktop Session in Payments Platform:<\/b>/
+    );
     assert.match(interceptMsg.text, /🖥 <b>Source:<\/b> Antigravity Desktop IDE/);
     assert.match(interceptMsg.text, /Earlier desktop question 2/);
     assert.match(interceptMsg.text, /Earlier desktop answer 2/);

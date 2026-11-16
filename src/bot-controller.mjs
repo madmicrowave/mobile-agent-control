@@ -370,7 +370,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🔐 <b>Mobile Agent Control (MAC)</b>\n\n` +
+        `🔐 <b>Mobile Agent Control (MAC):</b>\n\n` +
         `Session requires authentication.\n\n` +
         `Reply with the current session password:`
     });
@@ -515,7 +515,7 @@ export class BotController {
 
     if (text === REPLY_BTN_LATEST_MSGS || text === '/history' || text.startsWith('/history ')) {
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
-        await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first to view messages:');
+        await this.sendIdeSelectorMenu(chatId, userId, '🗂 <b>Select a Workspace first to view messages:</b>');
         return;
       }
       sess.currentView = 'HISTORY';
@@ -529,7 +529,7 @@ export class BotController {
 
     if (text === REPLY_BTN_NEW_CHAT || text === '/newchat') {
       if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
-        await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
+        await this.sendIdeSelectorMenu(chatId, userId, '🗂 <b>Select a Workspace first:</b>');
         return;
       }
       sess.currentView = 'NEW_CHAT';
@@ -544,7 +544,7 @@ export class BotController {
     // ── Ensure a Workspace is selected ───────────────────────────────────────
     const ws = sess.selectedWorkspaceId ? this.getWorkspace(sess.selectedWorkspaceId) : null;
     if (!ws) {
-      await this.sendIdeSelectorMenu(chatId, userId, 'Select a Workspace first:');
+      await this.sendIdeSelectorMenu(chatId, userId, '🗂 <b>Select a Workspace first:</b>');
       return;
     }
     sess.currentView = 'CHAT';
@@ -1466,7 +1466,7 @@ export class BotController {
           : '  <i>(No Workspaces configured — open <b>MAC → Settings</b> in your macOS menu bar)</i>';
 
       const text =
-        `⚙️ <b>AI Model Settings</b>\n\n` +
+        `⚙️ <b>AI Model Settings:</b>\n\n` +
         `Select a Workspace below to change its AI model:\n\n${ideModelsSummary}`;
       const replyMarkup = { inline_keyboard: rows };
 
@@ -1711,11 +1711,11 @@ export class BotController {
     });
 
     const text =
-      `🧠 <b>Select AI Engine — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `🧠 <b>Select AI Engine — ${escapeHtml(wsLabel)}:</b>\n\n` +
       `• <b>AI Engine:</b> <code>${escapeHtml(engineLabel)}</code>\n` +
       `• <b>AI Model:</b> <code>${escapeHtml(modelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
       `• <b>Model Level:</b> <code>${escapeHtml(modelInfo.effort || 'high')}</code>\n\n` +
-      `<b>Step 1 of 2: Select AI Engine</b>\n` +
+      `<b>Step 1 of 2: Select AI Engine:</b>\n\n` +
       `Choose an engine for this workspace:`;
 
     const replyMarkup = {
@@ -1806,11 +1806,11 @@ export class BotController {
     });
 
     const text =
-      `🧠 <b>Select AI Model & Level — ${escapeHtml(wsLabel)}</b>\n\n` +
+      `🧠 <b>Select AI Model & Level — ${escapeHtml(wsLabel)}:</b>\n\n` +
       `• <b>AI Engine:</b> <code>${escapeHtml(engineLabel)}</code>\n` +
       `• <b>AI Model:</b> <code>${escapeHtml(updatedModelInfo.modelId || 'gemini-3.8-flash-high')}</code>\n` +
       `• <b>Model Level:</b> <code>${escapeHtml(updatedModelInfo.effort || 'high')}</code>\n\n` +
-      `<b>Step 2 of 2: Select Model & Level</b>\n` +
+      `<b>Step 2 of 2: Select Model & Level:</b>\n\n` +
       `Choose a model and effort level for <b>${escapeHtml(engineLabel)}</b>:`;
 
     const replyMarkup = {
@@ -1967,7 +1967,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Updated AI model for ${escapeHtml(wsLabel)}</b>\n\n` +
+        `✅ <b>Updated AI model for ${escapeHtml(wsLabel)}:</b>\n\n` +
         `• Model: <code>${escapeHtml(ws.model || 'gemini-3.8-flash-high')}</code>\n` +
         `• Level: <code>${escapeHtml(ws.modelLevel || 'high')}</code>`
     });
@@ -1997,7 +1997,7 @@ export class BotController {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `🗂 <b>Switched to Workspace: ${escapeHtml(wsLabel)}</b>\n\nResuming pending step:`
+        `🗂 <b>Switched to Workspace: ${escapeHtml(wsLabel)}:</b>\n\nResuming pending step:`
       );
       return;
     }
@@ -2050,7 +2050,7 @@ export class BotController {
               : 'AGY';
 
     const infoSections = [
-      `🗂 <b>Workspace Selected</b>\n<b>${escapeHtml(wsLabel)}</b>\n<code>${escapeHtml(ws.path)}</code>`,
+      `🗂 <b>Workspace Selected:</b>\n\n<b>${escapeHtml(wsLabel)}</b>\n<code>${escapeHtml(ws.path)}</code>`,
       `🧠 AI Model: <code>${escapeHtml(modelInfo.displayLabel)}</code> [${escapeHtml(engineTag)}]`
     ];
 
@@ -2127,7 +2127,7 @@ export class BotController {
     if (!desktopSession) {
       await this.telegram.sendMessage({
         chatId,
-        text: `⚠️ <b>No Active Desktop Session Found</b>\n\nCould not find an active or recent desktop session for <b>${escapeHtml(wsLabel)}</b> on this Mac.`
+        text: `⚠️ <b>No Active Desktop Session Found:</b>\n\nCould not find an active or recent desktop session for <b>${escapeHtml(wsLabel)}</b> on this Mac.`
       });
       return;
     }
@@ -2152,7 +2152,7 @@ export class BotController {
         : desktopSession.conversationId;
 
     const cardLines = [
-      `📥 <b>Intercepted Desktop Session in ${escapeHtml(wsLabel)}</b>`,
+      `📥 <b>Intercepted Desktop Session in ${escapeHtml(wsLabel)}:</b>`,
       `🖥 <b>Source:</b> ${escapeHtml(sourceLabel)} (<code>${escapeHtml(convIdShort)}</code>)`,
       `💬 <b>Last Desktop Request:</b>\n<i>${escapeHtml(truncatedPrompt)}</i>`
     ];
@@ -2215,9 +2215,9 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Continuing Same Chat in ${escapeHtml(wsLabel)}</b>` +
+        `✅ <b>Continuing Same Chat in ${escapeHtml(wsLabel)}:</b>` +
         (st.conversationId ? ` (<code>${escapeHtml(st.conversationId.slice(0, 8))}</code>)` : '') +
-        `.\n\nType your message or send a photo (with or without caption):`,
+        `\n\nType your message or send a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
           [
@@ -2257,7 +2257,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🆕 <b>New Chat Ready in ${escapeHtml(wsLabel)}</b>\n\n` +
+        `🆕 <b>New Chat Ready in ${escapeHtml(wsLabel)}:</b>\n\n` +
         `Type your message or attach a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
@@ -2763,7 +2763,7 @@ export class BotController {
       await this.telegram.sendMessage({
         chatId,
         text:
-          `✅ <b>Auto-committed &amp; pushed fix for Jenkins build failure</b>\n\n` +
+          `✅ <b>Auto-committed &amp; pushed fix for Jenkins build failure:</b>\n\n` +
           `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
           commitLines.join('\n')
       });
@@ -2908,7 +2908,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `➕ <b>Add Fix in ${escapeHtml(wsLabel)}</b>\n\n` +
+        `➕ <b>Add Fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
         `Reply with what to fix or modify in the current process (your uncommitted changes are preserved):`,
       replyMarkup: {
         inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
@@ -2945,7 +2945,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🌿 <b>Custom Branch for ${escapeHtml(wsLabel)}</b>\n\n` +
+        `🌿 <b>Custom Branch for ${escapeHtml(wsLabel)}:</b>\n\n` +
         `Reply with the branch name to commit &amp; push to (e.g. <code>feat/mobile-fix</code>):`,
       replyMarkup: {
         inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
@@ -3059,7 +3059,7 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}</b>\n\n` +
+        `✅ <b>Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}:</b>\n\n` +
         `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
         commitLines.join('\n')
     });
@@ -3836,7 +3836,7 @@ export class BotController {
       // Output revert action explicitly via message text!
       await this.telegram.sendMessage({
         chatId,
-        text: `↩️ <b>Reverted last commit(s) as bad</b>\n\n${revLines.join('\n')}`
+        text: `↩️ <b>Reverted last commit(s) as bad:</b>\n\n${revLines.join('\n')}`
       });
 
       const matchedRevTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: true });
