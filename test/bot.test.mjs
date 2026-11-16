@@ -1188,12 +1188,16 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.doesNotMatch(selectMsg.text, /Show Latest/i);
     assert.doesNotMatch(selectMsg.text, /is active by default/i);
     const selectRows = selectMsg.reply_markup.inline_keyboard;
-    assert.equal(selectRows.length, 2);
+    assert.equal(selectRows.length, 3);
     assert.deepEqual(
       selectRows[0].map((b) => b.text),
+      ['📥 Intercept Desktop Session']
+    );
+    assert.deepEqual(
+      selectRows[1].map((b) => b.text),
       ['✅ Same Chat •', '🆕 New Chat']
     );
-    assert.deepEqual(selectRows[1], [
+    assert.deepEqual(selectRows[2], [
       { text: '📜 History', callback_data: 'chat:hist:payments' },
       { text: '🧠 AI Model', callback_data: 'ide:cfg:payments' }
     ]);
@@ -2426,6 +2430,51 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.deepEqual(callHistory, [
       { conversationId: 'cli-conv-recovered-999', continueLatest: false }
     ]);
+  });
+
+  it('intercepts Desktop IDE sessions, shows summary card, and continues via Telegram injecting desktop context', async () => {
+    // Select Payments Platform (which has conv-core-existing in brainDir)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    const selectMsg = mockTg.lastSent();
+    const selectRows = selectMsg.reply_markup.inline_keyboard;
+    assert.deepEqual(
+      selectRows[0].map((b) => b.text),
+      ['📥 Intercept Desktop Session']
+    );
+
+    // Tapping 📥 Intercept Desktop Session intercepts and sends summary card with last prompt and answer
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('chat:intercept:payments'));
+    const interceptMsg = mockTg.lastSent();
+    assert.match(interceptMsg.text, /📥 <b>Intercepted Desktop Session in Payments Platform<\/b>/);
+    assert.match(interceptMsg.text, /🖥 <b>Source:<\/b> Antigravity Desktop IDE/);
+    assert.match(interceptMsg.text, /Earlier desktop question 2/);
+    assert.match(interceptMsg.text, /Earlier desktop answer 2/);
+    assert.match(interceptMsg.text, /Ready to continue via Telegram/);
+
+    const pmntState = configStore.getWorkspaceState('payments');
+    assert.equal(pmntState.isDesktopIntercepted, true);
+
+    // Continuing via Telegram turn injects previous desktop context cleanly
+    let interceptedPromptReceived = '';
+    nextAgentBehavior = async ({ prompt }) => {
+      interceptedPromptReceived = prompt;
+      return {
+        conversationId: 'conv-intercepted-new-99',
+        response: 'Continued from desktop interception.'
+      };
+    };
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Now implement the remaining tests'));
+    await controller.waitForBackgroundTasks();
+    assert.match(interceptedPromptReceived, /\[Context intercepted from Desktop Session/);
+    assert.match(interceptedPromptReceived, /Earlier desktop question 2/);
+    assert.match(interceptedPromptReceived, /Earlier desktop answer 2/);
+    assert.match(interceptedPromptReceived, /Now implement the remaining tests/);
+    assert.equal(lastAgentCallArgs.conversationId, null); // Fresh CLI trajectory initialized with full context!
+    assert.equal(pmntState.conversationId, 'conv-intercepted-new-99');
+    assert.equal(pmntState.isDesktopIntercepted, false);
   });
 
   it('polls getUpdates, honors 429 retry_after + fresh socket recovery, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {

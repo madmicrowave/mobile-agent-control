@@ -1,4 +1,5 @@
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 /**
@@ -198,4 +199,155 @@ export async function discoverRecentWorkspaceConversations(
   }
 
   return matches;
+}
+
+/**
+ * Scans the local Mac for recent Desktop agent sessions for `workspacePath`.
+ * Checks:
+ *  1. Antigravity Desktop IDE (~/.gemini/antigravity/brain)
+ *  2. Antigravity IDE app data (~/.gemini/antigravity-ide/brain)
+ *  3. Antigravity CLI (~/.gemini/antigravity-cli/brain or customBrainDir)
+ *  4. Aider (.aider.chat.history.md in workspacePath)
+ *
+ * Returns the most recent desktop session object, or null.
+ */
+export async function findLatestDesktopSession(
+  workspacePath,
+  { customBrainDir = null, maxLookbackMs = 14 * 24 * 60 * 60 * 1000 } = {}
+) {
+  if (!workspacePath) return null;
+  const normalizedWs = path.resolve(workspacePath);
+  const escapedWs = normalizedWs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wsBoundaryRe = new RegExp(`${escapedWs}(?:[/\\\\"'\\s)|<>]|$)`);
+
+  const home = os.homedir();
+  const searchTargets = [
+    {
+      source: 'antigravity-desktop',
+      label: 'Antigravity Desktop IDE',
+      brainDir: path.join(home, '.gemini', 'antigravity', 'brain'),
+      requiresDb: false
+    },
+    {
+      source: 'antigravity-ide',
+      label: 'Antigravity IDE',
+      brainDir: path.join(home, '.gemini', 'antigravity-ide', 'brain'),
+      requiresDb: false
+    },
+    {
+      source: 'antigravity-cli',
+      label: 'Antigravity CLI',
+      brainDir: path.join(home, '.gemini', 'antigravity-cli', 'brain'),
+      requiresDb: true
+    }
+  ];
+
+  if (customBrainDir && typeof customBrainDir === 'string') {
+    const resolvedCustom = path.resolve(customBrainDir);
+    if (!searchTargets.some((t) => path.resolve(t.brainDir) === resolvedCustom)) {
+      searchTargets.unshift({
+        source: 'antigravity-custom',
+        label: 'Antigravity Desktop IDE',
+        brainDir: resolvedCustom,
+        requiresDb: false
+      });
+    }
+  }
+
+  const now = Date.now();
+  const candidates = [];
+
+  for (const target of searchTargets) {
+    let entries;
+    try {
+      entries = await fsp.readdir(target.brainDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    const convStoreDir = path.join(path.dirname(target.brainDir), 'conversations');
+
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+
+      if (target.requiresDb) {
+        try {
+          await fsp.access(path.join(convStoreDir, `${e.name}.db`));
+        } catch {
+          continue;
+        }
+      }
+
+      const tPath = path.join(target.brainDir, e.name, '.system_generated', 'logs', 'transcript.jsonl');
+      try {
+        const stat = await fsp.stat(tPath);
+        if (maxLookbackMs > 0 && now - stat.mtimeMs > maxLookbackMs) {
+          continue;
+        }
+
+        const raw = await fsp.readFile(tPath, 'utf8');
+        if (!wsBoundaryRe.test(raw)) continue;
+
+        const msgs = await readTranscriptMessages(target.brainDir, e.name);
+        if (msgs.length === 0) continue;
+
+        const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
+        const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant');
+
+        candidates.push({
+          source: target.source,
+          sourceLabel: target.label,
+          conversationId: e.name,
+          brainDir: target.brainDir,
+          updatedAt: new Date(stat.mtimeMs).toISOString(),
+          mtimeMs: stat.mtimeMs,
+          messageCount: msgs.length,
+          lastUserMessage: lastUser || null,
+          lastAssistantMessage: lastAsst || null,
+          preview: lastUser ? lastUser.text.replace(/\s+/g, ' ').trim() : ''
+        });
+      } catch {
+        // file unreadable or missing
+      }
+    }
+  }
+
+  // Check Aider history
+  const aiderHistoryPath = path.join(normalizedWs, '.aider.chat.history.md');
+  try {
+    const aStat = await fsp.stat(aiderHistoryPath);
+    if (aStat.size > 0 && (maxLookbackMs <= 0 || now - aStat.mtimeMs <= maxLookbackMs)) {
+      const aRaw = await fsp.readFile(aiderHistoryPath, 'utf8');
+      const lines = aRaw.split(/\r?\n/);
+      let lastUserText = '';
+
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const l = lines[i];
+        if (!lastUserText && (l.startsWith('#### ') || l.startsWith('> '))) {
+          lastUserText = l.replace(/^#{1,4}\s*|>\s*/, '').trim();
+          if (lastUserText) break;
+        }
+      }
+
+      if (lastUserText || aRaw.trim().length > 0) {
+        candidates.push({
+          source: 'aider',
+          sourceLabel: 'Aider CLI',
+          conversationId: 'aider-history',
+          brainDir: normalizedWs,
+          updatedAt: new Date(aStat.mtimeMs).toISOString(),
+          mtimeMs: aStat.mtimeMs,
+          messageCount: 1,
+          lastUserMessage: lastUserText ? { role: 'user', text: lastUserText, createdAt: null } : null,
+          lastAssistantMessage: null,
+          preview: lastUserText || 'Aider terminal session'
+        });
+      }
+    }
+  } catch {
+    // No aider history
+  }
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return candidates[0] || null;
 }

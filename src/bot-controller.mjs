@@ -31,7 +31,8 @@ import {
 } from './agent-runner.mjs';
 import {
   getLatestConversationMessages,
-  discoverRecentWorkspaceConversations
+  discoverRecentWorkspaceConversations,
+  findLatestDesktopSession
 } from './transcript-reader.mjs';
 import { escapeHtml, markdownToTelegramHtml } from './telegram-api.mjs';
 
@@ -108,6 +109,9 @@ export class BotController {
 
     /** @type {Map<string, Array<{ conversationId: string, preview: string, messageCount: number }>>} */
     this.cachedRecentChatsByWs = new Map();
+
+    /** @type {Map<string, object | null>} */
+    this.cachedDesktopSessionByWs = new Map();
 
     /** @type {Map<string, object>} */
     this.pendingInputBatches = new Map();
@@ -1014,9 +1018,32 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('chat:intercept:')) {
+        const parts = data.split(':');
+        const wsId = parts[2];
+        await this.activateInterceptDesktopSession(chatId, userId, wsId);
+        if (messageId && cb.message?.text?.includes('Workspace Selected')) {
+          const ws = this.getWorkspace(wsId);
+          if (ws) {
+            await this.telegram.updateInlineKeyboard(
+              chatId,
+              messageId,
+              this.buildIdeSelectedKeyboard(
+                ws,
+                this.cachedDesktopSessionByWs.get(ws.id) || null,
+                this.configStore.getWorkspaceState(ws.id)
+              )
+            );
+          }
+        }
+        return;
+      }
+
       if (data.startsWith('chat:same:')) {
         const parts = data.split(':');
         const wsId = parts[2];
+        const st = this.configStore.getWorkspaceState(wsId);
+        st.isDesktopIntercepted = false;
         await this.activateSameChat(chatId, userId, wsId);
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
@@ -1026,7 +1053,7 @@ export class BotController {
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
-                this.cachedRecentChatsByWs.get(ws.id) || [],
+                this.cachedDesktopSessionByWs.get(ws.id) || null,
                 this.configStore.getWorkspaceState(ws.id)
               )
             );
@@ -1045,6 +1072,7 @@ export class BotController {
           const st = this.configStore.getWorkspaceState(wsId);
           st.conversationId = chosen.conversationId;
           st.continueLatest = false;
+          st.isDesktopIntercepted = false;
           await this.configStore.saveState();
         }
         await this.activateSameChat(chatId, userId, wsId);
@@ -1054,7 +1082,11 @@ export class BotController {
             await this.telegram.updateInlineKeyboard(
               chatId,
               messageId,
-              this.buildIdeSelectedKeyboard(ws, list, this.configStore.getWorkspaceState(ws.id))
+              this.buildIdeSelectedKeyboard(
+                ws,
+                this.cachedDesktopSessionByWs.get(ws.id) || null,
+                this.configStore.getWorkspaceState(ws.id)
+              )
             );
           }
         }
@@ -1063,6 +1095,9 @@ export class BotController {
 
       if (data.startsWith('chat:new:')) {
         const wsId = data.slice('chat:new:'.length);
+        const st = this.configStore.getWorkspaceState(wsId);
+        st.isDesktopIntercepted = false;
+        st.interceptedSession = null;
         await this.activateNewChat(chatId, wsId);
         if (messageId && cb.message?.text?.includes('Workspace Selected')) {
           const ws = this.getWorkspace(wsId);
@@ -1072,7 +1107,7 @@ export class BotController {
               messageId,
               this.buildIdeSelectedKeyboard(
                 ws,
-                this.cachedRecentChatsByWs.get(ws.id) || [],
+                this.cachedDesktopSessionByWs.get(ws.id) || null,
                 this.configStore.getWorkspaceState(ws.id)
               )
             );
@@ -1977,6 +2012,11 @@ export class BotController {
     );
     this.cachedRecentChatsByWs.set(ws.id, discovered);
 
+    const desktopSession = await findLatestDesktopSession(ws.path, {
+      customBrainDir: this.configStore.config.antigravityBrainDir
+    });
+    this.cachedDesktopSessionByWs.set(ws.id, desktopSession);
+
     // Same Chat is active by default when selecting a Workspace
     if (!st.conversationId) {
       if (discovered.length > 0) {
@@ -1988,7 +2028,7 @@ export class BotController {
     }
     await this.configStore.saveState();
 
-    const keyboard = this.buildIdeSelectedKeyboard(ws, discovered, st);
+    const keyboard = this.buildIdeSelectedKeyboard(ws, desktopSession, st);
 
     const allJobs = this.getWorkspaceJenkinsJobs(ws);
     const shortJobsSummary = allJobs.map((j) => shortJenkinsJobLabel(j)).join(', ');
@@ -2030,26 +2070,117 @@ export class BotController {
     });
   }
 
-  buildIdeSelectedKeyboard(ws, _discovered = [], st = {}) {
-    const isNewChatSelected = !st.conversationId && !st.continueLatest;
-    const isSameChatSelected = !isNewChatSelected;
+  buildIdeSelectedKeyboard(ws, desktopSession = null, st = {}) {
+    const isInterceptSelected = Boolean(st.isDesktopIntercepted);
+    const isNewChatSelected = !isInterceptSelected && !st.conversationId && !st.continueLatest;
+    const isSameChatSelected = !isInterceptSelected && !isNewChatSelected;
 
-    return [
-      [
+    const rows = [];
+    if (desktopSession || isInterceptSelected) {
+      rows.push([
         {
-          text: `${isSameChatSelected ? '✅' : '💬'} Same Chat${isSameChatSelected ? ' •' : ''}`,
-          callback_data: `chat:same:${ws.id}`
-        },
-        {
-          text: `🆕 New Chat${isNewChatSelected ? ' •' : ''}`,
-          callback_data: `chat:new:${ws.id}`
+          text: `${isInterceptSelected ? '✅' : '📥'} Intercept Desktop Session${isInterceptSelected ? ' •' : ''}`,
+          callback_data: `chat:intercept:${ws.id}`
         }
-      ],
-      [
-        { text: '📜 History', callback_data: `chat:hist:${ws.id}` },
-        { text: '🧠 AI Model', callback_data: `ide:cfg:${ws.id}` }
-      ]
+      ]);
+    }
+
+    rows.push([
+      {
+        text: `${isSameChatSelected ? '✅' : '💬'} Same Chat${isSameChatSelected ? ' •' : ''}`,
+        callback_data: `chat:same:${ws.id}`
+      },
+      {
+        text: `🆕 New Chat${isNewChatSelected ? ' •' : ''}`,
+        callback_data: `chat:new:${ws.id}`
+      }
+    ]);
+
+    rows.push([
+      { text: '📜 History', callback_data: `chat:hist:${ws.id}` },
+      { text: '🧠 AI Model', callback_data: `ide:cfg:${ws.id}` }
+    ]);
+
+    return rows;
+  }
+
+  async activateInterceptDesktopSession(chatId, userId, wsId) {
+    const ws = this.getWorkspace(wsId);
+    if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const sess = this.configStore.getUserSession(userId);
+    sess.selectedWorkspaceId = ws.id;
+    sess.currentView = 'WORKSPACE_DETAIL';
+    sess.lastWorkspaceMenuMessageId = null;
+    this.lastWorkspaceMenuByChat.delete(chatId);
+
+    let desktopSession = this.cachedDesktopSessionByWs.get(ws.id);
+    if (!desktopSession) {
+      desktopSession = await findLatestDesktopSession(ws.path, {
+        customBrainDir: this.configStore.config.antigravityBrainDir
+      });
+      if (desktopSession) {
+        this.cachedDesktopSessionByWs.set(ws.id, desktopSession);
+      }
+    }
+
+    if (!desktopSession) {
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⚠️ <b>No Active Desktop Session Found</b>\n\nCould not find an active or recent desktop session for <b>${escapeHtml(wsLabel)}</b> on this Mac.`
+      });
+      return;
+    }
+
+    const st = this.configStore.getWorkspaceState(ws.id);
+    st.isDesktopIntercepted = true;
+    st.interceptedSession = desktopSession;
+    st.conversationId = desktopSession.conversationId;
+    st.continueLatest = false;
+    st.phase = 'IDLE';
+    await this.configStore.saveState();
+
+    const lastPromptText = desktopSession.lastUserMessage?.text?.trim() || '(No prompt text)';
+    const lastResponseText = desktopSession.lastAssistantMessage?.text?.trim() || '';
+    const truncatedPrompt = lastPromptText.length > 300 ? `${lastPromptText.slice(0, 297)}...` : lastPromptText;
+    const truncatedResponse = lastResponseText.length > 350 ? `${lastResponseText.slice(0, 347)}...` : lastResponseText;
+
+    const sourceLabel = desktopSession.sourceLabel || 'Desktop IDE';
+    const convIdShort =
+      desktopSession.conversationId.length > 12
+        ? `${desktopSession.conversationId.slice(0, 8)}...`
+        : desktopSession.conversationId;
+
+    const cardLines = [
+      `📥 <b>Intercepted Desktop Session in ${escapeHtml(wsLabel)}</b>`,
+      `🖥 <b>Source:</b> ${escapeHtml(sourceLabel)} (<code>${escapeHtml(convIdShort)}</code>)`,
+      `💬 <b>Last Desktop Request:</b>\n<i>${escapeHtml(truncatedPrompt)}</i>`
     ];
+
+    if (truncatedResponse) {
+      cardLines.push(`🤖 <b>Last Agent Response:</b>\n<i>${escapeHtml(truncatedResponse)}</i>`);
+    }
+
+    cardLines.push(
+      `✨ <b>Ready to continue via Telegram!</b> Send your next instruction, code change request, or photo to proceed.`
+    );
+
+    await this.telegram.sendMessage({
+      chatId,
+      text: cardLines.join('\n\n'),
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            { text: '💬 Same Chat', callback_data: `chat:same:${ws.id}` },
+            { text: '🆕 New Chat', callback_data: `chat:new:${ws.id}` }
+          ],
+          [
+            { text: '📜 History', callback_data: `chat:hist:${ws.id}` },
+            { text: '🧠 AI Model', callback_data: `ide:cfg:${ws.id}` }
+          ]
+        ]
+      }
+    });
   }
 
   async activateSameChat(chatId, userId, wsId) {
@@ -2063,6 +2194,8 @@ export class BotController {
     this.lastWorkspaceMenuByChat.delete(chatId);
 
     const st = this.configStore.getWorkspaceState(ws.id);
+    st.isDesktopIntercepted = false;
+    st.interceptedSession = null;
     if (!st.conversationId) {
       const discovered = await discoverRecentWorkspaceConversations(
         this.configStore.config.antigravityBrainDir,
@@ -2116,6 +2249,8 @@ export class BotController {
     st.conversationId = null;
     st.continueLatest = false;
     st.pendingPhotos = [];
+    st.isDesktopIntercepted = false;
+    st.interceptedSession = null;
     st.phase = 'IDLE';
     await this.configStore.saveState();
 
@@ -2317,9 +2452,43 @@ export class BotController {
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const effectiveModel = this.resolveWorkspaceModel(ws);
-    const effectivePrompt =
+    let effectivePrompt =
       promptOverride ||
       (st.activeTurn.prompt === '(Photo prompt)' ? '' : st.activeTurn.prompt);
+
+    let attemptConversationId = st.conversationId || null;
+
+    if (st.isDesktopIntercepted && st.interceptedSession) {
+      const desktop = st.interceptedSession;
+      const desktopSrc = desktop.sourceLabel || 'Desktop IDE';
+      const lastUser = desktop.lastUserMessage?.text?.trim() || '';
+      const lastAsst = desktop.lastAssistantMessage?.text?.trim() || '';
+
+      const contextParts = [`[Context intercepted from Desktop Session (${desktopSrc})]:`];
+      if (lastUser) {
+        contextParts.push(`Previous User Request on Desktop:\n${lastUser}`);
+      }
+      if (lastAsst) {
+        contextParts.push(`Previous Agent Response on Desktop:\n${lastAsst}`);
+      }
+      contextParts.push(
+        `[Follow-up user instruction from Telegram]:\n${effectivePrompt || '(Continue previous task)'}`
+      );
+
+      effectivePrompt = contextParts.join('\n\n');
+
+      if (
+        desktop.source === 'antigravity-desktop' ||
+        desktop.source === 'antigravity-ide' ||
+        desktop.source === 'antigravity-custom'
+      ) {
+        attemptConversationId = null;
+      }
+      st.isDesktopIntercepted = false;
+      st.interceptedSession = null;
+      await this.configStore.saveState();
+    }
+
     this.log('stage', `AI Agent Executing: ${wsLabel}`);
     this.log('agent', `Executing ${ws.engine || 'agy'} with model ${effectiveModel.modelId} on workspace "${wsLabel}"`);
     const runSingleAttempt = async (attemptConversationId) => {
@@ -2391,7 +2560,7 @@ export class BotController {
     };
 
     try {
-      const initialConvId = st.conversationId || null;
+      const initialConvId = attemptConversationId;
       let result;
       try {
         result = await runSingleAttempt(initialConvId);
