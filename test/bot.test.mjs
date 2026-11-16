@@ -1551,12 +1551,12 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     assert.ok(
       mockTg.sentMessages.some((m) =>
-        /🤖 Antigravity working…\n<b>Payments Platform<\/b>\n\n🧠/.test(m.text)
+        /🤖 Antigravity working…\n\n<b>Payments Platform<\/b>\n\n🧠/.test(m.text)
       )
     );
     assert.ok(
       mockTg.editedMessages.some((e) =>
-        /🤖 Antigravity working…\n<b>Payments Platform<\/b>\n\n⚙️ <code>tool: read_file \(ACTIVE\)<\/code>/.test(
+        /🤖 Antigravity working…\n\n<b>Payments Platform<\/b>\n\n⚙️ <code>tool: read_file \(ACTIVE\)<\/code>/.test(
           e.text
         )
       )
@@ -1917,7 +1917,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:extra'));
     assert.equal(configStore.getUserSession(USER_ID).selectedWorkspaceId, 'extra');
-    assert.ok(mockTg.sentMessages.some((m) => /Switched to Workspace: Extra Service/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Switched to Workspace:<\/b>\n\n<b>Extra Service<\/b>/.test(m.text)));
     assert.match(mockTg.lastSent().text, /Commit &amp; push these changes\?/);
 
     await controller.handleUpdate(makeCallback('cmt:no:extra'));

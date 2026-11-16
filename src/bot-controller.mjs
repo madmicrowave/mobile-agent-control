@@ -2007,7 +2007,7 @@ export class BotController {
       await this.sendCurrentWorkspaceGatePrompt(
         chatId,
         ws,
-        `🗂 <b>Switched to Workspace: ${escapeHtml(wsLabel)}:</b>\n\nResuming pending step:`
+        `🗂 <b>Switched to Workspace:</b>\n\n<b>${escapeHtml(wsLabel)}</b>\n\nResuming pending step:`
       );
       return;
     }
@@ -2444,7 +2444,7 @@ export class BotController {
         ? `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}…</b>\n\n` +
           `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
           `\n<i>Working on requested fixes in the same process…</i>`
-        : `🤖 Antigravity working…\n` +
+        : `🤖 Antigravity working…\n\n` +
           `<b>${escapeHtml(wsLabel)}</b>\n\n` +
           `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
           (attachedPhotos.length > 0
@@ -2585,7 +2585,7 @@ export class BotController {
                 chatId,
                 messageId: statusMessageId,
                 text:
-                  `🤖 Antigravity working…\n` +
+                  `🤖 Antigravity working…\n\n` +
                   `<b>${escapeHtml(wsLabel)}</b>\n\n` +
                   `⚙️ <code>${escapeHtml(stepLabel)}</code>`,
                 replyMarkup: {
