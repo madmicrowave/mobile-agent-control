@@ -257,6 +257,9 @@ export class ConfigStore {
     } else if (!Array.isArray(this.config.allowedUserIds)) {
       this.config.allowedUserIds = [];
     }
+    if (!Array.isArray(this.config.suspendedUsers)) {
+      this.config.suspendedUsers = [];
+    }
     if (!this.config.defaultHistoryCount) {
       this.config.defaultHistoryCount = Number(process.env.DEFAULT_HISTORY_COUNT || 6) || 6;
     }
@@ -725,6 +728,52 @@ export class ConfigStore {
     const allowlist = this.config.allowedUserIds || [];
     if (allowlist.length === 0) return true;
     return allowlist.includes(String(telegramUserId));
+  }
+
+  isUserSuspended(telegramUserId) {
+    const list = this.config.suspendedUsers || [];
+    const uidStr = String(telegramUserId);
+    return list.some((u) => (typeof u === 'string' ? u === uidStr : String(u.userId) === uidStr));
+  }
+
+  suspendUser(
+    telegramUserId,
+    { username = '', firstName = '', reason = 'Exceeded 5 failed password attempts', failedAttempts = 5 } = {}
+  ) {
+    const uidStr = String(telegramUserId);
+    if (!Array.isArray(this.config.suspendedUsers)) {
+      this.config.suspendedUsers = [];
+    }
+    const existingIdx = this.config.suspendedUsers.findIndex((u) =>
+      typeof u === 'string' ? u === uidStr : String(u.userId) === uidStr
+    );
+    const entry = {
+      userId: uidStr,
+      username: username || '',
+      firstName: firstName || '',
+      suspendedAt: new Date().toISOString(),
+      failedAttempts,
+      reason
+    };
+    if (existingIdx !== -1) {
+      this.config.suspendedUsers[existingIdx] = entry;
+    } else {
+      this.config.suspendedUsers.push(entry);
+    }
+    return entry;
+  }
+
+  unbanUser(telegramUserId) {
+    const uidStr = String(telegramUserId);
+    if (!Array.isArray(this.config.suspendedUsers)) {
+      this.config.suspendedUsers = [];
+      return false;
+    }
+    const initialLen = this.config.suspendedUsers.length;
+    this.config.suspendedUsers = this.config.suspendedUsers.filter((u) =>
+      typeof u === 'string' ? u !== uidStr : String(u.userId) !== uidStr
+    );
+    return this.config.suspendedUsers.length < initialLen;
   }
 
   isUserUnlocked(telegramUserId) {

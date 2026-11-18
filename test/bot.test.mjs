@@ -2493,6 +2493,151 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(pmntState.isDesktopIntercepted, false);
   });
 
+  it('restricts users not in allowedUserIds when list is non-empty with repository link', async () => {
+    // Set allowedUserIds to only allow USER_ID (42001)
+    configStore.config.allowedUserIds = [String(USER_ID)];
+    await configStore.saveConfig();
+
+    const strangerUserId = 999999;
+    const strangerMsg = {
+      update_id: 8888,
+      message: {
+        message_id: 8888,
+        chat: { id: 7002, type: 'private' },
+        from: { id: strangerUserId, username: 'stranger' },
+        text: 'Hello bot'
+      }
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(strangerMsg);
+    const sent = mockTg.lastSent();
+    assert.match(sent.text, /Access Restricted:/);
+    assert.match(sent.text, /https:\/\/github\.com\/madmicrowave\/mobile-agent-control/);
+    assert.ok(
+      sent.reply_markup.inline_keyboard.some((row) =>
+        row.some((b) => b.url === 'https://github.com/madmicrowave/mobile-agent-control')
+      )
+    );
+
+    // Callbacks from restricted user are answered with restriction message
+    const strangerCb = {
+      update_id: 8889,
+      callback_query: {
+        id: 'cb-stranger',
+        from: { id: strangerUserId, username: 'stranger' },
+        message: { message_id: 101, chat: { id: 7002, type: 'private' } },
+        data: 'ide:menu'
+      }
+    };
+    mockTg.callbackAnswers.length = 0;
+    await controller.handleUpdate(strangerCb);
+    assert.match(mockTg.callbackAnswers[0]?.text, /Access restricted/);
+    assert.match(mockTg.callbackAnswers[0]?.text, /madmicrowave\/mobile-agent-control/);
+
+    // Reset allowedUserIds back to empty (allow all with session password)
+    configStore.config.allowedUserIds = [];
+    await configStore.saveConfig();
+  });
+
+  it('throttles authorization password to 5 attempts, suspends user on 5th failure, and unbanning allows 5 attempts again', async () => {
+    const testUserId = 555001;
+    const testChatId = 888001;
+    function makeTestUserMsg(text) {
+      return {
+        update_id: 99000,
+        message: {
+          message_id: 99000,
+          chat: { id: testChatId, type: 'private' },
+          from: { id: testUserId, username: 'badactor', first_name: 'Bad', last_name: 'Actor' },
+          text
+        }
+      };
+    }
+
+    configStore.lockUser(testUserId);
+    configStore.unbanUser(testUserId);
+    controller.clearPasswordFailures(testUserId);
+
+    // Initial prompt shows remaining 5 attempts
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('/start'));
+    assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
+
+    // Attempt 1
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('bad-1'));
+    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>4\/5<\/b>/);
+    assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // Attempt 2
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('bad-2'));
+    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>3\/5<\/b>/);
+    assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // Attempt 3
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('bad-3'));
+    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>2\/5<\/b>/);
+    assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // Attempt 4
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('bad-4'));
+    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>1\/5<\/b>/);
+    assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // Attempt 5 -> Exceeds 5 attempts -> Account Suspended!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('bad-5'));
+    assert.match(mockTg.lastSent().text, /Access Suspended:/);
+    assert.match(mockTg.lastSent().text, /exceeded 5 failed password attempts/);
+    assert.match(mockTg.lastSent().text, /account in <b>MAC → Settings → Telegram → Suspended Users<\/b>/);
+    assert.equal(configStore.isUserSuspended(testUserId), true);
+
+    // In config.json, user is recorded in suspendedUsers with username and full name
+    const suspended = configStore.config.suspendedUsers.find((u) => String(u.userId) === String(testUserId));
+    assert.ok(suspended);
+    assert.equal(suspended.username, 'badactor');
+    assert.equal(suspended.firstName, 'Bad Actor');
+    assert.equal(suspended.failedAttempts, 5);
+
+    // Any subsequent message from suspended user is blocked with suspended message
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('any message'));
+    assert.match(mockTg.lastSent().text, /Access Suspended:/);
+
+    // Callback queries from suspended user are also blocked
+    const testCb = {
+      update_id: 99001,
+      callback_query: {
+        id: 'cb-suspended',
+        from: { id: testUserId, username: 'badactor' },
+        message: { message_id: 101, chat: { id: testChatId, type: 'private' } },
+        data: 'ide:menu'
+      }
+    };
+    mockTg.callbackAnswers.length = 0;
+    await controller.handleUpdate(testCb);
+    assert.match(mockTg.callbackAnswers[0]?.text, /Account suspended/);
+
+    // Unban the user (simulating administrator clicking Unban in Mac app Settings)
+    configStore.unbanUser(testUserId);
+    await configStore.saveConfig();
+    assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // User can now try again with 5 fresh attempts!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('still-wrong'));
+    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>4\/5<\/b>/);
+
+    // And entering the right password unlocks successfully
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('run-secret-2'));
+    assert.ok(mockTg.sentMessages.some((m) => /Session unlocked!/.test(m.text)));
+  });
+
   it('polls getUpdates, honors 429 retry_after + fresh socket recovery, requires new startup password on fresh run, and persists telegramOffset via startBotRunner', async () => {
     mockTg.clearSent();
     mockTg.pollErrors.push({

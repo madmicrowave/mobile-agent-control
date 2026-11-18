@@ -567,6 +567,7 @@ private final class GeneralTabVM: ObservableObject {
     @Published var isVerifyingToken: Bool = false
     @Published var tokenCheckMessage: String?
     @Published var tokenCheckSucceeded: Bool = false
+    @Published var isSuspendedUsersExpanded: Bool = false
 
     // 3. AI Agent Runners & Models (Tabs: AGY CLI, Aider CLI, Codex CLI, Cloud Code, Direct API)
     @Published var agyBinPath: String = ""
@@ -1073,6 +1074,97 @@ private struct GeneralTabView: View {
                     .textFieldStyle(.roundedBorder)
                 if let status = MACValidationUtils.validateUrl(vm.telegramApiBaseUrl, label: "Telegram API URL") {
                     MACValidationMessage(status: status)
+                }
+            }
+
+            Divider().padding(.vertical, 4)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        vm.isSuspendedUsersExpanded.toggle()
+                        if vm.isSuspendedUsersExpanded {
+                            appState.reloadConfigFromDisk()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: vm.isSuspendedUsersExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+                        Image(systemName: "person.crop.circle.badge.xmark")
+                            .foregroundColor(appState.config.suspendedUsers.isEmpty ? .secondary : .orange)
+                        Text("Suspended Users (\(appState.config.suspendedUsers.count))")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        if !appState.config.suspendedUsers.isEmpty {
+                            Text("\(appState.config.suspendedUsers.count) blocked")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.12))
+                                .cornerRadius(4)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if vm.isSuspendedUsersExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if appState.config.suspendedUsers.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("No suspended users. All authorized accounts have full access.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        } else {
+                            ForEach(appState.config.suspendedUsers) { user in
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(user.displayName)
+                                                .font(.system(size: 13, weight: .semibold))
+                                            Text("(\(user.userId))")
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        HStack(spacing: 8) {
+                                            if !user.suspendedAt.isEmpty {
+                                                Text("Suspended: \(formatTimestamp(user.suspendedAt))")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Text("\(user.failedAttempts) failed attempts")
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .foregroundColor(.red)
+                                        }
+                                    }
+                                    Spacer()
+                                    Button {
+                                        unbanUser(user.userId)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "lock.open.fill")
+                                            Text("Unban")
+                                        }
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.green)
+                                    .controlSize(.small)
+                                }
+                                .padding(8)
+                                .background(Color.red.opacity(0.08))
+                                .cornerRadius(6)
+                            }
+                        }
+                    }
+                    .padding(.leading, 18)
+                    .padding(.top, 4)
                 }
             }
         }
@@ -1626,6 +1718,7 @@ private struct GeneralTabView: View {
     }
 
     private func loadFromAppState() {
+        appState.reloadConfigFromDisk()
         vm.performSync {
             vm.jenkinsDraft = appState.config.jenkins
             vm.timeoutMinutes = max(5, vm.jenkinsDraft.buildTimeoutMs / 60_000)
@@ -1724,6 +1817,26 @@ private struct GeneralTabView: View {
         appState.config.defaultModelLevel = normModel.level
 
         appState.saveConfigToDisk(banner: silent ? nil : "Saved General settings (CI/CD Deploy, Telegram, AI Engines & Models).")
+    }
+
+    private func unbanUser(_ userId: String) {
+        appState.config.suspendedUsers.removeAll(where: { $0.userId == userId })
+        appState.saveConfigToDisk(banner: "Unbanned Telegram user \(userId). Allowed 5 fresh attempts.")
+    }
+
+    private func formatTimestamp(_ isoString: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = formatter.date(from: isoString)
+        if date == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            date = formatter.date(from: isoString)
+        }
+        guard let parsed = date else { return isoString }
+        let out = DateFormatter()
+        out.dateStyle = .short
+        out.timeStyle = .short
+        return out.string(from: parsed)
     }
 
     private func runJenkinsConnectionTest() {

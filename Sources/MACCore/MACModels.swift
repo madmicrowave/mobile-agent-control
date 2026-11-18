@@ -410,6 +410,68 @@ public struct MACGoogleCloudConfig: Codable, Equatable {
     }
 }
 
+public struct MACSuspendedUser: Codable, Identifiable, Equatable {
+    public var id: String { userId }
+    public var userId: String
+    public var username: String
+    public var firstName: String
+    public var suspendedAt: String
+    public var failedAttempts: Int
+    public var reason: String
+
+    public var displayName: String {
+        if !firstName.isEmpty && !username.isEmpty {
+            return "\(firstName) (@\(username))"
+        } else if !username.isEmpty {
+            return "@\(username)"
+        } else if !firstName.isEmpty {
+            return firstName
+        } else {
+            return "Telegram User"
+        }
+    }
+
+    public init(
+        userId: String,
+        username: String = "",
+        firstName: String = "",
+        suspendedAt: String = "",
+        failedAttempts: Int = 5,
+        reason: String = "Exceeded 5 failed password attempts"
+    ) {
+        self.userId = userId
+        self.username = username
+        self.firstName = firstName
+        self.suspendedAt = suspendedAt
+        self.failedAttempts = failedAttempts
+        self.reason = reason
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userId, username, firstName, suspendedAt, failedAttempts, reason
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            self.userId = try container.decodeIfPresent(String.self, forKey: .userId) ?? ""
+            self.username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+            self.firstName = try container.decodeIfPresent(String.self, forKey: .firstName) ?? ""
+            self.suspendedAt = try container.decodeIfPresent(String.self, forKey: .suspendedAt) ?? ""
+            self.failedAttempts = try container.decodeIfPresent(Int.self, forKey: .failedAttempts) ?? 5
+            self.reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? "Exceeded 5 failed password attempts"
+        } else {
+            let single = try decoder.singleValueContainer()
+            let str = try single.decode(String.self)
+            self.userId = str
+            self.username = ""
+            self.firstName = ""
+            self.suspendedAt = ""
+            self.failedAttempts = 5
+            self.reason = "Exceeded 5 failed password attempts"
+        }
+    }
+}
+
 public struct MACConfig: Codable, Equatable {
     public var agyBin: String
     public var aiderBin: String
@@ -432,6 +494,7 @@ public struct MACConfig: Codable, Equatable {
     public var telegramBotToken: String
     public var telegramApiBaseUrl: String
     public var allowedUserIds: [String]
+    public var suspendedUsers: [MACSuspendedUser]
     public var defaultHistoryCount: Int
     public var antigravityBrainDir: String
 
@@ -457,6 +520,7 @@ public struct MACConfig: Codable, Equatable {
         telegramBotToken: String = "",
         telegramApiBaseUrl: String = "https://api.telegram.org",
         allowedUserIds: [String] = [],
+        suspendedUsers: [MACSuspendedUser] = [],
         defaultHistoryCount: Int = 20,
         antigravityBrainDir: String = MACPathUtils.defaultBrainDir()
     ) {
@@ -481,6 +545,7 @@ public struct MACConfig: Codable, Equatable {
         self.telegramBotToken = telegramBotToken
         self.telegramApiBaseUrl = telegramApiBaseUrl
         self.allowedUserIds = allowedUserIds
+        self.suspendedUsers = suspendedUsers
         self.defaultHistoryCount = defaultHistoryCount
         self.antigravityBrainDir = antigravityBrainDir
     }
@@ -489,7 +554,7 @@ public struct MACConfig: Codable, Equatable {
         case agyBin, aiderBin, codexBin, cloudCodeBin, agentEngine
         case openaiApiKey, anthropicApiKey, deepseekApiKey, qwenApiKey, customApiBaseUrl, customApiKey
         case defaultModel, defaultModelLevel, skipPermissions, jenkins, github, googleCloud, workspaces
-        case telegramBotToken, telegramApiBaseUrl, allowedUserIds, defaultHistoryCount, antigravityBrainDir
+        case telegramBotToken, telegramApiBaseUrl, allowedUserIds, suspendedUsers, defaultHistoryCount, antigravityBrainDir
     }
 
     public init(from decoder: Decoder) throws {
@@ -536,6 +601,13 @@ public struct MACConfig: Codable, Equatable {
         self.telegramBotToken = try c.decodeIfPresent(String.self, forKey: .telegramBotToken) ?? ""
         self.telegramApiBaseUrl = try c.decodeIfPresent(String.self, forKey: .telegramApiBaseUrl) ?? "https://api.telegram.org"
         self.allowedUserIds = try c.decodeIfPresent([String].self, forKey: .allowedUserIds) ?? []
+        if let objs = try? c.decodeIfPresent([MACSuspendedUser].self, forKey: .suspendedUsers) {
+            self.suspendedUsers = objs
+        } else if let ids = try? c.decodeIfPresent([String].self, forKey: .suspendedUsers) {
+            self.suspendedUsers = ids.map { MACSuspendedUser(userId: $0) }
+        } else {
+            self.suspendedUsers = []
+        }
         self.defaultHistoryCount = try c.decodeIfPresent(Int.self, forKey: .defaultHistoryCount) ?? 20
         let decodedBrainDir = (try c.decodeIfPresent(String.self, forKey: .antigravityBrainDir) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if decodedBrainDir.isEmpty || decodedBrainDir == MACPathUtils.legacyDesktopBrainDir() {

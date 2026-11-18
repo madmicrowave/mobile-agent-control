@@ -70,6 +70,16 @@ private func testConfigStoreRoundTrip() throws {
         ],
         telegramBotToken: "123456:TEST_TOKEN",
         allowedUserIds: ["652545688"],
+        suspendedUsers: [
+            MACSuspendedUser(
+                userId: "998877",
+                username: "badguy",
+                firstName: "Bad Guy",
+                suspendedAt: "2026-11-18T00:00:00Z",
+                failedAttempts: 5,
+                reason: "Exceeded 5 failed password attempts"
+            )
+        ],
         defaultHistoryCount: 20
     )
     try store.save(cfg)
@@ -80,6 +90,7 @@ private func testConfigStoreRoundTrip() throws {
     let reloaded = store.load()
     expect(reloaded.telegramBotToken == "123456:TEST_TOKEN", "Bot token round-trip")
     expect(reloaded.jenkins.baseUrl == "https://jenkins.local", "Jenkins URL round-trip")
+    expect(reloaded.suspendedUsers.count == 1 && reloaded.suspendedUsers[0].userId == "998877", "Suspended users round-trip")
     expect(reloaded.workspaces.count == 1, "Workspace count round-trip")
     expect(reloaded.workspaces[0].environmentMode == "multi", "Multi environment mode preserved")
     expect(reloaded.workspaces[0].prodJenkinsJobs == ["PROD/pb/gate"], "Prod Jenkins jobs preserved")

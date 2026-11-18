@@ -334,23 +334,19 @@ export class BotController {
     return out;
   }
 
-  checkPasswordRateLimit(userId) {
-    const key = String(userId);
-    const nowMs = Date.now();
-    const prev = (this.passwordFailures.get(key) || []).filter((t) => nowMs - t < 60_000);
-    if (prev.length === 0) {
-      this.passwordFailures.delete(key);
-      return true;
-    }
-    this.passwordFailures.set(key, prev);
-    return prev.length < 6;
+  getPasswordFailures(userId) {
+    return this.passwordFailures.get(String(userId)) || 0;
   }
 
   recordPasswordFailure(userId) {
     const key = String(userId);
-    const list = this.passwordFailures.get(key) || [];
-    list.push(Date.now());
-    this.passwordFailures.set(key, list);
+    const count = (this.passwordFailures.get(key) || 0) + 1;
+    this.passwordFailures.set(key, count);
+    return count;
+  }
+
+  clearPasswordFailures(userId) {
+    this.passwordFailures.delete(String(userId));
   }
 
   /**
@@ -368,13 +364,13 @@ export class BotController {
     }
   }
 
-  async promptForSessionPassword(chatId) {
+  async promptForSessionPassword(chatId, remainingAttempts = 5) {
     await this.telegram.sendMessage({
       chatId,
       text:
         `🔐 <b>Mobile Agent Control (MAC):</b>\n\n` +
         `Session requires authentication.\n\n` +
-        `Reply with the current session password:`
+        `Reply with the current session password (${remainingAttempts}/5 attempts remaining):`
     });
   }
 
@@ -383,10 +379,40 @@ export class BotController {
     const userId = msg.from?.id;
     if (!chatId || !userId) return;
 
+    if (this.configStore.isUserSuspended(userId)) {
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🚫 <b>Access Suspended:</b>\n\n` +
+          `Your Telegram account (<code>${escapeHtml(String(userId))}</code>) has been suspended due to 5 consecutive failed password attempts.\n\n` +
+          `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
+      });
+      return;
+    }
+
+    // If user was unbanned in the Mac app, ensure their failed count is reset to 0
+    if (this.getPasswordFailures(userId) >= 5) {
+      this.clearPasswordFailures(userId);
+    }
+
     if (!this.configStore.isUserAllowed(userId)) {
       await this.telegram.sendMessage({
         chatId,
-        text: `⛔ Unauthorized Telegram user ID (<code>${escapeHtml(String(userId))}</code>).`
+        text:
+          `🚫 <b>Access Restricted:</b>\n\n` +
+          `Your Telegram User ID (<code>${escapeHtml(String(userId))}</code>) is not on the allowed users list for this bot.\n\n` +
+          `Visit the project repository to host your own bot instance or learn more:\n` +
+          `https://github.com/madmicrowave/mobile-agent-control`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🌐 Visit GitHub Repository',
+                url: 'https://github.com/madmicrowave/mobile-agent-control'
+              }
+            ]
+          ]
+        }
       });
       return;
     }
@@ -397,15 +423,9 @@ export class BotController {
     // ── Per-Run Startup Password Gate ────────────────────────────────────────
     if (!this.configStore.isUserUnlocked(userId)) {
       if (!text || text === '/start') {
-        await this.promptForSessionPassword(chatId);
-        return;
-      }
-
-      if (!this.checkPasswordRateLimit(userId)) {
-        await this.telegram.sendMessage({
-          chatId,
-          text: '⏳ Too many failed password attempts. Wait 1 minute and try again.'
-        });
+        const failures = this.getPasswordFailures(userId);
+        const remaining = Math.max(0, 5 - failures);
+        await this.promptForSessionPassword(chatId, remaining);
         return;
       }
 
@@ -413,15 +433,43 @@ export class BotController {
       await this.telegram.deleteMessage(chatId, msg.message_id);
 
       if (!this.configStore.verifyPassword(text)) {
-        this.recordPasswordFailure(userId);
+        const fails = this.recordPasswordFailure(userId);
+        const maxAttempts = 5;
+        const remaining = maxAttempts - fails;
+
+        if (remaining <= 0) {
+          const username = msg.from?.username || '';
+          const firstName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || '';
+          this.configStore.suspendUser(userId, {
+            username,
+            firstName,
+            reason: 'Exceeded 5 failed password attempts',
+            failedAttempts: maxAttempts
+          });
+          await this.configStore.saveConfig();
+          this.clearPasswordFailures(userId);
+
+          await this.telegram.sendMessage({
+            chatId,
+            text:
+              `🚫 <b>Access Suspended:</b>\n\n` +
+              `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
+              `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
+          });
+          return;
+        }
+
         await this.telegram.sendMessage({
           chatId,
-          text: '❌ Invalid password. Please enter the current session password:'
+          text:
+            `❌ <b>Invalid password.</b>\n\n` +
+            `Attempts remaining: <b>${remaining}/5</b> before your account is suspended.\n\n` +
+            `Please enter the current session password:`
         });
         return;
       }
 
-      this.passwordFailures.delete(String(userId));
+      this.clearPasswordFailures(userId);
       this.configStore.unlockUser(userId, now);
       await this.configStore.saveState();
 
@@ -936,14 +984,29 @@ export class BotController {
       return;
     }
 
+    if (this.configStore.isUserSuspended(userId)) {
+      await this.telegram.answerCallbackQuery(
+        cbId,
+        'Account suspended due to 5 failed attempts. Contact bot administrator.',
+        true
+      );
+      return;
+    }
+
     if (!this.configStore.isUserAllowed(userId)) {
-      await this.telegram.answerCallbackQuery(cbId, 'Unauthorized user', true);
+      await this.telegram.answerCallbackQuery(
+        cbId,
+        'Access restricted. Visit repository: https://github.com/madmicrowave/mobile-agent-control',
+        true
+      );
       return;
     }
 
     if (!this.configStore.isUserUnlocked(userId)) {
       await this.telegram.answerCallbackQuery(cbId, 'Session password required', true);
-      await this.promptForSessionPassword(chatId);
+      const failures = this.getPasswordFailures(userId);
+      const remaining = Math.max(0, 5 - failures);
+      await this.promptForSessionPassword(chatId, remaining);
       return;
     }
 
