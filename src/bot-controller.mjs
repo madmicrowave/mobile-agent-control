@@ -1514,6 +1514,7 @@ export class BotController {
           const stopSt = this.configStore.getWorkspaceState(wsId);
           const cancelledCount = stopSt.messageQueue?.length || 0;
           stopSt.messageQueue = [];
+          stopSt.accumulatedCommits = [];
           await this.configStore.saveState();
           await this.telegram.sendMessage({
             chatId,
@@ -2690,6 +2691,7 @@ export class BotController {
     st.conversationId = null;
     st.continueLatest = false;
     st.pendingPhotos = [];
+    st.accumulatedCommits = [];
     st.isDesktopIntercepted = false;
     st.interceptedSession = null;
     st.phase = 'IDLE';
@@ -3185,6 +3187,37 @@ export class BotController {
         return;
       }
 
+      if (st.accumulatedCommits && st.accumulatedCommits.length > 0) {
+        const allBatchCommits = [...st.accumulatedCommits];
+        if (st.activeTurn) {
+          st.activeTurn.commits = allBatchCommits;
+        }
+
+        const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
+        const allWsTargets = this.buildAllWorkspaceTargets(ws, allBatchCommits);
+
+        await this.telegram.sendMessage({
+          chatId,
+          text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)} for this message.</b>\n\nProceeding to Jenkins deploy for previous message(s)…`
+        });
+
+        if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+          st.phase = 'AWAITING_OK_OR_REVERT';
+          await this.configStore.saveState();
+          await this.sendIsItOkayPrompt(
+            chatId,
+            ws,
+            'ℹ️ No Jenkins job is mapped for the modified repository.'
+          );
+          return;
+        }
+
+        st.phase = 'AWAITING_JENKINS_CHOICE';
+        await this.configStore.saveState();
+        await this.sendRunJenkinsPrompt(chatId, ws, matchedTargets, { isAfterRevert: false });
+        return;
+      }
+
       st.phase = 'IDLE';
       st.activeTurn = null;
       st.baselineSnapshots = null;
@@ -3367,6 +3400,7 @@ export class BotController {
 
     st.phase = 'IDLE';
     st.activeTurn = null;
+    st.accumulatedCommits = [];
     st.baselineSnapshots = null;
     st.pendingDeltas = [];
     st.lastError = null;
@@ -3397,6 +3431,39 @@ export class BotController {
         replyToMessageId: notice.anchorMsgId || null,
         queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
       });
+      return;
+    }
+
+    if (st.accumulatedCommits && st.accumulatedCommits.length > 0) {
+      const allBatchCommits = [...st.accumulatedCommits];
+      if (st.activeTurn) {
+        st.activeTurn.commits = allBatchCommits;
+      }
+
+      const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
+      const allWsTargets = this.buildAllWorkspaceTargets(ws, allBatchCommits);
+
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🗑 Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n\n` +
+          `Proceeding to Jenkins deploy for committed previous message(s)…`
+      });
+
+      if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+        st.phase = 'AWAITING_OK_OR_REVERT';
+        await this.configStore.saveState();
+        await this.sendIsItOkayPrompt(
+          chatId,
+          ws,
+          'ℹ️ No Jenkins job is mapped for the modified repository.'
+        );
+        return;
+      }
+
+      st.phase = 'AWAITING_JENKINS_CHOICE';
+      await this.configStore.saveState();
+      await this.sendRunJenkinsPrompt(chatId, ws, matchedTargets, { isAfterRevert: false });
       return;
     }
 
@@ -3565,7 +3632,8 @@ export class BotController {
       return;
     }
 
-    st.activeTurn.commits = commits;
+    st.accumulatedCommits = [...(st.accumulatedCommits || []), ...commits];
+    st.activeTurn.commits = [...st.accumulatedCommits];
     st.pendingDeltas = [];
     st.lastError = null;
 
@@ -3611,8 +3679,12 @@ export class BotController {
       return;
     }
 
+    const allBatchCommits = [...(st.accumulatedCommits || [])];
+    if (st.activeTurn) {
+      st.activeTurn.commits = allBatchCommits;
+    }
     const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
-    const allWsTargets = this.buildAllWorkspaceTargets(ws, commits);
+    const allWsTargets = this.buildAllWorkspaceTargets(ws, allBatchCommits);
 
     if (matchedTargets.length === 0 && allWsTargets.length === 0) {
       st.phase = 'AWAITING_OK_OR_REVERT';
@@ -3694,7 +3766,11 @@ export class BotController {
         .filter(Boolean);
 
     if (!isAfterRevert) {
-      return this.dedupeJenkinsTargets(mapCommitsWithLiveConfig(st.activeTurn?.commits || []));
+      const records = [
+        ...(st.accumulatedCommits || []),
+        ...(st.activeTurn?.commits || [])
+      ];
+      return this.dedupeJenkinsTargets(mapCommitsWithLiveConfig(records));
     }
     const directRev = this.dedupeJenkinsTargets(
       mapCommitsWithLiveConfig(st.activeTurn?.revertCommits || [])
@@ -3709,7 +3785,7 @@ export class BotController {
     const st = this.configStore.getWorkspaceState(ws.id);
     const sourceCommits = isAfterRevert
       ? st.activeTurn?.revertCommits || []
-      : st.activeTurn?.commits || [];
+      : [...(st.accumulatedCommits || []), ...(st.activeTurn?.commits || [])];
     const allWsTargets = this.buildAllWorkspaceTargets(ws, sourceCommits);
     const hasProd = this.hasWorkspaceProdJenkins(ws);
     const envLabel = hasProd ? 'Staging Jenkins' : 'Jenkins';
@@ -3838,7 +3914,7 @@ export class BotController {
     // Resolve target job(s) to trigger
     const sourceCommits = isAfterRevert
       ? st.activeTurn?.revertCommits || []
-      : st.activeTurn?.commits || [];
+      : [...(st.accumulatedCommits || []), ...(st.activeTurn?.commits || [])];
     const allWsTargets = this.buildAllWorkspaceTargets(ws, sourceCommits);
 
     let deployTargets = [];
@@ -4021,6 +4097,7 @@ export class BotController {
       }
       st.phase = 'IDLE';
       st.activeTurn = null;
+      st.accumulatedCommits = [];
       st.baselineSnapshots = null;
       st.pendingDeltas = [];
       st.lastError = null;
@@ -4162,6 +4239,7 @@ export class BotController {
 
     st.phase = 'IDLE';
     st.activeTurn = null;
+    st.accumulatedCommits = [];
     st.baselineSnapshots = null;
     st.pendingDeltas = [];
     st.lastError = null;
@@ -4335,6 +4413,7 @@ export class BotController {
 
     st.phase = 'IDLE';
     st.activeTurn = null;
+    st.accumulatedCommits = [];
     st.baselineSnapshots = null;
     st.pendingDeltas = [];
     st.lastError = null;
@@ -4400,6 +4479,7 @@ export class BotController {
         });
         st.phase = 'IDLE';
         st.activeTurn = null;
+        st.accumulatedCommits = [];
         st.baselineSnapshots = null;
         await this.configStore.saveState();
 

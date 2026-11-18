@@ -2774,6 +2774,20 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));
 
+    const backofficeRepo = await createBareAndClonedRepo(
+      tmpRoot,
+      'payments_backoffice',
+      'payments_backoffice'
+    );
+    const paymentsWs = controller.getWorkspace('payments');
+    paymentsWs.repos.push({
+      name: 'payments_backoffice',
+      path: backofficeRepo.cloneDir,
+      branch: 'master',
+      deployEnabled: true,
+      jenkinsJob: 'Prod/payments/payments.example.com-BACKOFFICE'
+    });
+
     let turn1Resolver;
     const turn1Promise = new Promise((resolve) => {
       turn1Resolver = resolve;
@@ -2800,7 +2814,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
         turn2Started = true;
         turn2PromptReceived = prompt;
         await fsp.writeFile(
-          path.join(coreRepo.cloneDir, 'src', 'turn2.js'),
+          path.join(backofficeRepo.cloneDir, 'src', 'turn2.js'),
           'export const t2 = 2;\n',
           'utf8'
         );
@@ -2898,6 +2912,19 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // 8) Now Turn 2 finishes -> queue is empty -> prompts for commit choice for Turn 2 changes
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
-    assert.match(mockTg.lastSent().text, /Changes made in Payments Platform/);
+    const commit2PromptMsg = mockTg.lastSent();
+    assert.match(commit2PromptMsg.text, /Changes made in Payments Platform/);
+
+    // 9) User clicks Yes on Turn 2 commit -> queue is empty -> Jenkins prompt includes ALL jobs from all messages!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments', commit2PromptMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+    const jnkPromptMsg = mockTg.lastSent();
+    assert.match(jnkPromptMsg.text, /Run (?:Staging )?Jenkins deploy\?/);
+    // MUST contain BOTH jobs from Turn 1 (GATE) and Turn 2 (BACKOFFICE)!
+    assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-GATE/);
+    assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-BACKOFFICE/);
   });
 });
