@@ -124,6 +124,9 @@ export class BotController {
     /** @type {Map<string, { atMs: number, mediaGroupId: string | null }>} */
     this.lastGateNoticeByWs = new Map();
 
+    /** @type {Map<string, Map<string, { chatId: number | string, messageId: number }>>} */
+    this.activePromptMessagesByWs = new Map();
+
     /** @type {Map<string, { messageId: number, userId: string | number }>} */
     this.lastWorkspaceMenuByChat = new Map();
 
@@ -697,13 +700,16 @@ export class BotController {
     // ── Custom Branch Text Input (during AWAITING_CUSTOM_BRANCH) ─────────────
     if (st.phase === 'AWAITING_CUSTOM_BRANCH') {
       if (!text) {
-        await this.telegram.sendMessage({
+        const sent = await this.telegram.sendMessage({
           chatId,
           text: `🌿 Type a valid git branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         return;
       }
       await this.handleCustomBranchSubmitted(chatId, ws, text);
@@ -723,13 +729,16 @@ export class BotController {
         } catch {}
       }
       if (!text && st.pendingPhotos.length === 0) {
-        await this.telegram.sendMessage({
+        const sent = await this.telegram.sendMessage({
           chatId,
           text: `➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         return;
       }
       await this.handleFixPromptSubmitted(chatId, ws, text);
@@ -1024,6 +1033,38 @@ export class BotController {
     }
     this.pendingInputBatches.delete(wsId);
     batch.resolveDone?.();
+  }
+
+  registerWorkspacePromptMessage(wsId, chatId, messageId) {
+    if (!wsId || !chatId || !messageId) return;
+    let map = this.activePromptMessagesByWs.get(wsId);
+    if (!map) {
+      map = new Map();
+      this.activePromptMessagesByWs.set(wsId, map);
+    }
+    map.set(`${chatId}:${messageId}`, { chatId, messageId });
+  }
+
+  async clearWorkspacePromptButtons(wsId, currentChatId = null, currentMessageId = null) {
+    if (currentChatId && currentMessageId) {
+      await this.telegram.clearInlineButtons(currentChatId, currentMessageId).catch(() => {});
+    }
+    if (!wsId) return;
+    const map = this.activePromptMessagesByWs.get(wsId);
+    if (map && map.size > 0) {
+      const items = Array.from(map.values());
+      map.clear();
+      for (const item of items) {
+        if (
+          !currentChatId ||
+          !currentMessageId ||
+          String(item.chatId) !== String(currentChatId) ||
+          Number(item.messageId) !== Number(currentMessageId)
+        ) {
+          await this.telegram.clearInlineButtons(item.chatId, item.messageId).catch(() => {});
+        }
+      }
+    }
   }
 
   async #enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text) {
@@ -1506,6 +1547,7 @@ export class BotController {
 
       if (data.startsWith('agent:stop:')) {
         const wsId = data.slice('agent:stop:'.length);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         const rt = this.runtime.get(wsId);
         if (rt?.abortAgent) {
           rt.abortAgent();
@@ -1528,35 +1570,35 @@ export class BotController {
 
       if (data.startsWith('cmt:yes:')) {
         const wsId = data.slice('cmt:yes:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleCommitYes(chatId, wsId, '');
         return;
       }
 
       if (data.startsWith('cmt:no:')) {
         const wsId = data.slice('cmt:no:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleCommitNo(chatId, wsId);
         return;
       }
 
       if (data.startsWith('cmt:br:')) {
         const wsId = data.slice('cmt:br:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.promptForCustomBranch(chatId, wsId);
         return;
       }
 
       if (data.startsWith('cmt:fix:')) {
         const wsId = data.slice('cmt:fix:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.promptForAddFix(chatId, wsId);
         return;
       }
 
       if (data.startsWith('cmt:back:')) {
         const wsId = data.slice('cmt:back:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         const ws = this.getWorkspace(wsId);
         if (ws) {
           const st = this.configStore.getWorkspaceState(ws.id);
@@ -1569,21 +1611,21 @@ export class BotController {
 
       if (data.startsWith('cmt:repush:')) {
         const wsId = data.slice('cmt:repush:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRetryGitPush(chatId, wsId);
         return;
       }
 
       if (data.startsWith('jnk:yes:')) {
         const wsId = data.slice('jnk:yes:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, { isAfterRevert: false, mode: 'matched' });
         return;
       }
 
       if (data.startsWith('jnk:all:')) {
         const wsId = data.slice('jnk:all:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, { isAfterRevert: false, mode: 'all' });
         return;
       }
@@ -1592,7 +1634,7 @@ export class BotController {
         const parts = data.split(':');
         const wsId = parts[2];
         const jobIndex = Number(parts[3]);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, {
           isAfterRevert: false,
           mode: 'single',
@@ -1603,49 +1645,49 @@ export class BotController {
 
       if (data.startsWith('jnk:no:')) {
         const wsId = data.slice('jnk:no:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, false, { isAfterRevert: false });
         return;
       }
 
       if (data.startsWith('ok:prod:')) {
         const wsId = data.slice('ok:prod:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleOkDeployProd(chatId, wsId);
         return;
       }
 
       if (data.startsWith('ok:yes:')) {
         const wsId = data.slice('ok:yes:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleOkConfirm(chatId, wsId);
         return;
       }
 
       if (data.startsWith('ok:rev:')) {
         const wsId = data.slice('ok:rev:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRevertBadCommit(chatId, wsId);
         return;
       }
 
       if (data.startsWith('fix:err:')) {
         const wsId = data.slice('fix:err:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleFixJenkinsError(chatId, wsId);
         return;
       }
 
       if (data.startsWith('rjnk:yes:')) {
         const wsId = data.slice('rjnk:yes:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, { isAfterRevert: true, mode: 'matched' });
         return;
       }
 
       if (data.startsWith('rjnk:all:')) {
         const wsId = data.slice('rjnk:all:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, { isAfterRevert: true, mode: 'all' });
         return;
       }
@@ -1654,7 +1696,7 @@ export class BotController {
         const parts = data.split(':');
         const wsId = parts[2];
         const jobIndex = Number(parts[3]);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, true, {
           isAfterRevert: true,
           mode: 'single',
@@ -1665,7 +1707,7 @@ export class BotController {
 
       if (data.startsWith('rjnk:no:')) {
         const wsId = data.slice('rjnk:no:'.length);
-        await this.telegram.clearInlineButtons(chatId, messageId);
+        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
         await this.handleRunJenkinsChoice(chatId, wsId, false, { isAfterRevert: true });
         return;
       }
@@ -2291,6 +2333,7 @@ export class BotController {
   async handleSetModelCommand(chatId, wsId, rawArgs) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const tokens = String(rawArgs || '').trim().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) {
@@ -2538,6 +2581,7 @@ export class BotController {
   async activateInterceptDesktopSession(chatId, userId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     this.lastWorkspaceDetailByChat.delete(chatId);
@@ -2627,6 +2671,7 @@ export class BotController {
   async activateSameChat(chatId, userId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
     this.lastWorkspaceDetailByChat.delete(chatId);
@@ -2675,6 +2720,7 @@ export class BotController {
   async activateNewChat(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -2716,6 +2762,7 @@ export class BotController {
   async sendLatestMessagesForWorkspace(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
     const count = this.getConfiguredHistoryCount();
@@ -3348,7 +3395,7 @@ export class BotController {
 
   async sendCommitPrompt(chatId, ws, deltas) {
     const defaultBranches = [...new Set(deltas.map((d) => d.branch || 'master'))].join(', ');
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text: this.formatChangedFilesSummary(ws, deltas),
       replyMarkup: {
@@ -3364,12 +3411,17 @@ export class BotController {
         ]
       }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
+    return sent;
   }
 
   // ── STEP 2: Commit? Yes / No / Custom-Branch ───────────────────────────────
   async handleCommitNo(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -3479,6 +3531,7 @@ export class BotController {
   async promptForAddFix(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -3490,7 +3543,7 @@ export class BotController {
     st.phase = 'AWAITING_FIX_PROMPT';
     await this.configStore.saveState();
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text:
         `➕ <b>Add Fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
@@ -3499,9 +3552,13 @@ export class BotController {
         inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
       }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
   }
 
   async handleFixPromptSubmitted(chatId, ws, promptText) {
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -3516,6 +3573,7 @@ export class BotController {
   async promptForCustomBranch(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -3527,7 +3585,7 @@ export class BotController {
     st.phase = 'AWAITING_CUSTOM_BRANCH';
     await this.configStore.saveState();
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text:
         `🌿 <b>Custom Branch for ${escapeHtml(wsLabel)}:</b>\n\n` +
@@ -3536,19 +3594,25 @@ export class BotController {
         inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
       }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
   }
 
   async handleCustomBranchSubmitted(chatId, ws, branchInput) {
     const branchName = String(branchInput || '').trim();
     const isValid = await validateGitBranchName(branchName);
     if (!isValid) {
-      await this.telegram.sendMessage({
+      const sent = await this.telegram.sendMessage({
         chatId,
         text: `❌ Invalid git branch name: <code>${escapeHtml(branchName)}</code>. Please reply with a valid branch name (no spaces or <code>..</code>):`,
         replyMarkup: {
           inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
         }
       });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
       return;
     }
 
@@ -3558,6 +3622,7 @@ export class BotController {
   async handleCommitYes(chatId, wsId, customBranch = '') {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -3605,7 +3670,7 @@ export class BotController {
       if (commits.length > 0) {
         st.phase = 'AWAITING_JENKINS_CHOICE';
         await this.configStore.saveState();
-        await this.telegram.sendMessage({
+        const sent = await this.telegram.sendMessage({
           chatId,
           text:
             `⚠️ <b>Local commit created, but git push failed:</b>\n` +
@@ -3619,6 +3684,9 @@ export class BotController {
             ]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         return;
       }
 
@@ -3705,6 +3773,7 @@ export class BotController {
   async handleRetryGitPush(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const st = this.configStore.getWorkspaceState(ws.id);
     const commits = st.activeTurn?.commits || [];
 
@@ -3735,7 +3804,7 @@ export class BotController {
         await this.sendIsItOkayPrompt(chatId, ws);
       }
     } catch (err) {
-      await this.telegram.sendMessage({
+      const sent = await this.telegram.sendMessage({
         chatId,
         text: `❌ <b>Git push still failed:</b>\n<code>${escapeHtml(err.message)}</code>`,
         replyMarkup: {
@@ -3747,6 +3816,9 @@ export class BotController {
           ]
         }
       });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
     }
   }
 
@@ -3850,11 +3922,15 @@ export class BotController {
       }
     }
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text: bodyText,
       replyMarkup: { inline_keyboard: keyboard }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
+    return sent;
   }
 
   async handleRunJenkinsChoice(
@@ -3865,6 +3941,7 @@ export class BotController {
   ) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -4043,7 +4120,7 @@ export class BotController {
         st.lastError = failedBuild.errorLog;
         await this.configStore.saveState();
 
-        await this.telegram.sendMessage({
+        const sent = await this.telegram.sendMessage({
           chatId,
           text:
             `❌ <b>Rollback Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
@@ -4057,6 +4134,9 @@ export class BotController {
             ]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         return;
       }
 
@@ -4136,7 +4216,7 @@ export class BotController {
       ? `<code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result || 'FAILURE')})`
       : 'Build failed';
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text:
         `❌ <b>Jenkins Build Failed:</b> ${jobTitle}\n\n` +
@@ -4151,6 +4231,10 @@ export class BotController {
         ]
       }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
+    return sent;
   }
 
   // ── STEP 4: Is It Okay? -> Yes (Prod / Skip Prod) / Revert ─────────────────
@@ -4173,7 +4257,7 @@ export class BotController {
       }
       sections.push('<b>Is it okay?</b>');
 
-      await this.telegram.sendMessage({
+      const sent = await this.telegram.sendMessage({
         chatId,
         text: sections.join('\n\n'),
         replyMarkup: {
@@ -4186,10 +4270,13 @@ export class BotController {
           ]
         }
       });
-      return;
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
+      return sent;
     }
 
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text: cleanPrefix ? `${cleanPrefix}\n\n<b>Is it okay?</b>` : '<b>Is it okay?</b>',
       replyMarkup: {
@@ -4201,11 +4288,16 @@ export class BotController {
         ]
       }
     });
+    if (sent?.message_id) {
+      this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+    }
+    return sent;
   }
 
   async handleOkConfirm(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
     const hasProd = this.hasWorkspaceProdJenkins(ws);
@@ -4257,6 +4349,7 @@ export class BotController {
   async handleOkDeployProd(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -4372,7 +4465,7 @@ export class BotController {
       st.lastError = failedBuild.errorLog;
       await this.configStore.saveState();
 
-      await this.telegram.sendMessage({
+      const sent = await this.telegram.sendMessage({
         chatId,
         text:
           `❌ <b>Production Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
@@ -4388,6 +4481,9 @@ export class BotController {
           ]
         }
       });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
       return;
     }
 
@@ -4434,6 +4530,7 @@ export class BotController {
   async handleRevertBadCommit(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -4499,19 +4596,23 @@ export class BotController {
     } catch (revErr) {
       st.lastError = revErr.message;
       await this.configStore.saveState();
-      await this.telegram.sendMessage({
+      const sent = await this.telegram.sendMessage({
         chatId,
         text: `❌ <b>Git revert error:</b>\n<code>${escapeHtml(revErr.message)}</code>`,
         replyMarkup: {
           inline_keyboard: [[{ text: '🔄 Retry Revert', callback_data: `ok:rev:${ws.id}` }]]
         }
       });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
     }
   }
 
   async handleFixJenkinsError(chatId, wsId) {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -4594,40 +4695,55 @@ export class BotController {
     const st = this.configStore.getWorkspaceState(ws.id);
     const prefix = bannerHtml ? `${bannerHtml}\n\n` : '';
 
+    // Clear any previous prompt buttons for this workspace before sending a new gate prompt
+    await this.clearWorkspacePromptButtons(ws.id);
+
     switch (st.phase) {
-      case 'RUNNING_AGENT':
-        await this.telegram.sendMessage({
+      case 'RUNNING_AGENT': {
+        const sent = await this.telegram.sendMessage({
           chatId,
           text: `${prefix}⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
           replyMarkup: {
             inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         break;
+      }
       case 'AWAITING_COMMIT_CHOICE':
         if (bannerHtml) {
           await this.telegram.sendMessage({ chatId, text: bannerHtml });
         }
         await this.sendCommitPrompt(chatId, ws, st.pendingDeltas || []);
         break;
-      case 'AWAITING_CUSTOM_BRANCH':
-        await this.telegram.sendMessage({
+      case 'AWAITING_CUSTOM_BRANCH': {
+        const sent = await this.telegram.sendMessage({
           chatId,
           text: `${prefix}🌿 Reply with the custom branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         break;
-      case 'AWAITING_FIX_PROMPT':
-        await this.telegram.sendMessage({
+      }
+      case 'AWAITING_FIX_PROMPT': {
+        const sent = await this.telegram.sendMessage({
           chatId,
           text: `${prefix}➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
             inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
+        if (sent?.message_id) {
+          this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+        }
         break;
+      }
       case 'AWAITING_JENKINS_CHOICE': {
         if (bannerHtml) {
           await this.telegram.sendMessage({ chatId, text: bannerHtml });

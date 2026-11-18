@@ -83,6 +83,7 @@ async function startMockTelegramServer() {
   const sentMessages = [];
   const deletedMessages = [];
   const editedMessages = [];
+  const clearedMarkupMessages = [];
   const callbackAnswers = [];
   const updateQueue = [];
   const pollErrors = [];
@@ -168,6 +169,7 @@ async function startMockTelegramServer() {
     }
 
     if (method === 'editMessageReplyMarkup') {
+      clearedMarkupMessages.push(payload);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, result: true }));
       return;
@@ -213,6 +215,7 @@ async function startMockTelegramServer() {
     sentMessages,
     deletedMessages,
     editedMessages,
+    clearedMarkupMessages,
     callbackAnswers,
     updateQueue,
     pollErrors,
@@ -220,6 +223,7 @@ async function startMockTelegramServer() {
     clearSent() {
       sentMessages.length = 0;
       editedMessages.length = 0;
+      clearedMarkupMessages.length = 0;
     },
     lastSent() {
       return sentMessages[sentMessages.length - 1] || null;
@@ -2926,5 +2930,56 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // MUST contain BOTH jobs from Turn 1 (GATE) and Turn 2 (BACKOFFICE)!
     assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-GATE/);
     assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-BACKOFFICE/);
+  });
+
+  it('clears inline buttons on both original prompt message and subsequent gate notice messages when user confirms', async () => {
+    // 1) Select payments workspace
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    // 2) Set phase to AWAITING_OK_OR_REVERT and send initial "Is it okay?" prompt
+    const ws = controller.getWorkspace('payments');
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'AWAITING_OK_OR_REVERT';
+    await configStore.saveState();
+
+    const originalPrompt = await controller.sendIsItOkayPrompt(CHAT_ID, ws, 'Deploy completed');
+    assert.ok(originalPrompt?.message_id);
+    const originalMsgId = originalPrompt.message_id;
+
+    // 3) User sends a message while in AWAITING_OK_OR_REVERT -> triggers sendCurrentWorkspaceGatePrompt
+    mockTg.clearedMarkupMessages.length = 0;
+    await controller.handleUpdate(makeUserMsg('what is the status now?'));
+
+    const gateNoticeMsg = mockTg.lastSent();
+    assert.ok(gateNoticeMsg?.message_id);
+    const gateMsgId = gateNoticeMsg.message_id;
+    assert.notEqual(gateMsgId, originalMsgId);
+    assert.match(gateNoticeMsg.text, /Is it okay\?/);
+
+    // When gate notice was sent, originalMsgId's buttons were cleared
+    assert.ok(
+      mockTg.clearedMarkupMessages.some((p) => p.message_id === originalMsgId),
+      'Original prompt message buttons should be cleared when gate notice is sent'
+    );
+
+    // 4) User clicks [✅ Yes (Confirm)] on the earlier original prompt message
+    mockTg.clearedMarkupMessages.length = 0;
+    await controller.handleUpdate(makeCallback('ok:yes:payments', originalMsgId));
+
+    // 5) Verify buttons on BOTH messages are cleared!
+    const clearedIds = mockTg.clearedMarkupMessages.map((p) => p.message_id);
+    assert.ok(
+      clearedIds.includes(originalMsgId),
+      `Original message (${originalMsgId}) buttons must be cleared on confirm`
+    );
+    assert.ok(
+      clearedIds.includes(gateMsgId),
+      `Gate notice message (${gateMsgId}) buttons must also be cleared on confirm`
+    );
+
+    // Verify workspace returned to IDLE
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 });
