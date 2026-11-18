@@ -1268,7 +1268,11 @@ export class BotController {
 
       if (data.startsWith('chat:hist:')) {
         const wsId = data.slice('chat:hist:'.length);
+        if (messageId) {
+          await this.telegram.deleteMessage(chatId, messageId).catch(() => {});
+        }
         await this.sendLatestMessagesForWorkspace(chatId, wsId);
+        await this.sendWorkspaceSelectedPrompt(chatId, wsId);
         return;
       }
 
@@ -2178,6 +2182,23 @@ export class BotController {
     }
     await this.configStore.saveState();
 
+    await this.sendWorkspaceSelectedPrompt(chatId, ws);
+  }
+
+  async sendWorkspaceSelectedPrompt(chatId, wsOrId) {
+    const ws = typeof wsOrId === 'string' ? this.getWorkspace(wsOrId) : wsOrId;
+    if (!ws) return null;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const st = this.configStore.getWorkspaceState(ws.id);
+
+    let desktopSession = this.cachedDesktopSessionByWs.get(ws.id);
+    if (!this.cachedDesktopSessionByWs.has(ws.id)) {
+      desktopSession = await findLatestDesktopSession(ws.path, {
+        customBrainDir: this.configStore.config.antigravityBrainDir
+      });
+      this.cachedDesktopSessionByWs.set(ws.id, desktopSession);
+    }
+
     const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
     const keyboard = this.buildIdeSelectedKeyboard(ws, desktopSession, st, hasDiff);
 
@@ -2214,7 +2235,7 @@ export class BotController {
       infoSections.push(`🚀 Jenkins (${allJobs.length}): <code>${escapeHtml(shortJobsSummary)}</code>`);
     }
 
-    await this.telegram.sendMessage({
+    return await this.telegram.sendMessage({
       chatId,
       text: infoSections.join('\n\n'),
       replyMarkup: { inline_keyboard: keyboard }

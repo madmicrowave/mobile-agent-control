@@ -1206,10 +1206,20 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:pick:')));
     assert.ok(!flatButtons.some((b) => /AI Model & Level/i.test(b.text)));
 
-    // Tapping 📜 History on Workspace Selected shows history of the current chat
+    // Tapping 📜 History on Workspace Selected deletes previous Workspace Selected message, shows history, and re-renders Workspace Selected below
     mockTg.clearSent();
-    await controller.handleUpdate(makeCallback('chat:hist:payments'));
-    assert.match(mockTg.lastSent().text, /Latest 2 of 4 message\(s\) in Payments Platform/);
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeCallback('chat:hist:payments', selectMsg.message_id));
+    assert.ok(mockTg.deletedMessages.some((d) => d.messageId === selectMsg.message_id));
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /Latest 2 of 4 message\(s\) in Payments Platform/.test(m.text)
+      )
+    );
+    assert.match(
+      mockTg.lastSent().text,
+      /🗂 <b>Workspace Selected:<\/b>\n\n<b>Payments Platform<\/b>/
+    );
 
     // Without clicking ✅ Same Chat, typing a prompt immediately must auto-continue Same Chat!
     nextAgentBehavior = async () => ({
