@@ -151,7 +151,8 @@ async function startMockTelegramServer() {
         chat: { id: payload.chat_id },
         text: payload.text,
         parse_mode: payload.parse_mode || null,
-        reply_markup: payload.reply_markup || null
+        reply_markup: payload.reply_markup || null,
+        reply_to_message_id: payload.reply_to_message_id || null
       };
       sentMessages.push(msg);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2819,11 +2820,13 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // 2) Send Turn 2 while agent is currently running
     mockTg.clearSent();
-    await controller.handleUpdate(makeUserMsg('Start turn 2 queued'));
+    const turn2UserMsg = makeUserMsg('Start turn 2 queued');
+    await controller.handleUpdate(turn2UserMsg);
 
-    // Verify "agent is currently running" message was sent
+    // Verify "agent is currently running" message was sent and replies to user's message
     const runningMsg = mockTg.lastSent();
     assert.match(runningMsg.text, /Antigravity agent is currently running/);
+    assert.equal(runningMsg.reply_to_message_id, turn2UserMsg.message.message_id);
 
     // Verify inline keyboard has "Queue Message" before "Stop Agent"
     const kb = runningMsg.reply_markup?.inline_keyboard?.[0] || [];
@@ -2871,11 +2874,23 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
         /Committed &(?:amp;)? pushed/i.test(m.text)
       )
     );
-    assert.ok(
-      mockTg.sentMessages.some((m) =>
-        /Skipping Jenkins deploy for previous message/i.test(m.text)
-      )
+    const skipDeployMsg = mockTg.sentMessages.find((m) =>
+      /Skipping Jenkins deploy for previous message/i.test(m.text)
     );
+    assert.ok(skipDeployMsg);
+    // Verify queue number #1 and prompt preview in skipping message
+    assert.match(skipDeployMsg.text, /executing queued message \(#1\)/i);
+    assert.match(skipDeployMsg.text, /Queued Request \(#1\):/i);
+    assert.match(skipDeployMsg.text, /Start turn 2 queued/);
+    // Verify anchored to original user request via reply_to_message_id
+    assert.equal(skipDeployMsg.reply_to_message_id, turn2UserMsg.message.message_id);
+
+    // Verify working message also displays the queued request and anchor
+    const workingMsg = mockTg.sentMessages.find((m) =>
+      /Antigravity working/i.test(m.text) && /Queued Request \(#1\)/i.test(m.text)
+    );
+    assert.ok(workingMsg);
+    assert.equal(workingMsg.reply_to_message_id, turn2UserMsg.message.message_id);
 
     // 7) Verify Turn 2 started and ran before Jenkins
     assert.equal(turn2Started, true);

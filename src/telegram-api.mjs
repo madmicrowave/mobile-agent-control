@@ -546,6 +546,7 @@ export class TelegramApi {
     text,
     parseMode = 'HTML',
     replyMarkup = undefined,
+    replyToMessageId = undefined,
     disableWebPagePreview = true
   }) {
     const chunks = splitTelegramText(text, 3800);
@@ -558,14 +559,21 @@ export class TelegramApi {
         text: chunks[i],
         disable_web_page_preview: disableWebPagePreview,
         ...(parseMode ? { parse_mode: parseMode } : {}),
-        ...(isLast && replyMarkup ? { reply_markup: replyMarkup } : {})
+        ...(isLast && replyMarkup ? { reply_markup: replyMarkup } : {}),
+        ...(i === 0 && replyToMessageId ? { reply_to_message_id: replyToMessageId } : {})
       };
 
       try {
         lastMsg = await this.call('sendMessage', body);
       } catch (err) {
-        // Fallback without parse_mode if Telegram rejects any entity
-        if (parseMode && /can't parse entities/i.test(err.message || '')) {
+        if (
+          body.reply_to_message_id &&
+          /replied message not found|message to be replied not found/i.test(err.message || '')
+        ) {
+          const retryBody = { ...body };
+          delete retryBody.reply_to_message_id;
+          lastMsg = await this.call('sendMessage', retryBody);
+        } else if (parseMode && /can't parse entities/i.test(err.message || '')) {
           const fallbackBody = { ...body };
           delete fallbackBody.parse_mode;
           fallbackBody.text = unescapeHtmlEntities(chunks[i].replace(/<[^>]+>/g, ''));

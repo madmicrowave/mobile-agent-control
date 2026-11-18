@@ -791,6 +791,7 @@ export class BotController {
       this.pendingQueueCandidates.set(candidateId, {
         wsId: ws.id,
         chatId,
+        userMessageId: msg.message_id || null,
         text: promptText,
         photos: savedPhoto ? [savedPhoto] : [],
         mediaGroupId: msg.media_group_id || null,
@@ -807,7 +808,8 @@ export class BotController {
               { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }
             ]
           ]
-        }
+        },
+        replyToMessageId: msg.message_id || undefined
       });
       return;
     }
@@ -975,6 +977,42 @@ export class BotController {
       mediaGroupId: mediaGroupId ? String(mediaGroupId) : null
     });
     return false;
+  }
+
+  #buildQueuedExecutionNotice(wsLabel, nextItem, { reason = 'skipping_jenkins', chatId = null } = {}) {
+    const queueNum = nextItem.queueNumber || 1;
+    const previewText = nextItem.text
+      ? (nextItem.text.length > 140 ? nextItem.text.slice(0, 137) + '…' : nextItem.text)
+      : (nextItem.photos?.length ? `[${nextItem.photos.length} file(s)]` : '(Message)');
+
+    let anchorLink = '';
+    const anchorMsgId = nextItem.userMessageId || nextItem.queueMessageId || null;
+    if (chatId && String(chatId).startsWith('-100') && anchorMsgId) {
+      const channelId = String(chatId).slice(4);
+      anchorLink = `\n🔗 <a href="https://t.me/c/${channelId}/${anchorMsgId}">Go to initial request</a>`;
+    }
+
+    let reasonHeader = '';
+    if (reason === 'skipping_jenkins') {
+      reasonHeader = `⏭️ <i>Skipping Jenkins deploy for previous message — executing queued message (#${queueNum}) next…</i>`;
+    } else if (reason === 'discarded') {
+      reasonHeader = `🗑 Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n\n⏭️ <i>Executing queued message (#${queueNum}) next…</i>`;
+    } else if (reason === 'no_changes') {
+      reasonHeader = `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\n\n⏭️ <i>Executing queued message (#${queueNum}) next…</i>`;
+    }
+
+    const text =
+      `${reasonHeader}\n\n` +
+      `📥 <b>Queued Request (#${queueNum}):</b>\n` +
+      `<i>"${escapeHtml(previewText)}"</i>` +
+      anchorLink;
+
+    return {
+      text,
+      previewText,
+      queueNum,
+      anchorMsgId
+    };
   }
 
   #cancelInputBatch(wsId) {
@@ -1434,17 +1472,19 @@ export class BotController {
         }
 
         st.messageQueue = st.messageQueue || [];
+        const queuePos = st.messageQueue.length + 1;
         st.messageQueue.push({
           id: candidateId,
+          queueNumber: queuePos,
           text: candidate.text,
           photos: candidate.photos || [],
           chatId: candidate.chatId,
+          userMessageId: candidate.userMessageId || null,
+          queueMessageId: messageId,
           queuedAt: candidate.createdAt
         });
         await this.configStore.saveState();
         this.pendingQueueCandidates.delete(candidateId);
-
-        const queuePos = st.messageQueue.length;
         const preview = candidate.text
           ? (candidate.text.length > 70 ? candidate.text.slice(0, 67) + '…' : candidate.text)
           : (candidate.photos?.length ? `[${candidate.photos.length} file(s)]` : '(Message)');
@@ -2729,7 +2769,12 @@ export class BotController {
   }
 
   // ── STEP 1: Run Antigravity Agent (Text + Up to 5 File/Photo Attachments) ──
-  async startAgentTurn(chatId, ws, promptText, { extraNotice = '', isAddFix = false } = {}) {
+  async startAgentTurn(
+    chatId,
+    ws,
+    promptText,
+    { extraNotice = '', isAddFix = false, replyToMessageId = null, queueInfo = null } = {}
+  ) {
     const st = this.configStore.getWorkspaceState(ws.id);
     const allQueuedFiles = [...(st.pendingPhotos || [])];
     const attachedPhotos = allQueuedFiles.slice(0, MAX_FILES_PER_TURN);
@@ -2772,7 +2817,8 @@ export class BotController {
         commits: [],
         revertCommits: [],
         builds: [],
-        rollbackBuilds: []
+        rollbackBuilds: [],
+        queueInfo: queueInfo || null
       };
     }
 
@@ -2793,6 +2839,10 @@ export class BotController {
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const modelInfo = this.resolveWorkspaceModel(ws);
+    const queueSnippet = queueInfo?.queueNumber
+      ? `📥 <b>Queued Request (#${queueInfo.queueNumber}):</b>\n<i>"${escapeHtml(queueInfo.promptText)}"</i>\n\n`
+      : '';
+
     const statusMsg = await this.telegram.sendMessage({
       chatId,
       text: isAddFix
@@ -2801,6 +2851,7 @@ export class BotController {
           `\n<i>Working on requested fixes in the same process…</i>`
         : `🤖 Antigravity working…\n\n` +
           `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+          queueSnippet +
           `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
           (attachedPhotos.length > 0
             ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
@@ -2808,7 +2859,8 @@ export class BotController {
           (combinedNotice ? `\n\n${escapeHtml(combinedNotice)}` : ''),
       replyMarkup: {
         inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-      }
+      },
+      replyToMessageId: replyToMessageId || undefined
     });
 
     // Run asynchronously so the bot keeps responding if the user switches IDEs!
@@ -2935,6 +2987,9 @@ export class BotController {
             const stepLabel = evt.toolName
               ? `${evt.stepType}: ${evt.toolName} (${evt.state})`
               : `${evt.stepType} (${evt.state})`;
+            const queueSnippet = st.activeTurn?.queueInfo?.queueNumber
+              ? `📥 <b>Queued Request (#${st.activeTurn.queueInfo.queueNumber}):</b>\n<i>"${escapeHtml(st.activeTurn.queueInfo.promptText)}"</i>\n\n`
+              : '';
             this.telegram
               .editMessageText({
                 chatId,
@@ -2942,6 +2997,7 @@ export class BotController {
                 text:
                   `🤖 Antigravity working…\n\n` +
                   `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+                  queueSnippet +
                   `⚙️ <code>${escapeHtml(stepLabel)}</code>`,
                 replyMarkup: {
                   inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
@@ -3103,6 +3159,11 @@ export class BotController {
 
       if (st.messageQueue && st.messageQueue.length > 0) {
         const nextItem = st.messageQueue.shift();
+        const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
+          reason: 'no_changes',
+          chatId
+        });
+
         st.activeTurn = null;
         st.baselineSnapshots = null;
         st.pendingDeltas = [];
@@ -3112,10 +3173,15 @@ export class BotController {
 
         await this.telegram.sendMessage({
           chatId,
-          text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}. Executing queued message next…</b>`
+          text: notice.text,
+          replyToMessageId: notice.anchorMsgId || undefined
         });
-        this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
-        await this.startAgentTurn(chatId, ws, nextItem.text || '');
+
+        this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
+        await this.startAgentTurn(chatId, ws, nextItem.text || '', {
+          replyToMessageId: notice.anchorMsgId || null,
+          queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
+        });
         return;
       }
 
@@ -3307,13 +3373,18 @@ export class BotController {
     await this.configStore.saveState();
 
     if (st.messageQueue && st.messageQueue.length > 0) {
+      const nextItem = st.messageQueue.shift();
+      const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
+        reason: 'discarded',
+        chatId
+      });
+
       await this.telegram.sendMessage({
         chatId,
-        text:
-          `🗑 Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n\n` +
-          `⏭️ <i>Executing queued message next…</i>`
+        text: notice.text,
+        replyToMessageId: notice.anchorMsgId || undefined
       });
-      const nextItem = st.messageQueue.shift();
+
       st.activeTurn = null;
       st.baselineSnapshots = null;
       st.pendingDeltas = [];
@@ -3321,8 +3392,11 @@ export class BotController {
       st.phase = 'IDLE';
       await this.configStore.saveState();
 
-      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
-      await this.startAgentTurn(chatId, ws, nextItem.text || '');
+      this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
+      await this.startAgentTurn(chatId, ws, nextItem.text || '', {
+        replyToMessageId: notice.anchorMsgId || null,
+        queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
+      });
       return;
     }
 
@@ -3510,11 +3584,18 @@ export class BotController {
     });
 
     if (st.messageQueue && st.messageQueue.length > 0) {
+      const nextItem = st.messageQueue.shift();
+      const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
+        reason: 'skipping_jenkins',
+        chatId
+      });
+
       await this.telegram.sendMessage({
         chatId,
-        text: `⏭️ <i>Skipping Jenkins deploy for previous message — executing queued message next…</i>`
+        text: notice.text,
+        replyToMessageId: notice.anchorMsgId || undefined
       });
-      const nextItem = st.messageQueue.shift();
+
       st.activeTurn = null;
       st.baselineSnapshots = null;
       st.pendingDeltas = [];
@@ -3522,8 +3603,11 @@ export class BotController {
       st.phase = 'IDLE';
       await this.configStore.saveState();
 
-      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
-      await this.startAgentTurn(chatId, ws, nextItem.text || '');
+      this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
+      await this.startAgentTurn(chatId, ws, nextItem.text || '', {
+        replyToMessageId: notice.anchorMsgId || null,
+        queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
+      });
       return;
     }
 
