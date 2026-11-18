@@ -118,6 +118,9 @@ export class BotController {
     /** @type {Map<string, object>} */
     this.pendingInputBatches = new Map();
 
+    /** @type {Map<string, object>} */
+    this.pendingQueueCandidates = new Map();
+
     /** @type {Map<string, { atMs: number, mediaGroupId: string | null }>} */
     this.lastGateNoticeByWs = new Map();
 
@@ -733,6 +736,82 @@ export class BotController {
       return;
     }
 
+    // ── Allow queuing message if agent is currently running ──────────────────
+    if (st.phase === 'RUNNING_AGENT') {
+      const incomingAttachment = this.extractIncomingAttachment(msg);
+      if (!incomingAttachment && !text) {
+        await this.telegram.sendMessage({
+          chatId,
+          text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+          replyMarkup: {
+            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+          }
+        });
+        return;
+      }
+
+      let savedPhoto = null;
+      if (incomingAttachment) {
+        const destBase = path.join(
+          this.configStore.uploadsDir,
+          `${ws.id}-queued-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`
+        );
+        try {
+          const savedPath = await this.telegram.downloadFile(
+            incomingAttachment.fileId,
+            destBase,
+            incomingAttachment.preferredExt
+          );
+          savedPhoto = {
+            path: savedPath,
+            fileName: path.basename(savedPath)
+          };
+        } catch (dlErr) {
+          await this.telegram.sendMessage({
+            chatId,
+            text: `❌ Failed to download file from Telegram: ${escapeHtml(dlErr.message)}`
+          });
+          return;
+        }
+      }
+
+      // If media_group_id is present, attach additional photos/text to an existing candidate for this group
+      if (msg.media_group_id) {
+        for (const [cId, cVal] of this.pendingQueueCandidates.entries()) {
+          if (cVal.wsId === ws.id && cVal.mediaGroupId === msg.media_group_id) {
+            if (savedPhoto) cVal.photos.push(savedPhoto);
+            if (text) cVal.text = cVal.text ? `${cVal.text}\n${text}` : text;
+            return;
+          }
+        }
+      }
+
+      const promptText = text || '';
+      const candidateId = `q_${Date.now().toString(36)}_${crypto.randomBytes(2).toString('hex')}`;
+      this.pendingQueueCandidates.set(candidateId, {
+        wsId: ws.id,
+        chatId,
+        text: promptText,
+        photos: savedPhoto ? [savedPhoto] : [],
+        mediaGroupId: msg.media_group_id || null,
+        createdAt: this.nowProvider().toISOString()
+      });
+
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` },
+              { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
     // ── Block new agent messages if workspace is awaiting a step decision ────
     if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
       if (this.#shouldSuppressDuplicateGateNotice(ws.id, msg.media_group_id)) {
@@ -1340,6 +1419,51 @@ export class BotController {
         return;
       }
 
+      if (data.startsWith('agent:queue:')) {
+        const parts = data.split(':');
+        const wsId = parts[2];
+        const candidateId = parts[3];
+        const ws = this.getWorkspace(wsId);
+        if (!ws) return;
+        const wsLabel = this.getWorkspaceLabel(ws);
+        const st = this.configStore.getWorkspaceState(ws.id);
+        const candidate = this.pendingQueueCandidates.get(candidateId);
+
+        if (!candidate) {
+          return;
+        }
+
+        st.messageQueue = st.messageQueue || [];
+        st.messageQueue.push({
+          id: candidateId,
+          text: candidate.text,
+          photos: candidate.photos || [],
+          chatId: candidate.chatId,
+          queuedAt: candidate.createdAt
+        });
+        await this.configStore.saveState();
+        this.pendingQueueCandidates.delete(candidateId);
+
+        const queuePos = st.messageQueue.length;
+        const preview = candidate.text
+          ? (candidate.text.length > 70 ? candidate.text.slice(0, 67) + '…' : candidate.text)
+          : (candidate.photos?.length ? `[${candidate.photos.length} file(s)]` : '(Message)');
+
+        await this.telegram.editMessageText({
+          chatId,
+          messageId,
+          text:
+            `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}:</b>\n` +
+            `<i>"${escapeHtml(preview)}"</i>\n\n` +
+            `It will be executed before Jenkins deployment once the current agent finishes.`,
+          replyMarkup: {
+            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+          }
+        });
+        this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
+        return;
+      }
+
       if (data.startsWith('agent:stop:')) {
         const wsId = data.slice('agent:stop:'.length);
         const rt = this.runtime.get(wsId);
@@ -1347,9 +1471,15 @@ export class BotController {
           rt.abortAgent();
           const stopWs = this.getWorkspace(wsId);
           const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
+          const stopSt = this.configStore.getWorkspaceState(wsId);
+          const cancelledCount = stopSt.messageQueue?.length || 0;
+          stopSt.messageQueue = [];
+          await this.configStore.saveState();
           await this.telegram.sendMessage({
             chatId,
-            text: `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...`
+            text:
+              `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...` +
+              (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '')
           });
         }
         return;
@@ -2896,6 +3026,8 @@ export class BotController {
         st.baselineSnapshots = null;
         st.pendingDeltas = [];
         st.lastError = agentErr.message;
+        const droppedQueueCount = st.messageQueue?.length || 0;
+        st.messageQueue = [];
         await this.configStore.saveState();
 
         await this.telegram.sendMessage({
@@ -2903,7 +3035,9 @@ export class BotController {
           text:
             `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
             `${escapeHtml(agentErr.message)}\n\n` +
-            `Uncommitted edits from this run were cleaned up. Ready for your next message.`,
+            `Uncommitted edits from this run were cleaned up.` +
+            (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
+            ` Ready for your next message.`,
           replyMarkup: MAIN_REPLY_KEYBOARD
         });
       } else {
@@ -2938,6 +3072,102 @@ export class BotController {
       if (delta.changedFiles.length > 0 || delta.headAdvanced) {
         deltas.push(delta);
       }
+    }
+
+    // ── Execute Queued Message Before Jenkins Deployment ─────────────────────
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      if (deltas.length > 0) {
+        const commitMessage = buildAutoCommitMessage(st.activeTurn?.prompt || 'workspace update');
+        const commits = [];
+        const branchToPush =
+          st.activeTurn?.targetBranch || st.activeTurn?.commits?.[0]?.branch || '';
+
+        try {
+          for (const repo of ws.repos || []) {
+            const freshDelta = await detectRepoChangesSinceSnapshot(
+              repo,
+              st.baselineSnapshots?.[repo.name]
+            );
+            if (freshDelta.changedFiles.length > 0) {
+              const rec = await commitAndPushRepoChanges(repo, freshDelta, commitMessage, {
+                push: this.gitPush,
+                customBranch: branchToPush
+              });
+              if (rec) commits.push(rec);
+            } else if (freshDelta.headAdvanced) {
+              const recs = await collectAgentCommitsAndPush(repo, freshDelta, { push: this.gitPush });
+              commits.push(...recs);
+            }
+          }
+        } catch (gitErr) {
+          if (gitErr.commitRecord) {
+            commits.push(gitErr.commitRecord);
+          } else if (Array.isArray(gitErr.commitRecords)) {
+            commits.push(...gitErr.commitRecords);
+          }
+          st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
+          st.lastError = gitErr.message;
+          st.phase = 'AWAITING_COMMIT_CHOICE';
+          await this.configStore.saveState();
+          await this.telegram.sendMessage({
+            chatId,
+            text: `❌ <b>Git commit/push failed for previous message:</b>\n<code>${escapeHtml(gitErr.message)}</code>`
+          });
+          await this.sendCommitPrompt(chatId, ws, deltas);
+          return;
+        }
+
+        st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
+        st.pendingDeltas = [];
+        st.lastError = null;
+
+        const commitLines = commits.map(
+          (c) =>
+            `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+        );
+
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `✅ <b>Committed &amp; pushed changes for previous message:</b>\n\n` +
+            `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
+            commitLines.join('\n') +
+            `\n\n⏭️ <i>Skipping Jenkins deploy for previous message — executing queued message next…</i>`
+        });
+
+        st.history.push({
+          id: st.activeTurn.id,
+          createdAt: st.activeTurn.createdAt,
+          finishedAt: this.nowProvider().toISOString(),
+          prompt: st.activeTurn.prompt,
+          commits,
+          outcome: 'COMMITTED_DEPLOY_DEFERRED'
+        });
+      } else {
+        st.history.push({
+          id: st.activeTurn.id,
+          createdAt: st.activeTurn.createdAt,
+          finishedAt: this.nowProvider().toISOString(),
+          prompt: st.activeTurn.prompt,
+          outcome: 'NO_CHANGES'
+        });
+        await this.telegram.sendMessage({
+          chatId,
+          text: `ℹ️ <b>No code changes from previous message. Executing queued message next…</b>`
+        });
+      }
+
+      const nextItem = st.messageQueue.shift();
+      st.activeTurn = null;
+      st.baselineSnapshots = null;
+      st.pendingDeltas = [];
+      st.pendingPhotos = nextItem.photos || [];
+      st.phase = 'IDLE';
+      await this.configStore.saveState();
+
+      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
+      await this.startAgentTurn(chatId, ws, nextItem.text || '');
+      return;
     }
 
     if (deltas.length === 0) {
@@ -3334,6 +3564,24 @@ export class BotController {
         `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
         commitLines.join('\n')
     });
+
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⏭️ <i>Skipping Jenkins deploy for previous message — executing queued message next…</i>`
+      });
+      const nextItem = st.messageQueue.shift();
+      st.activeTurn = null;
+      st.baselineSnapshots = null;
+      st.pendingDeltas = [];
+      st.pendingPhotos = nextItem.photos || [];
+      st.phase = 'IDLE';
+      await this.configStore.saveState();
+
+      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
+      await this.startAgentTurn(chatId, ws, nextItem.text || '');
+      return;
+    }
 
     const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
     const allWsTargets = this.buildAllWorkspaceTargets(ws, commits);

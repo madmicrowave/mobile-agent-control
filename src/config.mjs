@@ -686,6 +686,7 @@ export class ConfigStore {
         conversationId: null,
         continueLatest: false,
         pendingPhotos: [],
+        messageQueue: [],
         baselineSnapshots: null,
         pendingDeltas: [],
         activeTurn: null,
@@ -696,6 +697,7 @@ export class ConfigStore {
     }
     const st = this.state.workspaces[workspaceId];
     st.pendingPhotos = st.pendingPhotos || [];
+    st.messageQueue = st.messageQueue || [];
     st.pendingDeltas = st.pendingDeltas || [];
     st.messages = st.messages || [];
     st.history = st.history || [];

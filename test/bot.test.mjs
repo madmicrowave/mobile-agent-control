@@ -2768,4 +2768,107 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(mockTg.sentMessages.some((m) => /Session requires authentication/.test(m.text)));
     assert.ok(mockTg.sentMessages.some((m) => /Select a Workspace/.test(m.text)));
   });
+
+  it('allows queuing messages when agent is currently running, commits previous turn without deploying, and executes queued message before Jenkins', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+
+    let turn1Resolver;
+    const turn1Promise = new Promise((resolve) => {
+      turn1Resolver = resolve;
+    });
+
+    let turn1Started = false;
+    let turn2Started = false;
+    let turn2PromptReceived = '';
+
+    nextAgentBehavior = async ({ prompt }) => {
+      if (!turn1Started) {
+        turn1Started = true;
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src', 'turn1.js'),
+          'export const t1 = 1;\n',
+          'utf8'
+        );
+        await turn1Promise;
+        return {
+          conversationId: 'conv-queue-turn-1',
+          response: 'Turn 1 finished successfully.'
+        };
+      } else {
+        turn2Started = true;
+        turn2PromptReceived = prompt;
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src', 'turn2.js'),
+          'export const t2 = 2;\n',
+          'utf8'
+        );
+        return {
+          conversationId: 'conv-queue-turn-2',
+          response: 'Turn 2 finished successfully.'
+        };
+      }
+    };
+
+    // 1) Start Turn 1
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Start turn 1'));
+
+    // Wait until agent is in RUNNING_AGENT phase
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
+
+    // 2) Send Turn 2 while agent is currently running
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Start turn 2 queued'));
+
+    // Verify "agent is currently running" message was sent
+    const runningMsg = mockTg.lastSent();
+    assert.match(runningMsg.text, /Antigravity agent is currently running/);
+
+    // Verify inline keyboard has "Queue Message" before "Stop Agent"
+    const kb = runningMsg.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(kb.length, 2);
+    assert.equal(kb[0].text, '📥 Queue Message');
+    assert.match(kb[0].callback_data, /^agent:queue:payments:q_/);
+    assert.equal(kb[1].text, '🛑 Stop Agent');
+    assert.equal(kb[1].callback_data, 'agent:stop:payments');
+
+    // 3) User clicks "Queue Message" button
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(kb[0].callback_data, runningMsg.message_id));
+
+    // Verify confirmation and message edit
+    assert.equal(configStore.getWorkspaceState('payments').messageQueue.length, 1);
+    const queuedEdited = mockTg.lastSentOrEdited();
+    assert.match(queuedEdited.text, /Message queued \(#1\)/);
+    assert.match(queuedEdited.text, /Start turn 2 queued/);
+
+    // 4) Finish Turn 1
+    turn1Resolver();
+    await controller.waitForBackgroundTasks();
+
+    // 5) Verify Turn 1 was committed to git
+    const { stdout: logOut } = await runGit(coreRepo.cloneDir, ['log', '-2', '--pretty=%s']);
+    assert.match(logOut, /Start turn 1/);
+
+    // Verify previous turn was committed and Jenkins deploy was deferred
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /Committed &(?:amp;)? pushed changes for previous message/i.test(m.text)
+      )
+    );
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /Skipping Jenkins deploy for previous message/i.test(m.text)
+      )
+    );
+
+    // 6) Verify Turn 2 started and ran before Jenkins
+    assert.equal(turn2Started, true);
+    assert.equal(turn2PromptReceived, 'Start turn 2 queued');
+
+    // 7) Now Turn 2 finishes -> queue is empty -> prompts for commit choice for Turn 2 changes
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    assert.match(mockTg.lastSent().text, /Changes made in Payments Platform/);
+  });
 });
