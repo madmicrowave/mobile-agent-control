@@ -1117,7 +1117,7 @@ private struct GeneralTabView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
-                                Text("No suspended users. All authorized accounts have full access.")
+                                Text("No suspended users.")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                             }

@@ -1123,11 +1123,13 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     configStore.setRuntimePassword('run-secret-2');
     mockTg.clearSent();
     await controller.handleUpdate(makeUserMsg('/ides'));
-    assert.match(mockTg.lastSent().text, /Invalid password/);
+    assert.match(mockTg.lastSent().text, /Session requires authentication/);
+    assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
 
     // Old run password must fail; new run password unlocks
     await controller.handleUpdate(makeUserMsg('run-secret-1'));
     assert.match(mockTg.lastSent().text, /Invalid password/);
+    assert.match(mockTg.lastSent().text, /4\/5/);
 
     await controller.handleUpdate(makeUserMsg('run-secret-2'));
     const unlockedMsg = mockTg.sentMessages.find((m) => /Session unlocked!/.test(m.text));
@@ -2564,11 +2566,33 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeTestUserMsg('/start'));
     assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
 
-    // Attempt 1
+    // Clicking "🗂 Workspaces", "/workspaces", or "Workspaces" without authorizing does NOT count as a password failure
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('🗂 Workspaces'));
+    assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
+    assert.equal(controller.getPasswordFailures(testUserId), 0);
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('/workspaces'));
+    assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
+    assert.equal(controller.getPasswordFailures(testUserId), 0);
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('Workspaces'));
+    assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
+    assert.equal(controller.getPasswordFailures(testUserId), 0);
+
+    // Attempt 1 (actual invalid password)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-1'));
     assert.match(mockTg.lastSent().text, /Attempts remaining: <b>4\/5<\/b>/);
     assert.equal(configStore.isUserSuspended(testUserId), false);
+
+    // Clicking navigation again after 1 failure still shows 4/5 remaining without adding another failure
+    mockTg.clearSent();
+    await controller.handleUpdate(makeTestUserMsg('🗂 Workspaces'));
+    assert.match(mockTg.lastSent().text, /4\/5 attempts remaining/);
+    assert.equal(controller.getPasswordFailures(testUserId), 1);
 
     // Attempt 2
     mockTg.clearSent();

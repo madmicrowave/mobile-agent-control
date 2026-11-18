@@ -364,6 +364,43 @@ export class BotController {
     }
   }
 
+  isNavigationOrCommandMessage(text) {
+    if (!text) return true;
+    const trimmed = String(text).trim();
+    if (!trimmed || trimmed.startsWith('/')) return true;
+    const cleaned = trimmed.replace(/[^\p{Letter}\p{Number}\s]/gu, '').trim().toLowerCase();
+    const navKeywords = new Set([
+      'workspace',
+      'workspaces',
+      'switch workspace',
+      'switch ide',
+      'setting',
+      'settings',
+      'register settings',
+      'ide',
+      'ides',
+      'menu',
+      'help',
+      'start',
+      'latest messages',
+      'new chat'
+    ]);
+    if (navKeywords.has(cleaned)) {
+      return true;
+    }
+    const lower = trimmed.toLowerCase();
+    const knownTexts = [
+      REPLY_BTN_SWITCH_WORKSPACE.toLowerCase(),
+      REPLY_BTN_SETTINGS.toLowerCase(),
+      REPLY_BTN_LATEST_MSGS.toLowerCase(),
+      REPLY_BTN_NEW_CHAT.toLowerCase(),
+      LEGACY_REPLY_BTN_SWITCH_WORKSPACE.toLowerCase(),
+      LEGACY_REPLY_BTN_SWITCH_IDE.toLowerCase(),
+      LEGACY_REPLY_BTN_SETTINGS.toLowerCase()
+    ];
+    return knownTexts.includes(lower);
+  }
+
   async promptForSessionPassword(chatId, remainingAttempts = 5) {
     await this.telegram.sendMessage({
       chatId,
@@ -422,7 +459,25 @@ export class BotController {
 
     // ── Per-Run Startup Password Gate ────────────────────────────────────────
     if (!this.configStore.isUserUnlocked(userId)) {
-      if (!text || text === '/start') {
+      if (this.configStore.verifyPassword(text)) {
+        await this.telegram.deleteMessage(chatId, msg.message_id);
+        this.clearPasswordFailures(userId);
+        this.configStore.unlockUser(userId, now);
+        await this.configStore.saveState();
+
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `🔓 <b>Session unlocked!</b>\n\n` +
+            `Active until the bot is stopped or restarted (or <code>/lock</code>).\n\n` +
+            `Use the buttons below anytime to switch Workspaces or change AI models.`,
+          replyMarkup: MAIN_REPLY_KEYBOARD
+        });
+        await this.sendIdeSelectorMenu(chatId, userId);
+        return;
+      }
+
+      if (this.isNavigationOrCommandMessage(text)) {
         const failures = this.getPasswordFailures(userId);
         const remaining = Math.max(0, 5 - failures);
         await this.promptForSessionPassword(chatId, remaining);
@@ -432,56 +487,39 @@ export class BotController {
       // Best-effort delete user's password message from chat screen for privacy
       await this.telegram.deleteMessage(chatId, msg.message_id);
 
-      if (!this.configStore.verifyPassword(text)) {
-        const fails = this.recordPasswordFailure(userId);
-        const maxAttempts = 5;
-        const remaining = maxAttempts - fails;
+      const fails = this.recordPasswordFailure(userId);
+      const maxAttempts = 5;
+      const remaining = maxAttempts - fails;
 
-        if (remaining <= 0) {
-          const username = msg.from?.username || '';
-          const firstName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || '';
-          this.configStore.suspendUser(userId, {
-            username,
-            firstName,
-            reason: 'Exceeded 5 failed password attempts',
-            failedAttempts: maxAttempts
-          });
-          await this.configStore.saveConfig();
-          this.clearPasswordFailures(userId);
-
-          await this.telegram.sendMessage({
-            chatId,
-            text:
-              `🚫 <b>Access Suspended:</b>\n\n` +
-              `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
-              `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
-          });
-          return;
-        }
+      if (remaining <= 0) {
+        const username = msg.from?.username || '';
+        const firstName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || '';
+        this.configStore.suspendUser(userId, {
+          username,
+          firstName,
+          reason: 'Exceeded 5 failed password attempts',
+          failedAttempts: maxAttempts
+        });
+        await this.configStore.saveConfig();
+        this.clearPasswordFailures(userId);
 
         await this.telegram.sendMessage({
           chatId,
           text:
-            `❌ <b>Invalid password.</b>\n\n` +
-            `Attempts remaining: <b>${remaining}/5</b> before your account is suspended.\n\n` +
-            `Please enter the current session password:`
+            `🚫 <b>Access Suspended:</b>\n\n` +
+            `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
+            `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
         });
         return;
       }
 
-      this.clearPasswordFailures(userId);
-      this.configStore.unlockUser(userId, now);
-      await this.configStore.saveState();
-
       await this.telegram.sendMessage({
         chatId,
         text:
-          `🔓 <b>Session unlocked!</b>\n\n` +
-          `Active until the bot is stopped or restarted (or <code>/lock</code>).\n\n` +
-          `Use the buttons below anytime to switch Workspaces or change AI models.`,
-        replyMarkup: MAIN_REPLY_KEYBOARD
+          `❌ <b>Invalid password.</b>\n\n` +
+          `Attempts remaining: <b>${remaining}/5</b> before your account is suspended.\n\n` +
+          `Please enter the current session password:`
       });
-      await this.sendIdeSelectorMenu(chatId, userId);
       return;
     }
 
@@ -991,6 +1029,10 @@ export class BotController {
         true
       );
       return;
+    }
+
+    if (this.getPasswordFailures(userId) >= 5) {
+      this.clearPasswordFailures(userId);
     }
 
     if (!this.configStore.isUserAllowed(userId)) {
