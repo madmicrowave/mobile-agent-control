@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -29,6 +30,7 @@ import {
   DEFAULT_AGENT_MODEL_FAMILIES,
   buildAgyArgs,
   isMissingTrajectoryError,
+  isFatalAgentResponseError,
   resolveEffectiveModelAndLevel
 } from '../src/agy-runner.mjs';
 import {
@@ -678,6 +680,25 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
         true
       );
       assert.equal(isMissingTrajectoryError(new Error('Agent run stopped by user')), false);
+      assert.equal(
+        isFatalAgentResponseError(
+          'error: failed to send message: not_found: trajectory not found: 123'
+        ),
+        true
+      );
+      assert.equal(isFatalAgentResponseError(''), true);
+      assert.equal(isFatalAgentResponseError('   '), true);
+      assert.equal(isFatalAgentResponseError('resource_exhausted: quota exceeded'), true);
+      assert.equal(
+        isFatalAgentResponseError(
+          'All 4 requested changes have been implemented across the project:\n\n### 1. Updated strings'
+        ),
+        false
+      );
+      assert.equal(
+        isFatalAgentResponseError('I have updated the code according to your instructions.'),
+        false
+      );
 
       const tmpMigrateDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'agy-cfg-migrate-'));
       try {
@@ -2980,6 +3001,86 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     );
 
     // Verify workspace returned to IDLE
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+  });
+
+  it('does not treat recovered transient errors as agent failures when assistant response is provided, preserving edits and prompting for commit', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    nextAgentBehavior = async () => {
+      // Modify a file in the workspace repo
+      const targetFile = path.join(coreRepo.cloneDir, 'recovered_feature.js');
+      await fsp.writeFile(targetFile, 'export const feature = true;\n', 'utf8');
+
+      return {
+        conversationId: 'conv-recovered-status',
+        response: 'All 4 requested changes have been implemented across the project:\n\n### 1. Updated files'
+      };
+    };
+
+    // User sends prompt
+    await controller.handleUpdate(makeUserMsg('Implement feature'));
+    await controller.waitForBackgroundTasks();
+
+    // Verify response sent as normal agent response (NOT ❌ Agent stopped/failed)
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /Agent Response:.*All 4 requested changes have been implemented/s.test(m.text)
+      ),
+      'Normal agent response must be sent'
+    );
+    assert.ok(
+      !mockTg.sentMessages.some((m) => /Agent stopped\/failed/i.test(m.text)),
+      'Must not send Agent stopped/failed message'
+    );
+
+    // Verify workspace entered AWAITING_COMMIT_CHOICE with commit prompt for the modified file
+    const st = configStore.getWorkspaceState('payments');
+    assert.equal(st.phase, 'AWAITING_COMMIT_CHOICE');
+    const commitMsg = mockTg.lastSent();
+    assert.match(commitMsg.text, /Commit &amp; push these changes\?/);
+    assert.match(commitMsg.text, /recovered_feature\.js/);
+
+    // Discard uncommitted changes to reset phase to IDLE
+    await controller.handleUpdate(makeCallback('cmt:no:payments', commitMsg.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+  });
+
+  it('preserves code edits when a fatal agent error occurs instead of silently discarding them', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    nextAgentBehavior = async () => {
+      // Create a file before throwing a fatal error
+      const targetFile = path.join(coreRepo.cloneDir, 'partial_work.js');
+      await fsp.writeFile(targetFile, 'export const partial = true;\n', 'utf8');
+
+      throw new Error('Process killed unexpectedly');
+    };
+
+    await controller.handleUpdate(makeUserMsg('Do some partial work'));
+    await controller.waitForBackgroundTasks();
+
+    // Notice that edits were preserved instead of being wiped
+    assert.ok(
+      mockTg.sentMessages.some((m) =>
+        /Code edits were made before stopping and have been preserved/i.test(m.text)
+      )
+    );
+    const st = configStore.getWorkspaceState('payments');
+    assert.equal(st.phase, 'AWAITING_COMMIT_CHOICE');
+    const commitMsg = mockTg.lastSent();
+    assert.match(commitMsg.text, /Commit &amp; push these changes\?/);
+    assert.match(commitMsg.text, /partial_work\.js/);
+
+    // Verify the file still exists on disk and was not discarded!
+    assert.equal(fs.existsSync(path.join(coreRepo.cloneDir, 'partial_work.js')), true);
+
+    // Clean up
+    await controller.handleUpdate(makeCallback('cmt:no:payments', commitMsg.message_id));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 });

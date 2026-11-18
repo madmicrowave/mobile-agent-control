@@ -249,6 +249,21 @@ export function isMissingTrajectoryError(error) {
 }
 
 /**
+ * Returns true if a non-SUCCESS agent result text represents an unrecoverable system/API error
+ * rather than legitimate assistant conversational text.
+ */
+export function isFatalAgentResponseError(responseText) {
+  const trimmed = String(responseText || '').trim();
+  if (!trimmed) return true;
+  return (
+    isMissingTrajectoryError(trimmed) ||
+    /^(?:error:\s*failed to send message|failed to send message:|resource_exhausted|quota exceeded|rate limit exceeded|unauthenticated|you are not logged in|failed to load conversation)/i.test(
+      trimmed
+    )
+  );
+}
+
+/**
  * Normalizes a user-configured `model` + `modelLevel` pair into the exact `--model` ID
  * and `--effort` level expected by the `agy` CLI.
  */
@@ -647,16 +662,27 @@ export function runAgyTurn({
           ? finalResult.response
           : streamedText;
 
-      if (finalResult && finalResult.status && finalResult.status !== 'SUCCESS') {
+      const trimmedResponse = String(responseText || '').trim();
+
+      // If agy reported a non-SUCCESS status, only reject if there is no valid assistant response
+      // or if the response itself is an unrecoverable system/API error.
+      // If the model produced a real response, intermediate tool warnings/errors were recovered
+      // by the agent, so resolve the turn successfully instead of failing.
+      if (
+        finalResult &&
+        finalResult.status &&
+        finalResult.status !== 'SUCCESS' &&
+        isFatalAgentResponseError(trimmedResponse)
+      ) {
         reject(
           new Error(
-            `Agent finished with status ${finalResult.status}: ${responseText || stderrText.trim()}`
+            `Agent finished with status ${finalResult.status}: ${trimmedResponse || stderrText.trim() || `exit code ${code}`}`
           )
         );
       } else {
         resolve({
           conversationId: detectedConversationId,
-          response: responseText.trim(),
+          response: trimmedResponse,
           durationSeconds: finalResult?.duration_seconds ?? null,
           usage: finalResult?.usage ?? null
         });

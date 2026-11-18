@@ -3122,6 +3122,35 @@ export class BotController {
       if (statusMessageId) {
         await this.telegram.clearInlineButtons(chatId, statusMessageId);
       }
+
+      // Check if changes were made to repository files despite the failure/stop
+      const deltas = [];
+      for (const repo of ws.repos || []) {
+        try {
+          const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
+          if (delta.changedFiles.length > 0 || delta.headAdvanced) {
+            deltas.push(delta);
+          }
+        } catch {}
+      }
+
+      if (deltas.length > 0) {
+        st.phase = 'AWAITING_COMMIT_CHOICE';
+        st.pendingDeltas = deltas;
+        st.lastError = agentErr.message;
+        await this.configStore.saveState();
+
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `⚠️ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
+            `${escapeHtml(agentErr.message)}\n\n` +
+            `Code edits were made before stopping and have been preserved.`
+        });
+        await this.sendCommitPrompt(chatId, ws, deltas);
+        return;
+      }
+
       if (!isAddFix) {
         for (const repo of ws.repos || []) {
           await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
@@ -3157,13 +3186,6 @@ export class BotController {
             `${escapeHtml(agentErr.message)}\n\n` +
             `Existing uncommitted edits are preserved.`
         });
-        const deltas = [];
-        for (const repo of ws.repos || []) {
-          const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
-          if (delta.changedFiles.length > 0 || delta.headAdvanced) {
-            deltas.push(delta);
-          }
-        }
         st.pendingDeltas = deltas;
         await this.sendCommitPrompt(chatId, ws, deltas);
       }
