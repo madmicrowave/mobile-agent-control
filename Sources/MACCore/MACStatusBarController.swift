@@ -191,19 +191,30 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         refreshMenuItems()
     }
 
+    /// Multi-monitor target screen discovery: uses `NSMouseInRect` with edge-tolerance expansion
+    /// to accurately resolve which display the user clicked next to the clock/menu bar.
+    public func targetScreenForMenu(at mouseLocation: NSPoint = NSEvent.mouseLocation) -> NSScreen? {
+        if let directMatch = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) {
+            return directMatch
+        }
+        if let nearMatch = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame.insetBy(dx: -4, dy: -4), false) }) {
+            return nearMatch
+        }
+        if let buttonScreen = statusItem.button?.window?.screen {
+            return buttonScreen
+        }
+        return NSScreen.main
+    }
+
     /// Multi-monitor confinement: ensures the dropdown menu is strictly confined to the display
     /// where the user clicked the status bar icon, preventing macOS from accidentally spawning
     /// the menu on a different display or space in multi-screen setups.
     public func confinementRect(for menu: NSMenu, on screen: NSScreen?) -> NSRect {
-        let mouseLocation = NSEvent.mouseLocation
-        if let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
+        if let targetScreen = targetScreenForMenu() {
             return targetScreen.visibleFrame
         }
         if let screen = screen {
             return screen.visibleFrame
-        }
-        if let buttonScreen = statusItem.button?.window?.screen {
-            return buttonScreen.visibleFrame
         }
         return .zero
     }

@@ -361,6 +361,18 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     // Multi-monitor display confinement & safe menu update verification
     let confinement = controller.confinementRect(for: controller.menu, on: NSScreen.main)
     expect(confinement != .zero, "Expected non-zero confinementRect for status menu on multi-display setup")
+
+    // Test top boundary near clock on every available screen (including edge coordinates)
+    for screen in NSScreen.screens {
+        let topClockEdge = NSPoint(x: screen.frame.maxX - 10, y: screen.frame.maxY)
+        let resolvedScreen = controller.targetScreenForMenu(at: topClockEdge)
+        expect(resolvedScreen == screen, "Expected top-edge menu click on screen \(screen.frame) to resolve to itself")
+
+        let overshootPoint = NSPoint(x: screen.frame.maxX - 10, y: screen.frame.maxY + 2)
+        let resolvedOvershoot = controller.targetScreenForMenu(at: overshootPoint)
+        expect(resolvedOvershoot != nil, "Expected tolerance-handled click above screen top boundary to resolve to a display")
+    }
+
     controller.menuNeedsUpdate(controller.menu)
     controller.menuWillOpen(controller.menu)
     expect(controller.startMenuItem.isEnabled, "Menu update reflects current stopped state")
