@@ -1097,6 +1097,9 @@ export class BotController {
 
     try {
       if (data === 'ide:menu') {
+        if (messageId) {
+          await this.telegram.deleteMessage(chatId, messageId).catch(() => {});
+        }
         await this.sendIdeSelectorMenu(chatId, userId);
         return;
       }
@@ -2298,6 +2301,8 @@ export class BotController {
       { text: '📜 History', callback_data: `chat:hist:${ws.id}` },
       { text: '🧠 AI Model', callback_data: `ide:cfg:${ws.id}` }
     ]);
+
+    rows.push([{ text: '< BACK', callback_data: 'ide:menu' }]);
 
     return rows;
   }

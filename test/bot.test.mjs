@@ -1180,7 +1180,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
-    const selectMsg = mockTg.lastSent();
+    let selectMsg = mockTg.lastSent();
     assert.equal(REPLY_BTN_SWITCH_IDE, '🔀 Workspace');
     assert.match(
       selectMsg.text,
@@ -1192,7 +1192,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.doesNotMatch(selectMsg.text, /is active by default/i);
     const selectRows = selectMsg.reply_markup.inline_keyboard;
     // When working tree is clean (no uncommitted diff), Intercept Desktop Session button must NOT appear
-    assert.equal(selectRows.length, 2);
+    assert.equal(selectRows.length, 3);
     assert.deepEqual(
       selectRows[0].map((b) => b.text),
       ['✅ Same Chat •', '🆕 New Chat']
@@ -1201,10 +1201,25 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       { text: '📜 History', callback_data: 'chat:hist:payments' },
       { text: '🧠 AI Model', callback_data: 'ide:cfg:payments' }
     ]);
+    assert.deepEqual(selectRows[2], [
+      { text: '< BACK', callback_data: 'ide:menu' }
+    ]);
     const flatButtons = selectRows.flat();
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:intercept:')));
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:pick:')));
     assert.ok(!flatButtons.some((b) => /AI Model & Level/i.test(b.text)));
+
+    // Tapping '< BACK' deletes Workspace Selected message and shows Select a Workspace menu
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeCallback('ide:menu', selectMsg.message_id));
+    assert.ok(mockTg.deletedMessages.some((d) => d.messageId === selectMsg.message_id));
+    assert.match(mockTg.lastSent().text, /Select a Workspace/);
+
+    // Re-select Payments Platform for the rest of this test
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    selectMsg = mockTg.lastSent();
 
     // Tapping 📜 History on Workspace Selected deletes previous Workspace Selected message, shows history, and re-renders Workspace Selected below
     mockTg.clearSent();
@@ -2463,7 +2478,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     selectMsg = mockTg.lastSent();
     selectRows = selectMsg.reply_markup.inline_keyboard;
-    assert.equal(selectRows.length, 3);
+    assert.equal(selectRows.length, 4);
     assert.deepEqual(
       selectRows[0].map((b) => b.text),
       ['📥 Intercept Desktop Session']
