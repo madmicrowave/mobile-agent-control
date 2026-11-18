@@ -1142,11 +1142,11 @@ private struct GeneralTabView: View {
                                     }
                                     Spacer()
                                     Button {
-                                        unbanUser(user.userId)
+                                        unblockUser(user.userId)
                                     } label: {
                                         HStack(spacing: 4) {
                                             Image(systemName: "lock.open.fill")
-                                            Text("Unban")
+                                            Text("Unblock")
                                         }
                                     }
                                     .buttonStyle(.bordered)
@@ -1815,9 +1815,9 @@ private struct GeneralTabView: View {
         appState.saveConfigToDisk(banner: silent ? nil : "Saved General settings (CI/CD Deploy, Telegram, AI Engines & Models).")
     }
 
-    private func unbanUser(_ userId: String) {
+    private func unblockUser(_ userId: String) {
         appState.config.suspendedUsers.removeAll(where: { $0.userId == userId })
-        appState.saveConfigToDisk(banner: "Unbanned Telegram user \(userId). Allowed 5 fresh attempts.")
+        appState.saveConfigToDisk(banner: "Unblocked Telegram user \(userId). Allowed 5 fresh attempts.")
     }
 
     private func formatTimestamp(_ isoString: String) -> String {

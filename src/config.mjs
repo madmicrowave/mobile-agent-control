@@ -763,7 +763,7 @@ export class ConfigStore {
     return entry;
   }
 
-  unbanUser(telegramUserId) {
+  unblockUser(telegramUserId) {
     const uidStr = String(telegramUserId);
     if (!Array.isArray(this.config.suspendedUsers)) {
       this.config.suspendedUsers = [];
@@ -774,6 +774,10 @@ export class ConfigStore {
       typeof u === 'string' ? u !== uidStr : String(u.userId) !== uidStr
     );
     return this.config.suspendedUsers.length < initialLen;
+  }
+
+  unbanUser(telegramUserId) {
+    return this.unblockUser(telegramUserId);
   }
 
   isUserUnlocked(telegramUserId) {

@@ -552,7 +552,7 @@ export class BotController {
           chatId,
           `🚫 <b>Access Suspended:</b>\n\n` +
           `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
-          `An administrator can unban your account in <b>AI MAC → General → Telegram → Suspended Users</b>.`
+          `An administrator can unblock your account in <b>AI MAC → General → Telegram → Suspended Users</b>.`
         );
         return;
       }

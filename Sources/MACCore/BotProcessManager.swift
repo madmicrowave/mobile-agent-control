@@ -202,13 +202,13 @@ public final class MACAppState: ObservableObject {
         if let updated = updated {
             self.config = updated
         }
-        // Always preserve background suspensions written to disk by the bot runner unless explicitly unbanning
+        // Always preserve background suspensions written to disk by the bot runner unless explicitly unblocking
         let onDisk = configStore.load()
         if !onDisk.suspendedUsers.isEmpty {
             var merged = self.config.suspendedUsers
-            let isUnban = banner?.contains("Unbanned") == true
+            let isUnblock = banner?.contains("Unblocked") == true || banner?.contains("Unbanned") == true
             for u in onDisk.suspendedUsers {
-                if !merged.contains(where: { $0.userId == u.userId }) && !isUnban {
+                if !merged.contains(where: { $0.userId == u.userId }) && !isUnblock {
                     merged.append(u)
                 }
             }

@@ -2543,7 +2543,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await configStore.saveConfig();
   });
 
-  it('throttles authorization password to 5 attempts, suspends user on 5th failure, and unbanning allows 5 attempts again', async () => {
+  it('throttles authorization password to 5 attempts, suspends user on 5th failure, and unblocking allows 5 attempts again', async () => {
     const testUserId = 555001;
     const testChatId = 888001;
     function makeTestUserMsg(text) {
@@ -2559,7 +2559,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     }
 
     configStore.lockUser(testUserId);
-    configStore.unbanUser(testUserId);
+    configStore.unblockUser(testUserId);
     controller.clearPasswordFailures(testUserId);
 
     // Initial prompt shows remaining 5 attempts
@@ -2653,8 +2653,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(mockTg.sentMessages.length, 0);
     assert.equal(mockTg.callbackAnswers[0]?.callback_query_id, 'cb-suspended');
 
-    // Unban the user (simulating administrator clicking Unban in Mac app Settings)
-    configStore.unbanUser(testUserId);
+    // Unblock the user (simulating administrator clicking Unblock in Mac app Settings)
+    configStore.unblockUser(testUserId);
     await configStore.saveConfig();
     assert.equal(configStore.isUserSuspended(testUserId), false);
 
