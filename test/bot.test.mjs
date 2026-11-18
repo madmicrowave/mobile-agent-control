@@ -1209,16 +1209,31 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:pick:')));
     assert.ok(!flatButtons.some((b) => /AI Model & Level/i.test(b.text)));
 
-    // Tapping '< BACK' deletes Workspace Selected message and shows Select a Workspace menu
+    // Tapping '< BACK' when previous message was NOT a workspace menu deletes Workspace Selected and shows Select a Workspace menu
     mockTg.clearSent();
     mockTg.deletedMessages.length = 0;
     await controller.handleUpdate(makeCallback('ide:menu', selectMsg.message_id));
     assert.ok(mockTg.deletedMessages.some((d) => d.messageId === selectMsg.message_id));
     assert.match(mockTg.lastSent().text, /Select a Workspace/);
 
+    // When previous message IS Select a Workspace, tapping '< BACK' removes Workspace Selected without duplicating Select a Workspace
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('/workspaces'));
+    const wsMenuMsg = mockTg.lastSent();
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ide:sel:payments', wsMenuMsg.message_id));
+    const wsSelectedFromMenu = mockTg.lastSent();
+
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+    await controller.handleUpdate(makeCallback('ide:menu', wsSelectedFromMenu.message_id));
+    assert.ok(mockTg.deletedMessages.some((d) => d.messageId === wsSelectedFromMenu.message_id));
+    assert.equal(mockTg.sentMessages.length, 0, 'Must NOT duplicate Select a Workspace message');
+
     // Re-select Payments Platform for the rest of this test
     mockTg.clearSent();
-    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('ide:sel:payments', wsMenuMsg.message_id));
     selectMsg = mockTg.lastSent();
 
     // Tapping 📜 History on Workspace Selected deletes previous Workspace Selected message, shows history, and re-renders Workspace Selected below

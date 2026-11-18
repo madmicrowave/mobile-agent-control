@@ -124,6 +124,9 @@ export class BotController {
     /** @type {Map<string, { messageId: number, userId: string | number }>} */
     this.lastWorkspaceMenuByChat = new Map();
 
+    /** @type {Map<string, { detailMessageId: number, parentMenuMessageId: number }>} */
+    this.lastWorkspaceDetailByChat = new Map();
+
     /** @type {Map<string, { messageId: number, userId: string | number }>} */
     this.lastSettingsMenuByChat = new Map();
 
@@ -567,6 +570,7 @@ export class BotController {
     }
 
     const sess = this.configStore.getUserSession(userId);
+    this.lastWorkspaceDetailByChat.delete(chatId);
 
     // ── Global Commands & Reply Keyboard Shortcuts ───────────────────────────
     if (
@@ -1089,24 +1093,54 @@ export class BotController {
 
     await this.telegram.answerCallbackQuery(cbId);
     const sess = this.configStore.getUserSession(userId);
-    if (data !== 'ide:menu') {
+    if (data !== 'ide:menu' && !data.startsWith('ide:sel:')) {
       sess.currentView = 'WORKSPACE_ACTION';
       sess.lastWorkspaceMenuMessageId = null;
       this.lastWorkspaceMenuByChat.delete(chatId);
+      this.lastWorkspaceDetailByChat.delete(chatId);
     }
 
     try {
       if (data === 'ide:menu') {
+        const detailInfo = this.lastWorkspaceDetailByChat.get(chatId);
+        const previousIsWorkspaceMenu = Boolean(
+          detailInfo &&
+          detailInfo.detailMessageId === messageId &&
+          detailInfo.parentMenuMessageId
+        );
+
         if (messageId) {
           await this.telegram.deleteMessage(chatId, messageId).catch(() => {});
         }
+
+        this.lastWorkspaceDetailByChat.delete(chatId);
+
+        if (previousIsWorkspaceMenu) {
+          sess.currentView = 'WORKSPACES';
+          sess.lastWorkspaceMenuMessageId = detailInfo.parentMenuMessageId;
+          this.lastWorkspaceMenuByChat.set(chatId, { messageId: detailInfo.parentMenuMessageId, userId });
+          await this.configStore.saveState();
+          await this.telegram
+            .updateInlineKeyboard(
+              chatId,
+              detailInfo.parentMenuMessageId,
+              this.buildWorkspaceMenuKeyboard(userId)
+            )
+            .catch(() => {});
+          return;
+        }
+
         await this.sendIdeSelectorMenu(chatId, userId);
         return;
       }
 
       if (data.startsWith('ide:sel:')) {
         const wsId = data.slice('ide:sel:'.length);
-        await this.handleSelectIde(chatId, userId, wsId);
+        const fromWorkspaceMenu = Boolean(
+          (messageId && this.lastWorkspaceMenuByChat.get(chatId)?.messageId === messageId) ||
+          cb.message?.text?.includes('Select a Workspace')
+        );
+        await this.handleSelectIde(chatId, userId, wsId, fromWorkspaceMenu ? messageId : null);
         return;
       }
 
@@ -1477,10 +1511,40 @@ export class BotController {
     }
   }
 
+  buildWorkspaceMenuKeyboard(userId) {
+    const sess = this.configStore.getUserSession(userId);
+    const rows = [];
+    const workspaces = this.configStore.config.workspaces || [];
+
+    for (let i = 0; i < workspaces.length; i += 2) {
+      const row = [];
+      for (const ws of workspaces.slice(i, i + 2)) {
+        const st = this.configStore.getWorkspaceState(ws.id);
+        const activeMark = sess.selectedWorkspaceId === ws.id ? ' •' : '';
+        const wsLabel = this.getWorkspaceLabel(ws);
+        row.push({
+          text: `${phaseIcon(st.phase)} ${wsLabel}${activeMark}`,
+          callback_data: `ide:sel:${ws.id}`
+        });
+      }
+      rows.push(row);
+    }
+
+    const settingsBtn = { text: '⚙️ Settings', callback_data: 'cfg:menu' };
+    if (rows.length > 0 && rows[rows.length - 1].length === 1) {
+      rows[rows.length - 1].push(settingsBtn);
+    } else {
+      rows.push([settingsBtn]);
+    }
+
+    return rows;
+  }
+
   // ── Menus: Select / Switch Workspaces & Per-Workspace AI Model Settings ────
   async sendIdeSelectorMenu(chatId, userId, heading = '🗂 <b>Select a Workspace:</b>') {
     return this.runWithMenuLock(chatId, async () => {
       const sess = this.configStore.getUserSession(userId);
+      this.lastWorkspaceDetailByChat.delete(chatId);
 
       // Clean up any existing Settings menu when switching to Workspaces
       const prevSettingsMessageId =
@@ -1513,29 +1577,8 @@ export class BotController {
         }
       }
 
-      const rows = [];
+      const rows = this.buildWorkspaceMenuKeyboard(userId);
       const workspaces = this.configStore.config.workspaces || [];
-
-      for (let i = 0; i < workspaces.length; i += 2) {
-        const row = [];
-        for (const ws of workspaces.slice(i, i + 2)) {
-          const st = this.configStore.getWorkspaceState(ws.id);
-          const activeMark = sess.selectedWorkspaceId === ws.id ? ' •' : '';
-          const wsLabel = this.getWorkspaceLabel(ws);
-          row.push({
-            text: `${phaseIcon(st.phase)} ${wsLabel}${activeMark}`,
-            callback_data: `ide:sel:${ws.id}`
-          });
-        }
-        rows.push(row);
-      }
-
-      const settingsBtn = { text: '⚙️ Settings', callback_data: 'cfg:menu' };
-      if (rows.length > 0 && rows[rows.length - 1].length === 1) {
-        rows[rows.length - 1].push(settingsBtn);
-      } else {
-        rows.push([settingsBtn]);
-      }
 
       const sent = await this.telegram.sendMessage({
         chatId,
@@ -1559,6 +1602,7 @@ export class BotController {
   async sendSettingsAndRegisterMenu(chatId, userId, editMessageId = null) {
     return this.runWithMenuLock(chatId, async () => {
       const sess = this.configStore.getUserSession(userId);
+    this.lastWorkspaceDetailByChat.delete(chatId);
 
       // Clean up any existing Workspace menu when switching to Settings
       const prevWorkspaceMessageId =
@@ -2132,7 +2176,7 @@ export class BotController {
   }
 
   // ── Selecting Workspace & Same Chat (Default) vs New Chat Flow ─────────────
-  async handleSelectIde(chatId, userId, wsId) {
+  async handleSelectIde(chatId, userId, wsId, sourceMessageId = null) {
     const ws = this.getWorkspace(wsId);
     if (!ws) {
       await this.sendIdeSelectorMenu(chatId, userId, 'Workspace not found — select an available Workspace:');
@@ -2143,8 +2187,13 @@ export class BotController {
     const sess = this.configStore.getUserSession(userId);
     sess.selectedWorkspaceId = ws.id;
     sess.currentView = 'WORKSPACE_DETAIL';
-    sess.lastWorkspaceMenuMessageId = null;
-    this.lastWorkspaceMenuByChat.delete(chatId);
+    if (sourceMessageId) {
+      sess.lastWorkspaceMenuMessageId = sourceMessageId;
+      this.lastWorkspaceMenuByChat.set(chatId, { messageId: sourceMessageId, userId });
+    } else {
+      sess.lastWorkspaceMenuMessageId = null;
+      this.lastWorkspaceMenuByChat.delete(chatId);
+    }
 
     const st = this.configStore.getWorkspaceState(ws.id);
 
@@ -2185,7 +2234,15 @@ export class BotController {
     }
     await this.configStore.saveState();
 
-    await this.sendWorkspaceSelectedPrompt(chatId, ws);
+    const sent = await this.sendWorkspaceSelectedPrompt(chatId, ws);
+    if (sent?.message_id && sourceMessageId) {
+      this.lastWorkspaceDetailByChat.set(chatId, {
+        detailMessageId: sent.message_id,
+        parentMenuMessageId: sourceMessageId
+      });
+    } else {
+      this.lastWorkspaceDetailByChat.delete(chatId);
+    }
   }
 
   async sendWorkspaceSelectedPrompt(chatId, wsOrId) {
@@ -2312,6 +2369,7 @@ export class BotController {
     if (!ws) return;
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
+    this.lastWorkspaceDetailByChat.delete(chatId);
     sess.selectedWorkspaceId = ws.id;
     sess.currentView = 'WORKSPACE_DETAIL';
     sess.lastWorkspaceMenuMessageId = null;
@@ -2400,6 +2458,7 @@ export class BotController {
     if (!ws) return;
     const wsLabel = this.getWorkspaceLabel(ws);
     const sess = this.configStore.getUserSession(userId);
+    this.lastWorkspaceDetailByChat.delete(chatId);
     sess.selectedWorkspaceId = ws.id;
     sess.currentView = 'WORKSPACE_DETAIL';
     sess.lastWorkspaceMenuMessageId = null;
