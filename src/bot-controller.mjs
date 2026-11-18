@@ -132,6 +132,12 @@ export class BotController {
 
     /** @type {Set<Promise<unknown>>} */
     this.activePromises = new Set();
+
+    /** @type {Set<string>} */
+    this.localSuspendedUsers = new Set();
+
+    /** @type {Map<string, number>} */
+    this.lastAuthPromptMessageIdByChat = new Map();
   }
 
   #trackAsync(promise) {
@@ -349,12 +355,32 @@ export class BotController {
     this.passwordFailures.delete(String(userId));
   }
 
+  isUserSuspended(userId) {
+    const uidStr = String(userId);
+    if (!this.configStore.isUserSuspended(uidStr)) {
+      this.localSuspendedUsers.delete(uidStr);
+      if ((this.passwordFailures.get(uidStr) || 0) >= 5) {
+        this.clearPasswordFailures(uidStr);
+      }
+      return false;
+    }
+    return true;
+  }
+
   /**
    * Processes a single Telegram Update (`message` or `callback_query`).
    */
   async handleUpdate(update) {
     if (!update) return;
-    await this.configStore.reloadConfigIfChanged();
+    const reloaded = await this.configStore.reloadConfigIfChanged();
+    if (reloaded) {
+      for (const uid of this.localSuspendedUsers) {
+        if (!this.configStore.isUserSuspended(uid)) {
+          this.localSuspendedUsers.delete(uid);
+          this.clearPasswordFailures(uid);
+        }
+      }
+    }
     if (update.callback_query) {
       await this.handleCallbackQuery(update.callback_query);
       return;
@@ -401,14 +427,43 @@ export class BotController {
     return knownTexts.includes(lower);
   }
 
+  async sendOrEditAuthMessage(chatId, text, replyMarkup = undefined) {
+    const chatKey = String(chatId);
+    const lastId = this.lastAuthPromptMessageIdByChat.get(chatKey);
+    if (lastId) {
+      try {
+        await this.telegram.editMessageText({
+          chatId,
+          messageId: lastId,
+          text,
+          replyMarkup
+        });
+        return;
+      } catch {
+        // Fall back to sending new message if edit fails (e.g. message was deleted or outdated)
+      }
+    }
+    const sent = await this.telegram.sendMessage({
+      chatId,
+      text,
+      replyMarkup
+    });
+    if (sent?.message_id) {
+      this.lastAuthPromptMessageIdByChat.set(chatKey, sent.message_id);
+    }
+  }
+
   async promptForSessionPassword(chatId, remainingAttempts = 5) {
-    await this.telegram.sendMessage({
+    const sent = await this.telegram.sendMessage({
       chatId,
       text:
         `🔐 <b>Mobile Agent Control (MAC):</b>\n\n` +
         `Session requires authentication.\n\n` +
         `Reply with the current session password (${remainingAttempts}/5 attempts remaining):`
     });
+    if (sent?.message_id) {
+      this.lastAuthPromptMessageIdByChat.set(String(chatId), sent.message_id);
+    }
   }
 
   async handleMessage(msg) {
@@ -416,20 +471,9 @@ export class BotController {
     const userId = msg.from?.id;
     if (!chatId || !userId) return;
 
-    if (this.configStore.isUserSuspended(userId)) {
-      await this.telegram.sendMessage({
-        chatId,
-        text:
-          `🚫 <b>Access Suspended:</b>\n\n` +
-          `Your Telegram account (<code>${escapeHtml(String(userId))}</code>) has been suspended due to 5 consecutive failed password attempts.\n\n` +
-          `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
-      });
+    if (this.isUserSuspended(userId)) {
+      // After user is suspended, bot must not answer until unblocked in app
       return;
-    }
-
-    // If user was unbanned in the Mac app, ensure their failed count is reset to 0
-    if (this.getPasswordFailures(userId) >= 5) {
-      this.clearPasswordFailures(userId);
     }
 
     if (!this.configStore.isUserAllowed(userId)) {
@@ -464,6 +508,7 @@ export class BotController {
         this.clearPasswordFailures(userId);
         this.configStore.unlockUser(userId, now);
         await this.configStore.saveState();
+        this.lastAuthPromptMessageIdByChat.delete(String(chatId));
 
         await this.telegram.sendMessage({
           chatId,
@@ -494,6 +539,7 @@ export class BotController {
       if (remaining <= 0) {
         const username = msg.from?.username || '';
         const firstName = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || '';
+        this.localSuspendedUsers.add(String(userId));
         this.configStore.suspendUser(userId, {
           username,
           firstName,
@@ -501,25 +547,22 @@ export class BotController {
           failedAttempts: maxAttempts
         });
         await this.configStore.saveConfig();
-        this.clearPasswordFailures(userId);
 
-        await this.telegram.sendMessage({
+        await this.sendOrEditAuthMessage(
           chatId,
-          text:
-            `🚫 <b>Access Suspended:</b>\n\n` +
-            `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
-            `An administrator can unban your account in <b>MAC → Settings → Telegram → Suspended Users</b>.`
-        });
+          `🚫 <b>Access Suspended:</b>\n\n` +
+          `You have exceeded 5 failed password attempts. Your Telegram account (<code>${escapeHtml(String(userId))}</code>) is now blocked.\n\n` +
+          `An administrator can unban your account in <b>AI MAC → General → Telegram → Suspended Users</b>.`
+        );
         return;
       }
 
-      await this.telegram.sendMessage({
+      await this.sendOrEditAuthMessage(
         chatId,
-        text:
-          `❌ <b>Invalid password.</b>\n\n` +
-          `Attempts remaining: <b>${remaining}/5</b> before your account is suspended.\n\n` +
-          `Please enter the current session password:`
-      });
+        `❌ <b>Invalid password.</b>\n\n` +
+        `Attempts remaining: <b>${remaining}/5</b> before your account is suspended.\n\n` +
+        `Please enter the current session password:`
+      );
       return;
     }
 
@@ -1022,17 +1065,9 @@ export class BotController {
       return;
     }
 
-    if (this.configStore.isUserSuspended(userId)) {
-      await this.telegram.answerCallbackQuery(
-        cbId,
-        'Account suspended due to 5 failed attempts. Contact bot administrator.',
-        true
-      );
+    if (this.isUserSuspended(userId)) {
+      await this.telegram.answerCallbackQuery(cbId);
       return;
-    }
-
-    if (this.getPasswordFailures(userId) >= 5) {
-      this.clearPasswordFailures(userId);
     }
 
     if (!this.configStore.isUserAllowed(userId)) {

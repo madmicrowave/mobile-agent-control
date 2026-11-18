@@ -218,6 +218,7 @@ async function startMockTelegramServer() {
     getLastPollConnectionHeader: () => lastPollConnectionHeader,
     clearSent() {
       sentMessages.length = 0;
+      editedMessages.length = 0;
     },
     lastSent() {
       return sentMessages[sentMessages.length - 1] || null;
@@ -1104,7 +1105,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const wrongUpd = makeUserMsg('wrong-pass');
     await controller.handleUpdate(wrongUpd);
     assert.ok(mockTg.deletedMessages.some((d) => d.messageId === wrongUpd.message.message_id));
-    assert.match(mockTg.lastSent().text, /Invalid password/);
+    assert.match(mockTg.lastSentOrEdited().text, /Invalid password/);
 
     const rightUpd = makeUserMsg('run-secret-1');
     await controller.handleUpdate(rightUpd);
@@ -1128,8 +1129,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // Old run password must fail; new run password unlocks
     await controller.handleUpdate(makeUserMsg('run-secret-1'));
-    assert.match(mockTg.lastSent().text, /Invalid password/);
-    assert.match(mockTg.lastSent().text, /4\/5/);
+    assert.match(mockTg.lastSentOrEdited().text, /Invalid password/);
+    assert.match(mockTg.lastSentOrEdited().text, /4\/5/);
 
     await controller.handleUpdate(makeUserMsg('run-secret-2'));
     const unlockedMsg = mockTg.sentMessages.find((m) => /Session unlocked!/.test(m.text));
@@ -2582,42 +2583,47 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(mockTg.lastSent().text, /5\/5 attempts remaining/);
     assert.equal(controller.getPasswordFailures(testUserId), 0);
 
-    // Attempt 1 (actual invalid password)
+    // Attempt 1 (actual invalid password - replaces last message, does NOT add new message)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-1'));
-    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>4\/5<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Attempts remaining: <b>4\/5<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0); // Replaced in place
     assert.equal(configStore.isUserSuspended(testUserId), false);
 
     // Clicking navigation again after 1 failure still shows 4/5 remaining without adding another failure
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('🗂 Workspaces'));
-    assert.match(mockTg.lastSent().text, /4\/5 attempts remaining/);
+    assert.match(mockTg.lastSentOrEdited().text, /4\/5 attempts remaining/);
     assert.equal(controller.getPasswordFailures(testUserId), 1);
 
-    // Attempt 2
+    // Attempt 2 (replaces last message)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-2'));
-    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>3\/5<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Attempts remaining: <b>3\/5<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0);
     assert.equal(configStore.isUserSuspended(testUserId), false);
 
-    // Attempt 3
+    // Attempt 3 (replaces last message)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-3'));
-    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>2\/5<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Attempts remaining: <b>2\/5<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0);
     assert.equal(configStore.isUserSuspended(testUserId), false);
 
-    // Attempt 4
+    // Attempt 4 (replaces last message)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-4'));
-    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>1\/5<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Attempts remaining: <b>1\/5<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0);
     assert.equal(configStore.isUserSuspended(testUserId), false);
 
-    // Attempt 5 -> Exceeds 5 attempts -> Account Suspended!
+    // Attempt 5 -> Exceeds 5 attempts -> Account Suspended! (replaces last message)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('bad-5'));
-    assert.match(mockTg.lastSent().text, /Access Suspended:/);
-    assert.match(mockTg.lastSent().text, /exceeded 5 failed password attempts/);
-    assert.match(mockTg.lastSent().text, /account in <b>MAC → Settings → Telegram → Suspended Users<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Access Suspended:/);
+    assert.match(mockTg.lastSentOrEdited().text, /exceeded 5 failed password attempts/);
+    assert.match(mockTg.lastSentOrEdited().text, /account in <b>AI MAC → General → Telegram → Suspended Users<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0);
     assert.equal(configStore.isUserSuspended(testUserId), true);
 
     // In config.json, user is recorded in suspendedUsers with username and full name
@@ -2627,12 +2633,12 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(suspended.firstName, 'Bad Actor');
     assert.equal(suspended.failedAttempts, 5);
 
-    // Any subsequent message from suspended user is blocked with suspended message
+    // Any subsequent message from suspended user is completely ignored (bot does NOT answer until unblocked)
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('any message'));
-    assert.match(mockTg.lastSent().text, /Access Suspended:/);
+    assert.equal(mockTg.sentMessages.length, 0);
 
-    // Callback queries from suspended user are also blocked
+    // Callback queries from suspended user are also dismissed silently without answering
     const testCb = {
       update_id: 99001,
       callback_query: {
@@ -2644,7 +2650,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     };
     mockTg.callbackAnswers.length = 0;
     await controller.handleUpdate(testCb);
-    assert.match(mockTg.callbackAnswers[0]?.text, /Account suspended/);
+    assert.equal(mockTg.sentMessages.length, 0);
+    assert.equal(mockTg.callbackAnswers[0]?.callback_query_id, 'cb-suspended');
 
     // Unban the user (simulating administrator clicking Unban in Mac app Settings)
     configStore.unbanUser(testUserId);
@@ -2654,11 +2661,12 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // User can now try again with 5 fresh attempts!
     mockTg.clearSent();
     await controller.handleUpdate(makeTestUserMsg('still-wrong'));
-    assert.match(mockTg.lastSent().text, /Attempts remaining: <b>4\/5<\/b>/);
+    assert.match(mockTg.lastSentOrEdited().text, /Attempts remaining: <b>4\/5<\/b>/);
+    assert.equal(mockTg.sentMessages.length, 0);
 
     // And entering the right password unlocks successfully
     mockTg.clearSent();
-    await controller.handleUpdate(makeTestUserMsg('run-secret-2'));
+    await controller.handleUpdate(makeTestUserMsg(configStore.runtimePassword));
     assert.ok(mockTg.sentMessages.some((m) => /Session unlocked!/.test(m.text)));
   });
 

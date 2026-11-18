@@ -1114,14 +1114,10 @@ private struct GeneralTabView: View {
                 if vm.isSuspendedUsersExpanded {
                     VStack(alignment: .leading, spacing: 8) {
                         if appState.config.suspendedUsers.isEmpty {
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("No suspended users.")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 4)
+                            Text("No suspended users.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 4)
                         } else {
                             ForEach(appState.config.suspendedUsers) { user in
                                 HStack(spacing: 12) {
