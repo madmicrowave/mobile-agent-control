@@ -3534,6 +3534,7 @@ private final class LiveActivityTabVM: ObservableObject {
 private struct LiveActivityTabView: View {
     @ObservedObject var appState: MACAppState
     @StateObject private var vm = LiveActivityTabVM()
+    @StateObject private var resourceMonitor = MACResourceMonitor()
 
     private var parsedLines: [MACParsedLogLine] {
         appState.logLines.enumerated().map { idx, line in
@@ -3561,12 +3562,22 @@ private struct LiveActivityTabView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             headerBar
             filterAndControlsBar
             logConsoleBox
+            resourceMetricsFooterBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            let state = appState
+            resourceMonitor.start { [weak state] in
+                state?.botProcessIdentifier
+            }
+        }
+        .onDisappear {
+            resourceMonitor.stop()
+        }
     }
 
     private var formattedBufferLimit: String {
@@ -3618,6 +3629,7 @@ private struct LiveActivityTabView: View {
                 .cornerRadius(5)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
 
             Spacer()
@@ -3786,6 +3798,179 @@ private struct LiveActivityTabView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private var resourceMetricsFooterBar: some View {
+        HStack(spacing: 8) {
+            // App Usage
+            metricCard(
+                icon: "macwindow",
+                iconColor: .blue,
+                title: "App",
+                cpu: resourceMonitor.appMetrics.formattedCPU,
+                ram: resourceMonitor.appMetrics.formattedMemory,
+                statusText: nil,
+                isActive: true
+            )
+
+            // Bot Runtime Usage
+            let isBotRunning = appState.status.isRunningOrStarting
+            metricCard(
+                icon: "paperplane.fill",
+                iconColor: .cyan,
+                title: "Bot",
+                cpu: isBotRunning ? resourceMonitor.botMetrics.formattedCPU : nil,
+                ram: isBotRunning ? resourceMonitor.botMetrics.formattedMemory : nil,
+                statusText: isBotRunning ? nil : "Stopped",
+                isActive: isBotRunning
+            )
+
+            // Agent in Work Usage
+            agentMetricCard
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func metricCard(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        cpu: String?,
+        ram: String?,
+        statusText: String?,
+        isActive: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(iconColor)
+
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.primary)
+
+            if let cpu = cpu, let ram = ram {
+                HStack(spacing: 4) {
+                    Text("CPU")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(cpu)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.primary)
+
+                    Text("•")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+
+                    Text("RAM")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(ram)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+            } else if let status = statusText {
+                Text(status)
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(isActive ? 0.05 : 0.025))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isActive ? iconColor.opacity(0.2) : Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var agentMetricCard: some View {
+        let isRunning = appState.isTaskRunning
+        let agentCPU = (resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedCPU : (isRunning ? resourceMonitor.botMetrics.formattedCPU : "0.0%"))
+        let agentRAM = (resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedMemory : (isRunning ? resourceMonitor.botMetrics.formattedMemory : "0.0 MB"))
+
+        return HStack(spacing: 6) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(isRunning ? .orange : .secondary)
+
+            Text("Agent in Work")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.primary)
+
+            if isRunning {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+
+                    if !appState.activeStage.isEmpty && appState.activeStage != "Idle" {
+                        Text(appState.activeStage)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .lineLimit(1)
+                            .frame(maxWidth: 220, alignment: .leading)
+                    }
+
+                    Text("•")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+
+                    Text("CPU")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(agentCPU)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.primary)
+
+                    Text("•")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+
+                    Text("RAM")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(agentRAM)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.primary)
+
+                    if resourceMonitor.activeAgentProcessCount > 1 {
+                        Text("(\(resourceMonitor.activeAgentProcessCount) procs)")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.secondary.opacity(0.5))
+                        .frame(width: 6, height: 6)
+                    Text("Idle")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text("•")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Text("CPU 0.0% • RAM 0.0 MB")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundColor(.secondary.opacity(0.8))
+                }
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(isRunning ? 0.08 : 0.025))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isRunning ? Color.orange.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
 

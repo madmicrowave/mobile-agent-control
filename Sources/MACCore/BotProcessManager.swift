@@ -75,6 +75,10 @@ public final class MACAppState: ObservableObject {
     public var onStateChanged: (() -> Void)?
     public var onRequestOpenSettings: ((MACSettingsTab) -> Void)?
 
+    public var botProcessIdentifier: pid_t? {
+        botProcess?.isRunning == true ? botProcess?.processIdentifier : nil
+    }
+
     private var botProcess: Process?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?

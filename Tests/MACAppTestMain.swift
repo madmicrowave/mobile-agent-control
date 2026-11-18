@@ -379,6 +379,30 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     print("✓ MACStatusBarController Start / Restart / Stop + Password Prompt + Sleep Prevention passed")
 }
 
+@MainActor
+func testResourceMonitorAndMetrics() throws {
+    let metricsMB = MACProcessMetrics(cpuPercent: 12.34, memoryMB: 48.5)
+    expect(metricsMB.formattedCPU == "12.3%", "formattedCPU formats 1 decimal place")
+    expect(metricsMB.formattedMemory == "48.5 MB", "formattedMemory formats in MB")
+
+    let metricsGB = MACProcessMetrics(cpuPercent: -2.0, memoryMB: 1536.0)
+    expect(metricsGB.formattedCPU == "0.0%", "formattedCPU clamps negative values to 0.0%")
+    expect(metricsGB.formattedMemory == "1.50 GB", "formattedMemory formats in GB when >= 1024 MB")
+
+    let monitor = MACResourceMonitor()
+    monitor.sample(botPid: nil)
+    expect(monitor.appMetrics.memoryMB > 0.0, "App host process resident memory should be > 0 MB")
+    expect(monitor.botMetrics.memoryMB == 0.0, "Bot memory is 0 when stopped")
+    expect(monitor.agentMetrics.memoryMB == 0.0, "Agent memory is 0 when no bot process running")
+    expect(monitor.activeAgentProcessCount == 0, "No active agent subprocesses when bot is nil")
+
+    // Start & Stop cycle
+    monitor.start { nil }
+    monitor.stop()
+
+    print("✓ MACResourceMonitor process sampling and metrics formatting passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -394,6 +418,7 @@ struct MACAppTests {
             try testSleepPreventerAndLaunchAgent()
             try MainActor.assumeIsolated {
                 try testMenuBarControllerAndBotLifecycle()
+                try testResourceMonitorAndMetrics()
             }
             print("✅ All MAC macOS native app tests passed!")
         } catch {
