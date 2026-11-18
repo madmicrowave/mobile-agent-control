@@ -2844,17 +2844,31 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(queuedEdited.text, /Start turn 2 queued/);
 
     // 4) Finish Turn 1
+    mockTg.clearSent();
     turn1Resolver();
     await controller.waitForBackgroundTasks();
 
-    // 5) Verify Turn 1 was committed to git
+    // 5) User gets the standard commit & push or revert prompt
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    const commitPromptMsg = mockTg.lastSent();
+    assert.match(commitPromptMsg.text, /Commit &amp; push these changes\?/);
+    const commitButtons = commitPromptMsg.reply_markup?.inline_keyboard?.flat() || [];
+    assert.ok(commitButtons.some((b) => b.callback_data === 'cmt:yes:payments'));
+    assert.ok(commitButtons.some((b) => b.callback_data === 'cmt:no:payments'));
+
+    // 6) User clicks Yes to commit -> commits changes, skips Jenkins deploy, and executes queued message
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments', commitPromptMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
+    // Verify Turn 1 was committed to git
     const { stdout: logOut } = await runGit(coreRepo.cloneDir, ['log', '-2', '--pretty=%s']);
     assert.match(logOut, /Start turn 1/);
 
-    // Verify previous turn was committed and Jenkins deploy was deferred
+    // Verify commit confirmation and that Jenkins deploy was skipped for queued message
     assert.ok(
       mockTg.sentMessages.some((m) =>
-        /Committed &(?:amp;)? pushed changes for previous message/i.test(m.text)
+        /Committed &(?:amp;)? pushed/i.test(m.text)
       )
     );
     assert.ok(
@@ -2863,11 +2877,11 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       )
     );
 
-    // 6) Verify Turn 2 started and ran before Jenkins
+    // 7) Verify Turn 2 started and ran before Jenkins
     assert.equal(turn2Started, true);
     assert.equal(turn2PromptReceived, 'Start turn 2 queued');
 
-    // 7) Now Turn 2 finishes -> queue is empty -> prompts for commit choice for Turn 2 changes
+    // 8) Now Turn 2 finishes -> queue is empty -> prompts for commit choice for Turn 2 changes
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
     assert.match(mockTg.lastSent().text, /Changes made in Payments Platform/);
   });

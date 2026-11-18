@@ -3074,102 +3074,6 @@ export class BotController {
       }
     }
 
-    // ── Execute Queued Message Before Jenkins Deployment ─────────────────────
-    if (st.messageQueue && st.messageQueue.length > 0) {
-      if (deltas.length > 0) {
-        const commitMessage = buildAutoCommitMessage(st.activeTurn?.prompt || 'workspace update');
-        const commits = [];
-        const branchToPush =
-          st.activeTurn?.targetBranch || st.activeTurn?.commits?.[0]?.branch || '';
-
-        try {
-          for (const repo of ws.repos || []) {
-            const freshDelta = await detectRepoChangesSinceSnapshot(
-              repo,
-              st.baselineSnapshots?.[repo.name]
-            );
-            if (freshDelta.changedFiles.length > 0) {
-              const rec = await commitAndPushRepoChanges(repo, freshDelta, commitMessage, {
-                push: this.gitPush,
-                customBranch: branchToPush
-              });
-              if (rec) commits.push(rec);
-            } else if (freshDelta.headAdvanced) {
-              const recs = await collectAgentCommitsAndPush(repo, freshDelta, { push: this.gitPush });
-              commits.push(...recs);
-            }
-          }
-        } catch (gitErr) {
-          if (gitErr.commitRecord) {
-            commits.push(gitErr.commitRecord);
-          } else if (Array.isArray(gitErr.commitRecords)) {
-            commits.push(...gitErr.commitRecords);
-          }
-          st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
-          st.lastError = gitErr.message;
-          st.phase = 'AWAITING_COMMIT_CHOICE';
-          await this.configStore.saveState();
-          await this.telegram.sendMessage({
-            chatId,
-            text: `❌ <b>Git commit/push failed for previous message:</b>\n<code>${escapeHtml(gitErr.message)}</code>`
-          });
-          await this.sendCommitPrompt(chatId, ws, deltas);
-          return;
-        }
-
-        st.activeTurn.commits = [...(st.activeTurn?.commits || []), ...commits];
-        st.pendingDeltas = [];
-        st.lastError = null;
-
-        const commitLines = commits.map(
-          (c) =>
-            `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
-        );
-
-        await this.telegram.sendMessage({
-          chatId,
-          text:
-            `✅ <b>Committed &amp; pushed changes for previous message:</b>\n\n` +
-            `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
-            commitLines.join('\n') +
-            `\n\n⏭️ <i>Skipping Jenkins deploy for previous message — executing queued message next…</i>`
-        });
-
-        st.history.push({
-          id: st.activeTurn.id,
-          createdAt: st.activeTurn.createdAt,
-          finishedAt: this.nowProvider().toISOString(),
-          prompt: st.activeTurn.prompt,
-          commits,
-          outcome: 'COMMITTED_DEPLOY_DEFERRED'
-        });
-      } else {
-        st.history.push({
-          id: st.activeTurn.id,
-          createdAt: st.activeTurn.createdAt,
-          finishedAt: this.nowProvider().toISOString(),
-          prompt: st.activeTurn.prompt,
-          outcome: 'NO_CHANGES'
-        });
-        await this.telegram.sendMessage({
-          chatId,
-          text: `ℹ️ <b>No code changes from previous message. Executing queued message next…</b>`
-        });
-      }
-
-      const nextItem = st.messageQueue.shift();
-      st.activeTurn = null;
-      st.baselineSnapshots = null;
-      st.pendingDeltas = [];
-      st.pendingPhotos = nextItem.photos || [];
-      st.phase = 'IDLE';
-      await this.configStore.saveState();
-
-      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
-      await this.startAgentTurn(chatId, ws, nextItem.text || '');
-      return;
-    }
-
     if (deltas.length === 0) {
       if (isAutoCommitFix) {
         st.phase = 'AWAITING_OK_OR_REVERT';
@@ -3196,6 +3100,25 @@ export class BotController {
         prompt: st.activeTurn.prompt,
         outcome: 'NO_CHANGES'
       });
+
+      if (st.messageQueue && st.messageQueue.length > 0) {
+        const nextItem = st.messageQueue.shift();
+        st.activeTurn = null;
+        st.baselineSnapshots = null;
+        st.pendingDeltas = [];
+        st.pendingPhotos = nextItem.photos || [];
+        st.phase = 'IDLE';
+        await this.configStore.saveState();
+
+        await this.telegram.sendMessage({
+          chatId,
+          text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}. Executing queued message next…</b>`
+        });
+        this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
+        await this.startAgentTurn(chatId, ws, nextItem.text || '');
+        return;
+      }
+
       st.phase = 'IDLE';
       st.activeTurn = null;
       st.baselineSnapshots = null;
@@ -3383,6 +3306,26 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🗑 Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n\n` +
+          `⏭️ <i>Executing queued message next…</i>`
+      });
+      const nextItem = st.messageQueue.shift();
+      st.activeTurn = null;
+      st.baselineSnapshots = null;
+      st.pendingDeltas = [];
+      st.pendingPhotos = nextItem.photos || [];
+      st.phase = 'IDLE';
+      await this.configStore.saveState();
+
+      this.log('agent', `Executing queued message in workspace "${wsLabel}": ${nextItem.text || ''}`);
+      await this.startAgentTurn(chatId, ws, nextItem.text || '');
+      return;
+    }
+
     await this.telegram.sendMessage({
       chatId,
       text:
@@ -3474,6 +3417,7 @@ export class BotController {
   async handleCommitYes(chatId, wsId, customBranch = '') {
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
+    const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
 
     if (
