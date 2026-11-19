@@ -58,6 +58,7 @@ public final class MACAppState: ObservableObject {
     @Published public var selectedTab: MACSettingsTab = .general
     @Published public var selectedWorkspaceId: String?
     @Published public var logLines: [String] = []
+    @Published public var logRevision: Int = 0
     @Published public var maxLogLines: Int = 3000
     @Published public var statusBannerMessage: String?
     @Published public var activeStage: String = "Idle"
@@ -464,16 +465,19 @@ public final class MACAppState: ObservableObject {
     public func appendLog(_ line: String) {
         logLines.append(line)
         trimLogsToMax()
+        logRevision &+= 1
     }
 
     public func trimLogsToMax() {
         if logLines.count > maxLogLines {
             logLines.removeFirst(logLines.count - maxLogLines)
+            logRevision &+= 1
         }
     }
 
     public func clearLogs() {
         logLines.removeAll()
+        logRevision &+= 1
     }
 
     private func updateStageFromLogLine(_ line: String) {

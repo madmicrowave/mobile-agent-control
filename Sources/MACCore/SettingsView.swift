@@ -3502,6 +3502,7 @@ private final class LiveActivityTabVM: ObservableObject {
     @Published var selectedCategories: Set<MACLogCategory> = [.all]
     @Published var searchText: String = ""
     @Published var autoScroll: Bool = true
+    @Published var scrollTrigger: Int = 0
 
     func toggleCategory(_ cat: MACLogCategory) {
         if cat == .all {
@@ -3729,6 +3730,18 @@ private struct LiveActivityTabView: View {
             .fixedSize()
 
             Button {
+                vm.autoScroll = true
+                vm.scrollTrigger &+= 1
+            } label: {
+                Label("Latest", systemImage: "arrow.down.to.line")
+                    .lineLimit(1)
+            }
+            .controlSize(.small)
+            .help("Scroll to latest log")
+            .disabled(filteredLines.isEmpty)
+            .fixedSize()
+
+            Button {
                 let pb = NSPasteboard.general
                 pb.clearContents()
                 let textToCopy = filteredLines.map(\.rawText).joined(separator: "\n")
@@ -3762,9 +3775,15 @@ private struct LiveActivityTabView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "info.circle")
                                     .foregroundColor(.secondary)
-                                Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram, AI turns & CI/CD logs.")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundColor(.secondary)
+                                if appState.status.isRunningOrStarting {
+                                    Text("No logs currently.")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram, AI turns & CI/CD logs.")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             .padding(.vertical, 8)
                         }
@@ -3781,13 +3800,41 @@ private struct LiveActivityTabView: View {
                                 .id(item.id)
                         }
                     }
+
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .id("LOG_BOTTOM_SENTINEL")
                 }
                 .padding(10)
             }
-            .onChange(of: appState.logLines.count) { _, newCount in
-                if vm.autoScroll && newCount > 0 {
-                    proxy.scrollTo(newCount - 1, anchor: .bottom)
+            .onAppear {
+                scrollToLatest(proxy: proxy, animated: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                    scrollToLatest(proxy: proxy, animated: false)
                 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    scrollToLatest(proxy: proxy, animated: false)
+                }
+            }
+            .onChange(of: appState.logRevision) { _, _ in
+                scrollToLatest(proxy: proxy, animated: false)
+            }
+            .onChange(of: appState.logLines.count) { _, _ in
+                scrollToLatest(proxy: proxy, animated: false)
+            }
+            .onChange(of: vm.autoScroll) { _, isAuto in
+                if isAuto {
+                    scrollToLatest(proxy: proxy, animated: true)
+                }
+            }
+            .onChange(of: vm.scrollTrigger) { _, _ in
+                scrollToLatest(proxy: proxy, animated: true)
+            }
+            .onChange(of: vm.selectedCategories) { _, _ in
+                scrollToLatest(proxy: proxy, animated: false)
+            }
+            .onChange(of: vm.searchText) { _, _ in
+                scrollToLatest(proxy: proxy, animated: false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -3799,6 +3846,26 @@ private struct LiveActivityTabView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
+    }
+
+    private func scrollToLatest(proxy: ScrollViewProxy, animated: Bool) {
+        guard vm.autoScroll else { return }
+        let targetId = filteredLines.last?.id
+        DispatchQueue.main.async {
+            if let lastId = targetId {
+                if animated {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo(lastId, anchor: .bottom)
+                        proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                    proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
+            }
+        }
     }
 
     private var resourceMetricsFooterBar: some View {

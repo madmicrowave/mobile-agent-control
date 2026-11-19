@@ -373,6 +373,17 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         expect(resolvedOvershoot != nil, "Expected tolerance-handled click above screen top boundary to resolve to a display")
     }
 
+    // Verify log revision tracking and clearLogs behavior
+    let initialCount = appState.logLines.count
+    let initialRev = appState.logRevision
+    appState.appendLog("Sample log line 1")
+    expect(appState.logRevision == initialRev + 1, "appendLog increments logRevision")
+    expect(appState.logLines.count == initialCount + 1, "logLines holds appended line")
+    appState.clearLogs()
+    expect(appState.logRevision == initialRev + 2, "clearLogs increments logRevision")
+    expect(appState.logLines.isEmpty, "clearLogs clears all logLines")
+    expect(!appState.status.isRunningOrStarting, "Stopped bot state reflects isRunningOrStarting == false")
+
     controller.menuNeedsUpdate(controller.menu)
     controller.menuWillOpen(controller.menu)
     expect(controller.startMenuItem.isEnabled, "Menu update reflects current stopped state")
