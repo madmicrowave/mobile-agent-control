@@ -289,6 +289,41 @@ export class BotController {
     });
   }
 
+  /**
+   * Resolves the production live URL for a workspace, supporting aliases across workspace
+   * and repository configurations, falling back to liveUrl only in single-environment mode.
+   */
+  resolveWorkspaceProductionLiveUrl(ws) {
+    if (!ws) return '';
+    const direct =
+      ws.prodLiveUrl ||
+      ws.prodUrl ||
+      ws.productionUrl ||
+      ws.productionLiveUrl ||
+      ws.prod_live_url ||
+      ws.liveProdUrl;
+    if (direct && typeof direct === 'string' && direct.trim()) {
+      return direct.trim();
+    }
+    if (Array.isArray(ws.repos)) {
+      for (const r of ws.repos) {
+        const repoUrl =
+          r?.prodLiveUrl ||
+          r?.prodUrl ||
+          r?.productionUrl ||
+          r?.productionLiveUrl ||
+          r?.prod_live_url;
+        if (repoUrl && typeof repoUrl === 'string' && repoUrl.trim()) {
+          return repoUrl.trim();
+        }
+      }
+    }
+    if (ws.environmentMode !== 'multi' && ws.liveUrl && typeof ws.liveUrl === 'string') {
+      return ws.liveUrl.trim();
+    }
+    return '';
+  }
+
   resolveProdJenkinsTargets(ws, st) {
     if (!this.hasWorkspaceProdJenkins(ws)) return [];
     const commits = st?.activeTurn?.commits || [];
@@ -4738,7 +4773,7 @@ export class BotController {
       st.deployingTurn = null;
     }
 
-    const prodUrl = ws.prodLiveUrl || (ws.environmentMode !== 'multi' ? ws.liveUrl : '');
+    const prodUrl = this.resolveWorkspaceProductionLiveUrl(ws);
     const prodLiveLinkLine = prodUrl ? `\n\n🌐 Production Live: ${escapeHtml(prodUrl)}` : '';
 
     if (isParallelAgentActive) {

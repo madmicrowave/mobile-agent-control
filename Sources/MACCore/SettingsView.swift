@@ -2640,12 +2640,12 @@ private struct WorkspaceEditorFormView: View {
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Staging URL")
+                            Text("Live URL")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://staging.example.com")) {}
+                            TextField(text: $draft.liveUrl, prompt: Text(verbatim: "https://example.com")) {}
                                 .textFieldStyle(.roundedBorder)
-                            if let status = MACValidationUtils.validateUrl(draft.liveUrl, label: "Staging URL") {
+                            if let status = MACValidationUtils.validateUrl(draft.liveUrl, label: "Live URL") {
                                 MACValidationMessage(status: status)
                             }
                         }

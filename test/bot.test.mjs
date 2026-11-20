@@ -2335,6 +2335,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const paymentsWs = configStore.config.workspaces.find((w) => w.id === 'payments');
     paymentsWs.environmentMode = 'multi';
     paymentsWs.prodJenkinsJobs = ['HOSTEGATOR/PAYMENT-BOOK/payment-book.com-GATE'];
+    paymentsWs.prodLiveUrl = 'https://payments-prod.example.com';
     const coreRepoEntry = paymentsWs.repos.find((r) => r.name === 'payments_gate');
     coreRepoEntry.prodJenkinsJob = 'HOSTEGATOR/PAYMENT-BOOK/payment-book.com-GATE';
     await configStore.saveConfig();
@@ -2411,6 +2412,10 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       assert.equal(mockJenkins.triggeredBuilds[1].version, mockJenkins.triggeredBuilds[0].version);
       assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
       assert.match(mockTg.lastSent().text, /Production Jenkins Deploy Succeeded!/);
+      assert.match(
+        mockTg.lastSent().text,
+        /🌐 Production Live: https:\/\/payments-prod\.example\.com/
+      );
 
       // Turn 2: Staging deploy -> `✅ Yes (skip prod deploy)` must confirm WITHOUT triggering Prod Jenkins!
       nextAgentBehavior = async () => {
@@ -2441,9 +2446,68 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     } finally {
       paymentsWs.environmentMode = 'single';
       paymentsWs.prodJenkinsJobs = [];
+      paymentsWs.prodLiveUrl = '';
       coreRepoEntry.prodJenkinsJob = '';
       await configStore.saveConfig();
     }
+  });
+
+  it('resolves production live URL with aliases, repo overrides, and single-environment fallback', () => {
+    // 1. Multi-mode with explicit prodLiveUrl
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'multi',
+        liveUrl: 'https://staging.example.com',
+        prodLiveUrl: 'https://example.com'
+      }),
+      'https://example.com'
+    );
+
+    // 2. Multi-mode with aliases (prodUrl, productionUrl)
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'multi',
+        liveUrl: 'https://staging.example.com',
+        prodUrl: 'https://alias-prod.example.com'
+      }),
+      'https://alias-prod.example.com'
+    );
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'multi',
+        liveUrl: 'https://staging.example.com',
+        productionUrl: 'https://production-url.example.com'
+      }),
+      'https://production-url.example.com'
+    );
+
+    // 3. Multi-mode with repo-level production URL
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'multi',
+        liveUrl: 'https://staging.example.com',
+        repos: [{ prodLiveUrl: 'https://repo-prod.example.com' }]
+      }),
+      'https://repo-prod.example.com'
+    );
+
+    // 4. Multi-mode with no production URL defined -> returns empty string (never leaks staging URL)
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'multi',
+        liveUrl: 'https://staging.example.com'
+      }),
+      ''
+    );
+
+    // 5. Single-mode fallback to liveUrl
+    assert.equal(
+      controller.resolveWorkspaceProductionLiveUrl({
+        environmentMode: 'single',
+        liveUrl: 'https://single-app.example.com'
+      }),
+      'https://single-app.example.com'
+    );
   });
 
   it('auto-recovers transparently when Same Chat holds a Desktop IDE or missing trajectory ID (trajectory not found)', async () => {

@@ -237,7 +237,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, label, name, path, extraDirs, liveUrl, prodLiveUrl, model, modelLevel, engine, environmentMode
+        case id, label, name, path, extraDirs, liveUrl, prodLiveUrl, prodUrl, productionUrl, model, modelLevel, engine, environmentMode
         case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
         case jenkinsJobs, prodJenkinsJobs, repos
     }
@@ -257,7 +257,15 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.path = wsPath
         self.extraDirs = try c.decodeIfPresent([String].self, forKey: .extraDirs) ?? []
         self.liveUrl = try c.decodeIfPresent(String.self, forKey: .liveUrl) ?? ""
-        self.prodLiveUrl = try c.decodeIfPresent(String.self, forKey: .prodLiveUrl) ?? ""
+        if let explicitProd = try c.decodeIfPresent(String.self, forKey: .prodLiveUrl), !explicitProd.isEmpty {
+            self.prodLiveUrl = explicitProd
+        } else if let alias1 = try c.decodeIfPresent(String.self, forKey: .prodUrl), !alias1.isEmpty {
+            self.prodLiveUrl = alias1
+        } else if let alias2 = try c.decodeIfPresent(String.self, forKey: .productionUrl), !alias2.isEmpty {
+            self.prodLiveUrl = alias2
+        } else {
+            self.prodLiveUrl = ""
+        }
         self.model = try c.decodeIfPresent(String.self, forKey: .model) ?? "gemini-3.8-flash-high"
         self.modelLevel = try c.decodeIfPresent(String.self, forKey: .modelLevel) ?? "high"
         let decodedEngine = (try c.decodeIfPresent(String.self, forKey: .engine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -299,9 +307,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         try c.encode(path, forKey: .path)
         try c.encode(extraDirs, forKey: .extraDirs)
         try c.encode(liveUrl, forKey: .liveUrl)
-        if environmentMode == "multi" && !prodLiveUrl.isEmpty {
-            try c.encode(prodLiveUrl, forKey: .prodLiveUrl)
-        } else if !prodLiveUrl.isEmpty {
+        if !prodLiveUrl.isEmpty {
             try c.encode(prodLiveUrl, forKey: .prodLiveUrl)
         }
         try c.encode(model, forKey: .model)

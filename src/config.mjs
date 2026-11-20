@@ -467,6 +467,17 @@ export class ConfigStore {
         r.prodGcpTrigger = String(r.prodGcpTrigger || '').trim();
       }
 
+      ws.liveUrl = String(ws.liveUrl || '').trim();
+      ws.prodLiveUrl = String(
+        ws.prodLiveUrl ||
+          ws.prodUrl ||
+          ws.productionUrl ||
+          ws.productionLiveUrl ||
+          ws.prod_live_url ||
+          ws.liveProdUrl ||
+          ''
+      ).trim();
+
       const rawEnvMode = String(ws.environmentMode || '').trim().toLowerCase();
       const hasAnyProdJob =
         ws.prodJenkinsJobs.length > 0 || ws.repos.some((r) => Boolean(r.prodJenkinsJob));
