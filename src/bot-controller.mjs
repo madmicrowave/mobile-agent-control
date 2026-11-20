@@ -745,17 +745,35 @@ export class BotController {
       return;
     }
 
-    // ── Allow queuing message if agent is currently running ──────────────────
-    if (st.phase === 'RUNNING_AGENT') {
+    // ── Allow queuing message in any non-idle stage ──────────────────────────
+    if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
       const incomingAttachment = this.extractIncomingAttachment(msg);
       if (!incomingAttachment && !text) {
-        await this.telegram.sendMessage({
-          chatId,
-          text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
-          replyMarkup: {
-            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-          }
-        });
+        if (st.phase === 'RUNNING_AGENT') {
+          await this.telegram.sendMessage({
+            chatId,
+            text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+            replyMarkup: {
+              inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+            }
+          });
+        } else if (
+          st.phase === 'RUNNING_JENKINS' ||
+          st.phase === 'RUNNING_PROD_JENKINS' ||
+          st.phase === 'RUNNING_REVERT_JENKINS' ||
+          st.runningJenkins
+        ) {
+          await this.telegram.sendMessage({
+            chatId,
+            text: `⏳ Jenkins deployment is currently running for <b>${escapeHtml(wsLabel)}</b>.`
+          });
+        } else {
+          await this.sendCurrentWorkspaceGatePrompt(
+            chatId,
+            ws,
+            `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>.\n\nComplete the action below (or tap <b>${REPLY_BTN_SWITCH_WORKSPACE}</b> to work in another Workspace):`
+          );
+        }
         return;
       }
 
@@ -807,32 +825,61 @@ export class BotController {
         createdAt: this.nowProvider().toISOString()
       });
 
-      await this.telegram.sendMessage({
-        chatId,
-        text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
-        replyMarkup: {
-          inline_keyboard: [
-            [
-              { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` },
-              { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }
-            ]
-          ]
-        },
-        replyToMessageId: msg.message_id || undefined
-      });
-      return;
-    }
-
-    // ── Block new agent messages if workspace is awaiting a step decision ────
-    if (st.phase !== 'IDLE' && st.phase !== 'SELECT_CHAT') {
-      if (this.#shouldSuppressDuplicateGateNotice(ws.id, msg.media_group_id)) {
-        return;
-      }
-      await this.sendCurrentWorkspaceGatePrompt(
-        chatId,
-        ws,
-        `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>.\n\nComplete the action below (or tap <b>${REPLY_BTN_SWITCH_WORKSPACE}</b> to work in another Workspace):`
+      const isJenkinsRunning = Boolean(
+        st.runningJenkins ||
+        st.phase === 'RUNNING_JENKINS' ||
+        st.phase === 'RUNNING_PROD_JENKINS' ||
+        st.phase === 'RUNNING_REVERT_JENKINS'
       );
+
+      if (st.phase === 'RUNNING_AGENT') {
+        await this.telegram.sendMessage({
+          chatId,
+          text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` },
+                { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }
+              ]
+            ]
+          },
+          replyToMessageId: msg.message_id || undefined
+        });
+      } else if (isJenkinsRunning) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `⏳ Jenkins deployment is currently running in <b>${escapeHtml(wsLabel)}</b>.\n\n` +
+            `You can queue this message to run with AI in parallel with Jenkins:`,
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` }
+              ]
+            ]
+          },
+          replyToMessageId: msg.message_id || undefined
+        });
+      } else {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `⚠️ <b>${escapeHtml(wsLabel)}</b> is currently in step <code>${escapeHtml(st.phase)}</code>.\n\n` +
+            `Complete the action below, or queue this message to run next:`,
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` }
+              ]
+            ]
+          },
+          replyToMessageId: msg.message_id || undefined
+        });
+        if (!this.#shouldSuppressDuplicateGateNotice(ws.id, msg.media_group_id)) {
+          await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+        }
+      }
       return;
     }
 
@@ -1008,6 +1055,10 @@ export class BotController {
       reasonHeader = `🗑 Discarded uncommitted changes in <b>${escapeHtml(wsLabel)}</b> (did not commit).\n\n⏭️ <i>Executing queued message (#${queueNum}) next…</i>`;
     } else if (reason === 'no_changes') {
       reasonHeader = `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)}.</b>\n\n⏭️ <i>Executing queued message (#${queueNum}) next…</i>`;
+    } else if (reason === 'confirmed') {
+      reasonHeader = `⏭️ <i>Executing queued message (#${queueNum}) next…</i>`;
+    } else if (reason === 'parallel_jenkins') {
+      reasonHeader = `🚀 <b>Triggered Antigravity agent in parallel with Jenkins deployment (#${queueNum})…</b>`;
     }
 
     const text =
@@ -1022,6 +1073,39 @@ export class BotController {
       queueNum,
       anchorMsgId
     };
+  }
+
+  async #executeNextQueuedMessage(chatId, ws, st, { reason = 'skipping_jenkins' } = {}) {
+    if (!st.messageQueue || st.messageQueue.length === 0) return false;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const nextItem = st.messageQueue.shift();
+    const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
+      reason,
+      chatId
+    });
+
+    await this.telegram.sendMessage({
+      chatId,
+      text: notice.text,
+      replyToMessageId: notice.anchorMsgId || undefined
+    });
+
+    if (st.activeTurn && !st.deployingTurn) {
+      st.deployingTurn = st.activeTurn;
+    }
+    st.activeTurn = null;
+    st.baselineSnapshots = null;
+    st.pendingDeltas = [];
+    st.pendingPhotos = nextItem.photos || [];
+    st.phase = 'IDLE';
+    await this.configStore.saveState();
+
+    this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
+    await this.startAgentTurn(chatId, ws, nextItem.text || '', {
+      replyToMessageId: notice.anchorMsgId || null,
+      queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
+    });
+    return true;
   }
 
   #cancelInputBatch(wsId) {
@@ -1530,16 +1614,65 @@ export class BotController {
           ? (candidate.text.length > 70 ? candidate.text.slice(0, 67) + '…' : candidate.text)
           : (candidate.photos?.length ? `[${candidate.photos.length} file(s)]` : '(Message)');
 
+        const isJenkinsRunning = Boolean(
+          st.runningJenkins ||
+          st.phase === 'RUNNING_JENKINS' ||
+          st.phase === 'RUNNING_PROD_JENKINS' ||
+          st.phase === 'RUNNING_REVERT_JENKINS'
+        );
+        const isAgentActive = Boolean(this.runtime.get(ws.id)?.abortAgent || st.phase === 'RUNNING_AGENT');
+
+        if (isJenkinsRunning && !isAgentActive) {
+          st.messageQueue.pop();
+          if (st.activeTurn && !st.deployingTurn) {
+            st.deployingTurn = st.activeTurn;
+          }
+          await this.configStore.saveState();
+
+          await this.telegram.editMessageText({
+            chatId,
+            messageId,
+            text:
+              `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}:</b>\n` +
+              `<i>"${escapeHtml(preview)}"</i>\n\n` +
+              `🚀 <b>Triggered Antigravity agent in parallel with Jenkins deployment.</b>`,
+            replyMarkup: {
+              inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+            }
+          });
+          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}) running in parallel with Jenkins: ${preview}`);
+
+          st.pendingPhotos = candidate.photos || [];
+          await this.startAgentTurn(chatId, ws, candidate.text || '', {
+            replyToMessageId: candidate.userMessageId || null,
+            queueInfo: { queueNumber: queuePos, promptText: preview }
+          });
+          return;
+        }
+
+        if (isAgentActive) {
+          await this.telegram.editMessageText({
+            chatId,
+            messageId,
+            text:
+              `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}:</b>\n` +
+              `<i>"${escapeHtml(preview)}"</i>\n\n` +
+              `It will be executed before Jenkins deployment once the current agent finishes.`,
+            replyMarkup: {
+              inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+            }
+          });
+          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
+          return;
+        }
+
         await this.telegram.editMessageText({
           chatId,
           messageId,
           text:
             `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}:</b>\n` +
             `<i>"${escapeHtml(preview)}"</i>\n\n` +
-            `It will be executed before Jenkins deployment once the current agent finishes.`,
-          replyMarkup: {
-            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-          }
+            `It will be executed once you complete or skip the current step.`
         });
         this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
         return;
@@ -3155,8 +3288,9 @@ export class BotController {
         for (const repo of ws.repos || []) {
           await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
         }
-        st.phase = 'IDLE';
-        st.activeTurn = null;
+        st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
+        st.activeTurn = st.deployingTurn || null;
+        st.deployingTurn = null;
         st.baselineSnapshots = null;
         st.pendingDeltas = [];
         st.lastError = agentErr.message;
@@ -3229,30 +3363,7 @@ export class BotController {
       });
 
       if (st.messageQueue && st.messageQueue.length > 0) {
-        const nextItem = st.messageQueue.shift();
-        const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
-          reason: 'no_changes',
-          chatId
-        });
-
-        st.activeTurn = null;
-        st.baselineSnapshots = null;
-        st.pendingDeltas = [];
-        st.pendingPhotos = nextItem.photos || [];
-        st.phase = 'IDLE';
-        await this.configStore.saveState();
-
-        await this.telegram.sendMessage({
-          chatId,
-          text: notice.text,
-          replyToMessageId: notice.anchorMsgId || undefined
-        });
-
-        this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
-        await this.startAgentTurn(chatId, ws, nextItem.text || '', {
-          replyToMessageId: notice.anchorMsgId || null,
-          queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
-        });
+        await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'no_changes' });
         return;
       }
 
@@ -3472,8 +3583,9 @@ export class BotController {
       });
     }
 
-    st.phase = 'IDLE';
-    st.activeTurn = null;
+    st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
+    st.activeTurn = st.deployingTurn || null;
+    st.deployingTurn = null;
     st.accumulatedCommits = [];
     st.baselineSnapshots = null;
     st.pendingDeltas = [];
@@ -3481,30 +3593,7 @@ export class BotController {
     await this.configStore.saveState();
 
     if (st.messageQueue && st.messageQueue.length > 0) {
-      const nextItem = st.messageQueue.shift();
-      const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
-        reason: 'discarded',
-        chatId
-      });
-
-      await this.telegram.sendMessage({
-        chatId,
-        text: notice.text,
-        replyToMessageId: notice.anchorMsgId || undefined
-      });
-
-      st.activeTurn = null;
-      st.baselineSnapshots = null;
-      st.pendingDeltas = [];
-      st.pendingPhotos = nextItem.photos || [];
-      st.phase = 'IDLE';
-      await this.configStore.saveState();
-
-      this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
-      await this.startAgentTurn(chatId, ws, nextItem.text || '', {
-        replyToMessageId: notice.anchorMsgId || null,
-        queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
-      });
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'discarded' });
       return;
     }
 
@@ -3742,30 +3831,7 @@ export class BotController {
     });
 
     if (st.messageQueue && st.messageQueue.length > 0) {
-      const nextItem = st.messageQueue.shift();
-      const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
-        reason: 'skipping_jenkins',
-        chatId
-      });
-
-      await this.telegram.sendMessage({
-        chatId,
-        text: notice.text,
-        replyToMessageId: notice.anchorMsgId || undefined
-      });
-
-      st.activeTurn = null;
-      st.baselineSnapshots = null;
-      st.pendingDeltas = [];
-      st.pendingPhotos = nextItem.photos || [];
-      st.phase = 'IDLE';
-      await this.configStore.saveState();
-
-      this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
-      await this.startAgentTurn(chatId, ws, nextItem.text || '', {
-        replyToMessageId: notice.anchorMsgId || null,
-        queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
-      });
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'skipping_jenkins' });
       return;
     }
 
@@ -3784,6 +3850,22 @@ export class BotController {
         ws,
         'ℹ️ No Jenkins job is mapped for the modified repository.'
       );
+      return;
+    }
+
+    if (st.runningJenkins) {
+      st.phase = 'AWAITING_JENKINS_CHOICE';
+      await this.configStore.saveState();
+      await this.telegram.sendMessage({
+        chatId,
+        text: `⏳ <b>Previous Jenkins deployment is still running in background.</b>\n\nYour new commits were pushed. You can deploy when ready:`,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '🚀 Run Jenkins Deploy', callback_data: `rjnk:run:${ws.id}:matched` }],
+            [{ text: '⏹ Skip Jenkins', callback_data: `rjnk:skip:${ws.id}` }]
+          ]
+        }
+      });
       return;
     }
 
@@ -4033,6 +4115,15 @@ export class BotController {
     }
 
     st.phase = isAfterRevert ? 'RUNNING_REVERT_JENKINS' : 'RUNNING_JENKINS';
+    st.runningJenkins = {
+      type: isAfterRevert ? 'revert' : 'staging',
+      phase: st.phase,
+      deployTargets,
+      isAfterRevert,
+      progressMsgId: null,
+      chatId,
+      startedAt: this.nowProvider().toISOString()
+    };
     st.lastError = null;
     await this.configStore.saveState();
 
@@ -4045,6 +4136,10 @@ export class BotController {
         `<code>${escapeHtml(jobNames)}</code>`
     });
 
+    if (st.runningJenkins) {
+      st.runningJenkins.progressMsgId = progressMsg?.message_id || null;
+    }
+
     this.#trackAsync(
       this.#executeJenkinsBuilds(
         chatId,
@@ -4054,7 +4149,10 @@ export class BotController {
         isAfterRevert,
         progressMsg?.message_id
       ).catch(async (err) => {
-        st.phase = isAfterRevert ? 'AWAITING_REVERT_JENKINS_CHOICE' : 'AWAITING_OK_OR_REVERT';
+        st.runningJenkins = null;
+        if (st.phase !== 'RUNNING_AGENT' && st.phase !== 'AWAITING_COMMIT_CHOICE') {
+          st.phase = isAfterRevert ? 'AWAITING_REVERT_JENKINS_CHOICE' : 'AWAITING_OK_OR_REVERT';
+        }
         st.lastError = err.message;
         await this.configStore.saveState();
         await this.telegram.sendMessage({
@@ -4125,21 +4223,46 @@ export class BotController {
       }
     }
 
-    if (st.activeTurn) {
+    const targetTurn = st.deployingTurn || st.activeTurn;
+    if (targetTurn) {
       if (isAfterRevert) {
-        st.activeTurn.rollbackBuilds = results;
+        targetTurn.rollbackBuilds = results;
       } else {
-        st.activeTurn.builds = results;
+        targetTurn.builds = results;
       }
     }
 
     // ── Jenkins FAILED -> Output Error Log! ──────────────────────────────────
     if (failedBuild) {
+      st.runningJenkins = null;
       const logSnippet = truncateText(failedBuild.errorLog || 'No console output available.', 2600);
+
+      if (targetTurn) {
+        targetTurn.lastFailedJob = failedBuild.jobName;
+        targetTurn.lastFailedBuildNumber = failedBuild.buildNumber;
+        targetTurn.lastFailedBuild = failedBuild;
+      }
+      st.lastError = failedBuild.errorLog;
+      await this.configStore.saveState();
+
+      const isParallelAgentActive =
+        st.phase === 'RUNNING_AGENT' ||
+        st.phase === 'AWAITING_COMMIT_CHOICE' ||
+        this.runtime.get(ws.id)?.abortAgent;
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
 
       if (isAfterRevert) {
         st.phase = 'AWAITING_REVERT_JENKINS_CHOICE';
-        st.lastError = failedBuild.errorLog;
         await this.configStore.saveState();
 
         const sent = await this.telegram.sendMessage({
@@ -4163,12 +4286,6 @@ export class BotController {
       }
 
       st.phase = 'AWAITING_OK_OR_REVERT';
-      st.lastError = failedBuild.errorLog;
-      if (st.activeTurn) {
-        st.activeTurn.lastFailedJob = failedBuild.jobName;
-        st.activeTurn.lastFailedBuildNumber = failedBuild.buildNumber;
-        st.activeTurn.lastFailedBuild = failedBuild;
-      }
       await this.configStore.saveState();
 
       await this.sendJenkinsFailurePrompt(chatId, ws, failedBuild);
@@ -4176,6 +4293,7 @@ export class BotController {
     }
 
     // ── Jenkins SUCCEEDED! ───────────────────────────────────────────────────
+    st.runningJenkins = null;
     const buildSummary = results
       .map(
         (r) =>
@@ -4183,34 +4301,79 @@ export class BotController {
       )
       .join('\n');
 
+    const isParallelAgentActive =
+      st.phase === 'RUNNING_AGENT' ||
+      st.phase === 'AWAITING_COMMIT_CHOICE' ||
+      this.runtime.get(ws.id)?.abortAgent;
+
     if (isAfterRevert) {
-      if (st.activeTurn) {
+      if (targetTurn) {
         st.history.push({
-          id: st.activeTurn.id,
-          createdAt: st.activeTurn.createdAt,
+          id: targetTurn.id,
+          createdAt: targetTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
-          prompt: st.activeTurn.prompt,
-          commits: st.activeTurn.commits,
-          revertCommits: st.activeTurn.revertCommits,
-          builds: st.activeTurn.builds,
+          prompt: targetTurn.prompt,
+          commits: targetTurn.commits,
+          revertCommits: targetTurn.revertCommits,
+          builds: targetTurn.builds,
           rollbackBuilds: results,
           outcome: 'REVERTED_AND_REDEPLOYED'
         });
       }
-      st.phase = 'IDLE';
-      st.activeTurn = null;
-      st.accumulatedCommits = [];
-      st.baselineSnapshots = null;
-      st.pendingDeltas = [];
-      st.lastError = null;
+      st.deployingTurn = null;
+      if (!isParallelAgentActive) {
+        st.phase = 'IDLE';
+        st.activeTurn = null;
+        st.accumulatedCommits = [];
+        st.baselineSnapshots = null;
+        st.pendingDeltas = [];
+        st.lastError = null;
+      }
       await this.configStore.saveState();
 
       await this.telegram.sendMessage({
         chatId,
         text:
           `✅ <b>Rollback Jenkins Deploy Succeeded!</b>\n\n${buildSummary}\n\n` +
-          `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`,
-        replyMarkup: MAIN_REPLY_KEYBOARD
+          (isParallelAgentActive
+            ? `🤖 <i>Antigravity agent is still running in parallel with your next request…</i>`
+            : `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`),
+        replyMarkup: isParallelAgentActive ? undefined : MAIN_REPLY_KEYBOARD
+      });
+
+      if (!isParallelAgentActive && st.messageQueue && st.messageQueue.length > 0) {
+        await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+      }
+      return;
+    }
+
+    if (isParallelAgentActive) {
+      if (targetTurn && targetTurn !== st.activeTurn) {
+        st.history.push({
+          id: targetTurn.id,
+          createdAt: targetTurn.createdAt,
+          finishedAt: this.nowProvider().toISOString(),
+          prompt: targetTurn.prompt,
+          commits: targetTurn.commits,
+          builds: results,
+          outcome: 'DEPLOYED_IN_PARALLEL'
+        });
+        st.deployingTurn = null;
+      }
+      await this.configStore.saveState();
+
+      const hasProd = this.hasWorkspaceProdJenkins(ws);
+      const deployHeading = hasProd
+        ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
+        : '✅ <b>Jenkins Deploy Succeeded!</b>';
+      const liveLinkTitle = hasProd ? '🌐 Staging Live' : '🌐 Live';
+      const liveLinkLine = ws.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(ws.liveUrl)}` : '';
+
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `${deployHeading}\n\n${buildSummary}${liveLinkLine}\n\n` +
+          `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
       });
       return;
     }
@@ -4366,6 +4529,10 @@ export class BotController {
         `Ready for your next message!`,
       replyMarkup: MAIN_REPLY_KEYBOARD
     });
+
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+    }
   }
 
   async handleOkDeployProd(chatId, wsId) {
@@ -4391,6 +4558,15 @@ export class BotController {
     }
 
     st.phase = 'RUNNING_PROD_JENKINS';
+    st.runningJenkins = {
+      type: 'prod',
+      phase: 'RUNNING_PROD_JENKINS',
+      deployTargets: prodTargets,
+      isAfterRevert: false,
+      progressMsgId: null,
+      chatId,
+      startedAt: this.nowProvider().toISOString()
+    };
     st.lastError = null;
     await this.configStore.saveState();
 
@@ -4403,6 +4579,10 @@ export class BotController {
         `<code>${escapeHtml(jobNames)}</code>`
     });
 
+    if (st.runningJenkins) {
+      st.runningJenkins.progressMsgId = progressMsg?.message_id || null;
+    }
+
     this.#trackAsync(
       this.#executeProdJenkinsBuilds(
         chatId,
@@ -4411,7 +4591,10 @@ export class BotController {
         prodTargets,
         progressMsg?.message_id
       ).catch(async (err) => {
-        st.phase = 'AWAITING_OK_OR_REVERT';
+        st.runningJenkins = null;
+        if (st.phase !== 'RUNNING_AGENT' && st.phase !== 'AWAITING_COMMIT_CHOICE') {
+          st.phase = 'AWAITING_OK_OR_REVERT';
+        }
         st.lastError = err.message;
         await this.configStore.saveState();
         await this.telegram.sendMessage({
@@ -4477,14 +4660,39 @@ export class BotController {
       }
     }
 
-    if (st.activeTurn) {
-      st.activeTurn.prodBuilds = results;
+    st.runningJenkins = null;
+    const targetTurn = st.deployingTurn || st.activeTurn;
+    if (targetTurn) {
+      targetTurn.prodBuilds = results;
     }
+
+    const isParallelAgentActive =
+      st.phase === 'RUNNING_AGENT' ||
+      st.phase === 'AWAITING_COMMIT_CHOICE' ||
+      this.runtime.get(ws.id)?.abortAgent;
 
     if (failedBuild) {
       const logSnippet = truncateText(failedBuild.errorLog || 'No console output available.', 2600);
-      st.phase = 'AWAITING_OK_OR_REVERT';
+      if (targetTurn) {
+        targetTurn.lastFailedJob = failedBuild.jobName;
+        targetTurn.lastFailedBuildNumber = failedBuild.buildNumber;
+        targetTurn.lastFailedBuild = failedBuild;
+      }
       st.lastError = failedBuild.errorLog;
+      await this.configStore.saveState();
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Production Jenkins Build Failed:</b> <code>${escapeHtml(failedBuild.jobName)}${failedBuild.buildNumber ? ` #${failedBuild.buildNumber}` : ''}</code> (${escapeHtml(failedBuild.result)})\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
+
+      st.phase = 'AWAITING_OK_OR_REVERT';
       await this.configStore.saveState();
 
       const sent = await this.telegram.sendMessage({
@@ -4516,6 +4724,34 @@ export class BotController {
       )
       .join('\n');
 
+    if (targetTurn && targetTurn !== st.activeTurn) {
+      st.history.push({
+        id: targetTurn.id,
+        createdAt: targetTurn.createdAt,
+        finishedAt: this.nowProvider().toISOString(),
+        prompt: targetTurn.prompt,
+        commits: targetTurn.commits,
+        builds: targetTurn.builds,
+        prodBuilds: results,
+        outcome: 'CONFIRMED_PROD_DEPLOYED'
+      });
+      st.deployingTurn = null;
+    }
+
+    const prodUrl = ws.prodLiveUrl || (ws.environmentMode !== 'multi' ? ws.liveUrl : '');
+    const prodLiveLinkLine = prodUrl ? `\n\n🌐 Production Live: ${escapeHtml(prodUrl)}` : '';
+
+    if (isParallelAgentActive) {
+      await this.configStore.saveState();
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `✅ <b>Production Jenkins Deploy Succeeded!</b>\n\n${buildSummary}${prodLiveLinkLine}\n\n` +
+          `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+      });
+      return;
+    }
+
     if (st.activeTurn) {
       st.history.push({
         id: st.activeTurn.id,
@@ -4537,9 +4773,6 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
-    const prodUrl = ws.prodLiveUrl || (ws.environmentMode !== 'multi' ? ws.liveUrl : '');
-    const prodLiveLinkLine = prodUrl ? `\n\n🌐 Production Live: ${escapeHtml(prodUrl)}` : '';
-
     await this.telegram.sendMessage({
       chatId,
       text:
@@ -4547,6 +4780,10 @@ export class BotController {
         `Confirmed &amp; deployed to production in <b>${escapeHtml(wsLabel)}</b>.\n\nReady for your next message!`,
       replyMarkup: MAIN_REPLY_KEYBOARD
     });
+
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+    }
   }
 
   async handleRevertBadCommit(chatId, wsId) {

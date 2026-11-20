@@ -3083,4 +3083,130 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('cmt:no:payments', commitMsg.message_id));
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
+
+  it('allows queuing messages when Jenkins is running and triggers agent in parallel with Jenkins deployment', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    // 1) Set phase to RUNNING_JENKINS with mock Jenkins running in background
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'RUNNING_JENKINS';
+    st.runningJenkins = {
+      type: 'staging',
+      phase: 'RUNNING_JENKINS',
+      deployTargets: [{ jenkinsJob: 'Prod/payments/payments.example.com-GATE', branch: 'master' }],
+      isAfterRevert: false,
+      progressMsgId: 9999,
+      chatId: CHAT_ID,
+      startedAt: new Date().toISOString()
+    };
+    st.activeTurn = {
+      id: 'turn-deploying-1',
+      createdAt: new Date().toISOString(),
+      prompt: 'Earlier turn deployed on Jenkins',
+      commits: []
+    };
+    await configStore.saveState();
+
+    let parallelAgentStarted = false;
+    let parallelPromptReceived = '';
+    nextAgentBehavior = async ({ prompt }) => {
+      parallelAgentStarted = true;
+      parallelPromptReceived = prompt;
+      const targetFile = path.join(coreRepo.cloneDir, 'parallel_feature.js');
+      await fsp.writeFile(targetFile, 'export const parallel = true;\n', 'utf8');
+      return {
+        conversationId: 'conv-parallel-jenkins',
+        response: 'Parallel feature implemented successfully.'
+      };
+    };
+
+    // 2) User sends a message while Jenkins is running
+    const userMsg = makeUserMsg('In dashboard overview disabled projects put as last services');
+    await controller.handleUpdate(userMsg);
+
+    // Verify Jenkins running notification with Queue Message button
+    const queuePromptMsg = mockTg.lastSent();
+    assert.match(queuePromptMsg.text, /Jenkins deployment is currently running/);
+    assert.equal(queuePromptMsg.reply_to_message_id, userMsg.message.message_id);
+    const queueBtn = queuePromptMsg.reply_markup?.inline_keyboard?.flat()?.find((b) => b.text.includes('Queue Message'));
+    assert.ok(queueBtn, 'Must provide [ 📥 Queue Message ] button when Jenkins is running');
+
+    // 3) User clicks "Queue Message"
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(queueBtn.callback_data, queuePromptMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
+    // Verify message was updated to show parallel execution
+    const queuedEdited = mockTg.lastSentOrEdited();
+    assert.match(queuedEdited.text, /Triggered Antigravity agent in parallel with Jenkins deployment/);
+
+    // Verify the parallel agent executed and prompt was received!
+    assert.equal(parallelAgentStarted, true);
+    assert.match(parallelPromptReceived, /In dashboard overview disabled projects/);
+
+    // Verify agent response was sent and commit choice prompt is presented
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    const commitMsg = mockTg.lastSent();
+    assert.match(commitMsg.text, /Commit &amp; push these changes\?/);
+    assert.match(commitMsg.text, /parallel_feature\.js/);
+
+    // 4) Simulate Jenkins completion while parallel agent finishes
+    st.runningJenkins = null;
+    await configStore.saveState();
+
+    // Clean up
+    await controller.handleUpdate(makeCallback('cmt:no:payments', commitMsg.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+  });
+
+  it('allows queuing messages when awaiting commit choice and executes queued message once choice is made', async () => {
+    const ws = controller.getWorkspace('payments');
+    const st = configStore.getWorkspaceState('payments');
+    st.runningJenkins = null;
+    st.phase = 'AWAITING_COMMIT_CHOICE';
+    st.activeTurn = {
+      id: 'turn-commit-choice',
+      createdAt: new Date().toISOString(),
+      prompt: 'Previous turn prompt',
+      commits: []
+    };
+    st.pendingDeltas = [{ repoName: 'payments_gate', branch: 'master', changedFiles: ['src/app.js'] }];
+    await configStore.saveState();
+
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    mockTg.clearSent();
+
+    let queuedTurnExecuted = false;
+    nextAgentBehavior = async () => {
+      queuedTurnExecuted = true;
+      return {
+        conversationId: 'conv-queued-after-commit',
+        response: 'Queued turn executed.'
+      };
+    };
+
+    // User sends message while awaiting commit choice
+    const userMsg = makeUserMsg('Follow-up task while reviewing diff');
+    await controller.handleUpdate(userMsg);
+
+    const queuePromptMsg = mockTg.sentMessages.find((m) =>
+      m.reply_markup?.inline_keyboard?.flat()?.some((b) => b.text.includes('Queue Message'))
+    );
+    assert.ok(queuePromptMsg, 'Must provide Queue Message button in AWAITING_COMMIT_CHOICE');
+    const queueBtn = queuePromptMsg.reply_markup.inline_keyboard.flat().find((b) => b.text.includes('Queue Message'));
+
+    // User clicks Queue Message
+    await controller.handleUpdate(makeCallback(queueBtn.callback_data, queuePromptMsg.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').messageQueue.length, 1);
+
+    // User discards current commit choice -> queued message should run next!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:no:payments'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(queuedTurnExecuted, true);
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+  });
 });
