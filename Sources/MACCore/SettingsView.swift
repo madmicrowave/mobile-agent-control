@@ -2084,14 +2084,26 @@ private struct WorkspacesTabView: View {
 
             // Right Detail Editor (Same Form for Editing & Newly Added '+' Empty Record)
             Group {
-                if let idx = selectedIndex {
+                if let idx = selectedIndex, vm.entries.indices.contains(idx) {
                     let entry = vm.entries[idx]
                     WorkspaceEditorFormView(
-                        draft: $vm.entries[idx].draft,
+                        draft: Binding<MACWorkspace>(
+                            get: {
+                                guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else {
+                                    return entry.draft
+                                }
+                                return vm.entries[i].draft
+                            },
+                            set: { newVal in
+                                guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
+                                vm.entries[i].draft = newVal
+                            }
+                        ),
                         isNewWorkspace: entry.isNewUnsaved,
                         config: appState.config,
                         onAutoSave: {
-                            saveWorkspaceEntry(at: idx, silent: true)
+                            guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
+                            saveWorkspaceEntry(at: i, silent: true)
                         },
                         onDelete: {
                             deleteWorkspaceEntry(uid: entry.uid)
@@ -2131,7 +2143,7 @@ private struct WorkspacesTabView: View {
             vm.syncFromConfig(appState.config, preferredWorkspaceId: appState.selectedWorkspaceId)
         }
         .onDisappear {
-            if let idx = selectedIndex {
+            if let idx = selectedIndex, vm.entries.indices.contains(idx) {
                 saveWorkspaceEntry(at: idx, silent: true)
             }
         }
@@ -2166,7 +2178,7 @@ private struct WorkspacesTabView: View {
         }()
 
         return Button {
-            if let currIdx = selectedIndex {
+            if let currIdx = selectedIndex, vm.entries.indices.contains(currIdx) {
                 saveWorkspaceEntry(at: currIdx, silent: true)
             }
             vm.selectedUID = entry.uid
@@ -2338,6 +2350,20 @@ private struct WorkspacesTabView: View {
     private func deleteWorkspaceEntry(uid: UUID) {
         guard let idx = vm.entries.firstIndex(where: { $0.uid == uid }) else { return }
         let target = vm.entries[idx]
+
+        let nextUID: UUID? = {
+            if vm.entries.count <= 1 {
+                return nil
+            } else if idx < vm.entries.count - 1 {
+                return vm.entries[idx + 1].uid
+            } else if idx > 0 {
+                return vm.entries[idx - 1].uid
+            } else {
+                return nil
+            }
+        }()
+        vm.selectedUID = nextUID
+
         vm.entries.remove(at: idx)
 
         if !target.isNewUnsaved, let origId = target.originalSavedId {
@@ -2345,13 +2371,14 @@ private struct WorkspacesTabView: View {
             appState.config.workspaces.removeAll { $0.id == origId }
             appState.selectedWorkspaceId = appState.config.workspaces.first?.id
             appState.saveConfigToDisk(banner: "Removed workspace '\(removedLabel)'.")
+        } else if let nextUID = nextUID,
+                  let selEntry = vm.entries.first(where: { $0.uid == nextUID }),
+                  let savedId = selEntry.originalSavedId {
+            appState.selectedWorkspaceId = savedId
+        } else if vm.selectedUID == nil {
+            appState.selectedWorkspaceId = appState.config.workspaces.first?.id
         }
 
-        if vm.entries.indices.contains(idx) {
-            vm.selectedUID = vm.entries[idx].uid
-        } else {
-            vm.selectedUID = vm.entries.last?.uid
-        }
         if let sel = vm.selectedUID,
            let selEntry = vm.entries.first(where: { $0.uid == sel }),
            let savedId = selEntry.originalSavedId {
@@ -2370,6 +2397,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
     @Published var extraDirInput: String = ""
     @Published var showDeleteConfirm: Bool = false
     @Published var lastSelectedCiProvider: String = "jenkins"
+    @Published var isDeleting: Bool = false
 }
 
 private struct WorkspaceEditorFormView: View {
@@ -3041,29 +3069,25 @@ private struct WorkspaceEditorFormView: View {
                 HStack {
                     if let onDelete = onDelete {
                         Button(role: .destructive) {
-                            if isCompletelyEmptyUnsaved {
-                                onDelete()
-                            } else {
-                                vm.showDeleteConfirm = true
-                            }
+                            vm.showDeleteConfirm = true
                         } label: {
-                            Label(
-                                isNewWorkspace ? "Remove Draft" : "Delete",
-                                systemImage: "trash"
-                            )
+                            Label("Delete", systemImage: "trash")
+                                .foregroundColor(.white)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
                         .fixedSize()
-                        .confirmationDialog(
-                            "Remove workspace '\(draft.label.isEmpty ? "New Workspace" : draft.label)' from MAC?",
-                            isPresented: $vm.showDeleteConfirm,
-                            titleVisibility: .visible
+                        .alert(
+                            "Delete Workspace",
+                            isPresented: $vm.showDeleteConfirm
                         ) {
-                            Button(isNewWorkspace ? "Remove Draft" : "Delete", role: .destructive) {
+                            Button("Yes", role: .destructive) {
+                                vm.isDeleting = true
                                 onDelete()
                             }
-                            Button("Cancel", role: .cancel) {}
+                            Button("No", role: .cancel) {}
                         } message: {
-                            Text("This only removes the workspace entry from MAC configuration; your code files on disk are untouched.")
+                            Text("Are you sure you want to delete '\(draft.label.isEmpty ? "New Workspace" : draft.label)'?")
                         }
                     }
 
@@ -3108,10 +3132,12 @@ private struct WorkspaceEditorFormView: View {
             loadFromDraft()
         }
         .onChange(of: draft) { _, _ in
+            guard !vm.isDeleting else { return }
             syncModelFields()
             onAutoSave()
         }
         .onChange(of: draft.engine) { _, newEngine in
+            guard !vm.isDeleting else { return }
             let available = MACModelOption.options(forEngine: newEngine)
             if !available.contains(where: { $0.id == vm.selectedModelFamily }) {
                 if let first = available.first {
@@ -3121,14 +3147,17 @@ private struct WorkspaceEditorFormView: View {
             }
         }
         .onChange(of: vm.selectedModelFamily) { _, _ in
+            guard !vm.isDeleting else { return }
             syncModelFields()
             onAutoSave()
         }
         .onChange(of: vm.selectedModelLevel) { _, _ in
+            guard !vm.isDeleting else { return }
             syncModelFields()
             onAutoSave()
         }
         .onDisappear {
+            guard !vm.isDeleting else { return }
             commitPendingJobInputs()
             syncModelFields()
             onAutoSave()
