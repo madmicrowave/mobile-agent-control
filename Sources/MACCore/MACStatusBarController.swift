@@ -161,7 +161,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         menu.addItem(.separator())
 
         launchAtLoginMenuItem = NSMenuItem(
-            title: "Start Automatically at Login",
+            title: "Launch at Startup",
             action: #selector(handleToggleLaunchAtLogin),
             keyEquivalent: ""
         )

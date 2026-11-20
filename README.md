@@ -188,7 +188,7 @@ Clicking the **`<small>AI</small> MAC`** menu bar icon provides instant lifecycl
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts outbound Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot process, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and releases the macOS sleep assertion so your Mac sleeps normally again. |
-| **`Start Automatically at Login`** | Manages `~/Library/LaunchAgents/com.domonk.mac.plist` so `<small>AI</small> MAC` starts automatically whenever you log in to macOS. |
+| **`Launch at Startup`** | Manages `~/Library/LaunchAgents/com.domonk.mac.plist` so `<small>AI</small> MAC` starts automatically whenever you log in to macOS. |
 | **`About`** | Opens the native **DOMONK Factory** About panel with a clickable link to [https://domonk.com](https://domonk.com). |
 | **`Quit AI MAC`** | Stops the bot, removes all sleep prevention assertions, and terminates `mac.app` completely (`⌘Q`). |
 

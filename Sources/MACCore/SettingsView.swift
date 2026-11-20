@@ -1301,7 +1301,7 @@ private struct GeneralTabView: View {
 
             HStack(spacing: 16) {
                 Toggle(
-                    "Start mac.app automatically when macOS starts (Login Item)",
+                    "Start application automatically at macOS startup (Autostart)",
                     isOn: Binding(
                         get: { appState.launchAtLogin },
                         set: { appState.toggleLaunchAtLogin($0) }
