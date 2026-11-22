@@ -1297,14 +1297,14 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('chat:new:payments'));
-    assert.match(mockTg.lastSent().text, /New Chat Ready in Payments Platform/);
+    assert.match(mockTg.lastSent().text, /New Chat:[\s\S]*<b>Payments Platform<\/b>/);
     assert.equal(configStore.getWorkspaceState('payments').conversationId, null);
 
     // Tapping ✅ Same Chat switches back to continuing Same Chat without dumping history
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('chat:same:payments'));
     assert.equal(mockTg.sentMessages.length, 1);
-    assert.match(mockTg.lastSent().text, /Continuing Same Chat in Payments Platform/);
+    assert.match(mockTg.lastSent().text, /Same Chat.*:[\s\S]*<b>Payments Platform<\/b>/);
     const sameChatBtns = mockTg.lastSent().reply_markup.inline_keyboard.flat();
     const newChatBtnInSame = sameChatBtns.find((b) => b.callback_data === 'chat:new:payments');
     assert.equal(newChatBtnInSame.text, '🆕 New Chat');

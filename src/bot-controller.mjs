@@ -2867,12 +2867,16 @@ export class BotController {
     st.phase = 'IDLE';
     await this.configStore.saveState();
 
+    const sameChatHeader = st.conversationId
+      ? `✅ <b>Same Chat</b> (<code>${escapeHtml(st.conversationId.slice(0, 8))}</code>):`
+      : `✅ <b>Same Chat:</b>`;
+
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Continuing Same Chat in ${escapeHtml(wsLabel)}:</b>` +
-        (st.conversationId ? ` (<code>${escapeHtml(st.conversationId.slice(0, 8))}</code>)` : '') +
-        `\n\nType your message or send a photo (with or without caption):`,
+        `${sameChatHeader}\n\n` +
+        `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+        `Type your message or send a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
           [
@@ -2914,7 +2918,8 @@ export class BotController {
     await this.telegram.sendMessage({
       chatId,
       text:
-        `🆕 <b>New Chat Ready in ${escapeHtml(wsLabel)}:</b>\n\n` +
+        `🆕 <b>New Chat:</b>\n\n` +
+        `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `Type your message or attach a photo (with or without caption):`,
       replyMarkup: {
         inline_keyboard: [
