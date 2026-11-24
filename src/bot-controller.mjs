@@ -5252,7 +5252,7 @@ export class BotController {
         let messageText = `${prefix}${agentText}`;
         if (bannerHtml && bannerHtml.includes('Resuming pending step:')) {
           const bannerBeforeResume = bannerHtml.replace(/\n*Resuming pending step:.*$/i, '').trim();
-          const baseNotice = `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`;
+          const baseNotice = '⏳ Antigravity agent is currently running...';
           messageText = `${bannerBeforeResume}\n\n${baseNotice}\n\nResuming pending step:${promptSnippet}`;
         }
         const sent = await this.telegram.sendMessage({

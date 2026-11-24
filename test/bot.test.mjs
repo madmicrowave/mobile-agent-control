@@ -3401,7 +3401,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(switchedMsg, 'Switched message must be sent');
     assert.match(
       switchedMsg.text,
-      /Switched to Workspace:[\s\S]*⏳ Antigravity agent is currently running in[\s\S]*Resuming pending step:[\s\S]*Active Request:/
+      /Switched to Workspace:[\s\S]*⏳ Antigravity agent is currently running\.\.\.[\s\S]*Resuming pending step:[\s\S]*Active Request:/
     );
     assert.equal(switchedMsg.reply_to_message_id, userMessageId);
 
