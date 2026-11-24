@@ -3988,8 +3988,8 @@ private struct LiveActivityTabView: View {
 
     private var agentMetricCard: some View {
         let isRunning = appState.isTaskRunning
-        let agentCPU = (resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedCPU : (isRunning ? resourceMonitor.botMetrics.formattedCPU : "0.0%"))
-        let agentRAM = (resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedMemory : (isRunning ? resourceMonitor.botMetrics.formattedMemory : "0.0 MB"))
+        let agentCPU = resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedCPU : "0.0%"
+        let agentRAM = resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedMemory : "0.0 MB"
 
         return HStack(spacing: 6) {
             Image(systemName: "brain.head.profile")

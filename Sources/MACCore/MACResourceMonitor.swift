@@ -31,7 +31,7 @@ public final class MACResourceMonitor: ObservableObject {
 
     private var previousAppCPUTime: UInt64 = 0
     private var previousBotCPUTime: UInt64 = 0
-    private var previousAgentCPUTime: UInt64 = 0
+    private var previousAgentCPUTimeByPid: [pid_t: UInt64] = [:]
     private var previousSampleTime: Date = Date()
     private var timer: Timer?
 
@@ -82,7 +82,7 @@ public final class MACResourceMonitor: ObservableObject {
             agentMetrics = MACProcessMetrics()
             activeAgentProcessCount = 0
             previousBotCPUTime = 0
-            previousAgentCPUTime = 0
+            previousAgentCPUTimeByPid.removeAll()
             return
         }
 
@@ -98,21 +98,21 @@ public final class MACResourceMonitor: ObservableObject {
         let childPids = getDescendantPids(parentPid: bPid)
         activeAgentProcessCount = childPids.count
         var totalAgentRAM: Double = 0.0
-        var totalAgentCPUTime: UInt64 = 0
+        var deltaAgentCPUNano: Double = 0.0
+        var currentAgentCPUTimeByPid: [pid_t: UInt64] = [:]
 
         for cPid in childPids {
             if let (cRAM, cCPU) = queryProcess(pid: cPid) {
                 totalAgentRAM += cRAM
-                totalAgentCPUTime += cCPU
+                currentAgentCPUTimeByPid[cPid] = cCPU
+                if let prev = previousAgentCPUTimeByPid[cPid], cCPU >= prev {
+                    deltaAgentCPUNano += Double(cCPU - prev)
+                }
             }
         }
+        previousAgentCPUTimeByPid = currentAgentCPUTimeByPid
 
-        var agentCPURate: Double = 0.0
-        if previousAgentCPUTime > 0 && totalAgentCPUTime >= previousAgentCPUTime {
-            let deltaNano = Double(totalAgentCPUTime - previousAgentCPUTime)
-            agentCPURate = min(1600.0, max(0.0, (deltaNano / (elapsed * 1_000_000_000.0)) * 100.0))
-        }
-        previousAgentCPUTime = totalAgentCPUTime
+        let agentCPURate = min(1600.0, max(0.0, (deltaAgentCPUNano / (elapsed * 1_000_000_000.0)) * 100.0))
         agentMetrics = MACProcessMetrics(cpuPercent: agentCPURate, memoryMB: totalAgentRAM)
     }
 
@@ -130,9 +130,9 @@ public final class MACResourceMonitor: ObservableObject {
         guard parentPid > 0 else { return [] }
         let bufSize = 128
         var pids = [pid_t](repeating: 0, count: bufSize)
-        let bytesUsed = proc_listchildpids(parentPid, &pids, Int32(MemoryLayout<pid_t>.size * bufSize))
-        guard bytesUsed > 0 else { return [] }
-        let count = Int(bytesUsed) / MemoryLayout<pid_t>.size
+        let numChildren = proc_listchildpids(parentPid, &pids, Int32(MemoryLayout<pid_t>.size * bufSize))
+        guard numChildren > 0 else { return [] }
+        let count = min(Int(numChildren), bufSize)
         return Array(pids.prefix(count)).filter { $0 > 0 }
     }
 

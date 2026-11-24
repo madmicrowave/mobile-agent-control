@@ -411,6 +411,16 @@ func testResourceMonitorAndMetrics() throws {
     monitor.start { nil }
     monitor.stop()
 
+    // Test child process discovery under a parent process
+    let childProc = Process()
+    childProc.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    childProc.arguments = ["2"]
+    try childProc.run()
+    monitor.sample(botPid: getpid())
+    expect(monitor.activeAgentProcessCount >= 1, "Child process correctly discovered without byte-division truncation")
+    expect(monitor.agentMetrics.memoryMB > 0.0, "Child process resident memory reported")
+    childProc.terminate()
+
     print("✓ MACResourceMonitor process sampling and metrics formatting passed")
 }
 
