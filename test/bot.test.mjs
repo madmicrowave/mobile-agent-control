@@ -3271,4 +3271,58 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(queuedTurnExecuted, true);
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
+
+  it('replies to user request and includes active request reference when agent is running', async () => {
+    let agentTurnDeferred;
+    nextAgentBehavior = async () => {
+      await new Promise((resolve) => {
+        agentTurnDeferred = resolve;
+      });
+      return {
+        conversationId: 'conv-reply-ref',
+        response: 'Done with active request.'
+      };
+    };
+
+    // User sends a request
+    const userMsg = makeUserMsg('Refactor auth session handling and token validation');
+    const userMessageId = userMsg.message.message_id;
+    await controller.handleUpdate(userMsg);
+
+    // Let the initial startAgentTurn execute up to agent execution
+    await new Promise((r) => setTimeout(r, 100));
+
+    const st = configStore.getWorkspaceState('payments');
+    assert.equal(st.phase, 'RUNNING_AGENT');
+    assert.equal(st.activeTurn.userMessageId, userMessageId);
+    assert.ok(st.activeTurn.statusMessageId, 'Must store statusMessageId on activeTurn');
+
+    // 1) Test sending gate prompt while agent is running (e.g. switching back or querying status)
+    mockTg.clearSent();
+    const ws = controller.getWorkspace('payments');
+    await controller.sendCurrentWorkspaceGatePrompt(CHAT_ID, ws);
+
+    const gateMsg = mockTg.lastSent();
+    assert.ok(gateMsg, 'Gate message must be sent');
+    assert.match(gateMsg.text, /⏳ Antigravity agent is currently running in <b>/);
+    assert.match(gateMsg.text, /💬 <b>Active Request:<\/b>/);
+    assert.match(gateMsg.text, /Refactor auth session handling and token validation/);
+    assert.equal(gateMsg.reply_to_message_id, userMessageId);
+
+    // 2) User sends a new message while agent is running -> prompt to queue should quote the new message
+    mockTg.clearSent();
+    const secondUserMsg = makeUserMsg('Add tests for token expiry');
+    await controller.handleUpdate(secondUserMsg);
+
+    const queuePrompt = mockTg.lastSent();
+    assert.ok(queuePrompt, 'Queue prompt must be sent');
+    assert.match(queuePrompt.text, /💬 <b>Active Request:<\/b>/);
+    assert.match(queuePrompt.text, /Refactor auth session handling and token validation/);
+    assert.equal(queuePrompt.reply_to_message_id, secondUserMsg.message.message_id);
+
+    // Resolve active turn
+    agentTurnDeferred();
+    await controller.waitForBackgroundTasks();
+    assert.equal(st.phase, 'IDLE');
+  });
 });

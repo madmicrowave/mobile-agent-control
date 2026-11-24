@@ -785,12 +785,14 @@ export class BotController {
       const incomingAttachment = this.extractIncomingAttachment(msg);
       if (!incomingAttachment && !text) {
         if (st.phase === 'RUNNING_AGENT') {
+          const { text: agentText, replyToMessageId } = this.#buildRunningAgentNotice(wsLabel, st);
           await this.telegram.sendMessage({
             chatId,
-            text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+            text: agentText,
             replyMarkup: {
               inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-            }
+            },
+            replyToMessageId
           });
         } else if (
           st.phase === 'RUNNING_JENKINS' ||
@@ -868,9 +870,10 @@ export class BotController {
       );
 
       if (st.phase === 'RUNNING_AGENT') {
+        const { text: agentText } = this.#buildRunningAgentNotice(wsLabel, st);
         await this.telegram.sendMessage({
           chatId,
-          text: `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+          text: agentText,
           replyMarkup: {
             inline_keyboard: [
               [
@@ -947,7 +950,7 @@ export class BotController {
     const shouldCoalesce = Boolean(existingBatch || hasMediaGroup || isBigSplitChunk);
 
     if (shouldCoalesce) {
-      await this.#enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text);
+      await this.#enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, msg.message_id);
       return;
     }
 
@@ -955,7 +958,8 @@ export class BotController {
       if (st.pendingPhotos.length >= MAX_FILES_PER_TURN) {
         if (text) {
           await this.startAgentTurn(chatId, ws, text, {
-            extraNotice: `⚠️ Max ${MAX_FILES_PER_TURN} files allowed at once — kept the ${MAX_FILES_PER_TURN} already-attached files and skipped 1 extra file.`
+            extraNotice: `⚠️ Max ${MAX_FILES_PER_TURN} files allowed at once — kept the ${MAX_FILES_PER_TURN} already-attached files and skipped 1 extra file.`,
+            replyToMessageId: msg.message_id || null
           });
           return;
         }
@@ -1003,7 +1007,9 @@ export class BotController {
 
       // Single file WITH caption -> execute immediately as one single message!
       if (text) {
-        await this.startAgentTurn(chatId, ws, text);
+        await this.startAgentTurn(chatId, ws, text, {
+          replyToMessageId: msg.message_id || null
+        });
         return;
       }
 
@@ -1026,7 +1032,9 @@ export class BotController {
       return;
     }
 
-    await this.startAgentTurn(chatId, ws, text);
+    await this.startAgentTurn(chatId, ws, text, {
+      replyToMessageId: msg.message_id || null
+    });
   }
 
   extractIncomingAttachment(msg) {
@@ -1068,6 +1076,27 @@ export class BotController {
       mediaGroupId: mediaGroupId ? String(mediaGroupId) : null
     });
     return false;
+  }
+
+  #buildRunningAgentNotice(wsLabel, st) {
+    const activePrompt =
+      st.activeTurn?.prompt ||
+      st.activeTurn?.promptText ||
+      st.activeTurn?.queueInfo?.promptText ||
+      '';
+    const isPhotoOnly = activePrompt === '(Photo prompt)';
+    const previewPrompt = isPhotoOnly
+      ? (st.activeTurn?.photoCount ? `[Attached ${st.activeTurn.photoCount} file(s)]` : '(Photo attached)')
+      : (activePrompt.length > 140 ? activePrompt.slice(0, 137) + '…' : activePrompt);
+    const reqHeader = st.activeTurn?.queueInfo?.queueNumber
+      ? `📥 <b>Queued Request (#${st.activeTurn.queueInfo.queueNumber}):</b>`
+      : `💬 <b>Active Request:</b>`;
+    const promptSnippet = previewPrompt
+      ? `\n\n${reqHeader}\n<i>"${escapeHtml(previewPrompt)}"</i>`
+      : '';
+    const text = `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.${promptSnippet}`;
+    const replyToMessageId = st.activeTurn?.userMessageId || st.activeTurn?.statusMessageId || undefined;
+    return { text, promptSnippet, replyToMessageId };
   }
 
   #buildQueuedExecutionNotice(wsLabel, nextItem, { reason = 'skipping_jenkins', chatId = null } = {}) {
@@ -1187,7 +1216,7 @@ export class BotController {
     }
   }
 
-  async #enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text) {
+  async #enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, messageId = null) {
     let batch = this.pendingInputBatches.get(ws.id);
     if (!batch) {
       let resolveDone;
@@ -1199,6 +1228,7 @@ export class BotController {
         chatId,
         files: [],
         texts: [],
+        lastMessageId: messageId || null,
         skippedCount: 0,
         downloadErrors: [],
         inFlightDownloads: 0,
@@ -1209,6 +1239,9 @@ export class BotController {
       this.#trackAsync(donePromise);
     } else {
       batch.chatId = chatId;
+      if (messageId) {
+        batch.lastMessageId = messageId;
+      }
     }
 
     if (batch.timer) {
@@ -1299,7 +1332,10 @@ export class BotController {
       const combinedPrompt = batch.texts.join('\n').trim();
 
       if (combinedPrompt) {
-        await this.startAgentTurn(batch.chatId, ws, combinedPrompt, { extraNotice });
+        await this.startAgentTurn(batch.chatId, ws, combinedPrompt, {
+          extraNotice,
+          replyToMessageId: batch.lastMessageId || null
+        });
         return;
       }
 
@@ -1318,7 +1354,8 @@ export class BotController {
                 { text: '🗑 Clear Photo(s)', callback_data: `photo:clr:${ws.id}` }
               ]
             ]
-          }
+          },
+          replyToMessageId: batch.lastMessageId || undefined
         });
         return;
       }
@@ -1598,7 +1635,9 @@ export class BotController {
           await this.#flushInputBatch(wsId);
           await this.telegram.clearInlineButtons(chatId, messageId);
           if (this.configStore.getWorkspaceState(wsId).phase === 'IDLE') {
-            await this.startAgentTurn(chatId, ws, '');
+            await this.startAgentTurn(chatId, ws, '', {
+              replyToMessageId: messageId || null
+            });
           }
         }
         return;
@@ -3030,6 +3069,9 @@ export class BotController {
       if (promptText) {
         st.activeTurn.prompt = `${st.activeTurn.prompt}\n[Fix]: ${promptText}`;
       }
+      if (replyToMessageId) {
+        st.activeTurn.userMessageId = replyToMessageId;
+      }
     } else {
       st.activeTurn = {
         id: turnId,
@@ -3041,7 +3083,9 @@ export class BotController {
         revertCommits: [],
         builds: [],
         rollbackBuilds: [],
-        queueInfo: queueInfo || null
+        queueInfo: queueInfo || null,
+        userMessageId: replyToMessageId || null,
+        statusMessageId: null
       };
     }
 
@@ -3090,6 +3134,11 @@ export class BotController {
       },
       replyToMessageId: replyToMessageId || undefined
     });
+
+    if (st.activeTurn && statusMsg?.message_id) {
+      st.activeTurn.statusMessageId = statusMsg.message_id;
+      await this.configStore.saveState();
+    }
 
     // Run asynchronously so the bot keeps responding if the user switches IDEs!
     this.#trackAsync(
@@ -4975,6 +5024,11 @@ export class BotController {
       }
     });
 
+    if (st.activeTurn && statusMsg?.message_id) {
+      st.activeTurn.statusMessageId = statusMsg.message_id;
+      await this.configStore.saveState();
+    }
+
     this.#trackAsync(
       this.#executeAgentTurn(chatId, ws, st, [], statusMsg?.message_id, {
         promptOverride: fixPrompt,
@@ -5011,12 +5065,14 @@ export class BotController {
 
     switch (st.phase) {
       case 'RUNNING_AGENT': {
+        const { text: agentText, replyToMessageId } = this.#buildRunningAgentNotice(wsLabel, st);
         const sent = await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`,
+          text: `${prefix}${agentText}`,
           replyMarkup: {
             inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-          }
+          },
+          replyToMessageId
         });
         if (sent?.message_id) {
           this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
