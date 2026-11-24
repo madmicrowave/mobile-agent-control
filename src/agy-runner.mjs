@@ -539,7 +539,8 @@ export function runAgyTurn({
   extraDirs = [],
   onConversationId = () => {},
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const args = buildAgyArgs({
     prompt,
@@ -597,6 +598,7 @@ export function runAgyTurn({
       try {
         parsed = JSON.parse(trimmed);
       } catch {
+        onLog(trimmed);
         return;
       }
 
@@ -618,11 +620,27 @@ export function runAgyTurn({
             onTextDelta(su.text_delta, streamedText);
           }
         } else if (su.step_type && su.step_type !== 'user_input') {
+          const toolArgs =
+            su.tool_info?.parameters ||
+            su.tool_info?.args ||
+            su.parameters ||
+            su.args ||
+            null;
+          const toolOutput =
+            su.tool_info?.output !== undefined
+              ? su.tool_info.output
+              : su.output !== undefined
+              ? su.output
+              : '';
           onStepEvent({
             stepIndex: su.step_index,
             stepType: su.step_type,
             state: su.state,
-            toolName: su.tool_name || su.name || ''
+            toolName: su.tool_name || su.name || '',
+            toolArgs,
+            toolOutput,
+            durationSeconds: su.duration_seconds ?? null,
+            thinking: typeof su.thinking === 'string' ? su.thinking : ''
           });
         }
       } else if (parsed.event === 'result' && parsed.result) {
@@ -631,13 +649,23 @@ export function runAgyTurn({
           detectedConversationId = finalResult.conversation_id;
           onConversationId(detectedConversationId);
         }
+        if (typeof finalResult.response === 'string' && !streamedText) {
+          onTextDelta(finalResult.response, finalResult.response);
+        }
       }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderrText += chunk.toString('utf8');
+      const text = chunk.toString('utf8');
+      stderrText += text;
       if (stderrText.length > 8000) {
         stderrText = stderrText.slice(-8000);
+      }
+      for (const rawLine of text.split(/\r?\n/)) {
+        const lineTrim = rawLine.trim();
+        if (lineTrim) {
+          onLog(lineTrim);
+        }
       }
     });
 

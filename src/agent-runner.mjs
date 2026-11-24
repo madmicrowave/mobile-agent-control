@@ -177,7 +177,8 @@ export function runDirectApiTurn({
   provider = 'openai', // 'openai', 'deepseek', 'anthropic', 'qwen', 'custom'
   onConversationId = () => {},
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const activeConvId = conversationId || crypto.randomUUID();
   onConversationId(activeConvId);
@@ -338,7 +339,9 @@ export function runDirectApiTurn({
             stepIndex: stepCount,
             stepType: 'tool_call',
             state: 'RUNNING',
-            toolName: tc.name
+            toolName: tc.name,
+            toolArgs: tc.input || {},
+            toolOutput: ''
           });
           let resultText = '';
           let isError = false;
@@ -352,7 +355,9 @@ export function runDirectApiTurn({
             stepIndex: stepCount,
             stepType: 'tool_call',
             state: isError ? 'ERROR' : 'SUCCESS',
-            toolName: tc.name
+            toolName: tc.name,
+            toolArgs: tc.input || {},
+            toolOutput: String(resultText)
           });
           toolResults.push({
             type: 'tool_result',
@@ -397,21 +402,27 @@ export function runDirectApiTurn({
             stepIndex: stepCount,
             stepType: 'tool_call',
             state: 'RUNNING',
-            toolName: fnName
+            toolName: fnName,
+            toolArgs: parsedArgs,
+            toolOutput: ''
           });
 
           let resultText = '';
+          let isError = false;
           try {
             resultText = await executeWorkspaceTool(workspacePath, fnName, parsedArgs);
           } catch (tErr) {
             resultText = `Error executing tool: ${tErr.message}`;
+            isError = true;
           }
 
           onStepEvent({
             stepIndex: stepCount,
             stepType: 'tool_call',
-            state: 'SUCCESS',
-            toolName: fnName
+            state: isError ? 'ERROR' : 'SUCCESS',
+            toolName: fnName,
+            toolArgs: parsedArgs,
+            toolOutput: String(resultText)
           });
 
           history.push({
@@ -512,7 +523,8 @@ export function runCodexTurn({
   model = '',
   openaiApiKey = '',
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const env = {
     ...process.env,
@@ -556,10 +568,19 @@ export function runCodexTurn({
       const text = chunk.toString('utf8');
       output += text;
       onTextDelta(text, output);
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderrText += chunk.toString('utf8');
+      const text = chunk.toString('utf8');
+      stderrText += text;
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.on('error', (err) => {
@@ -615,7 +636,8 @@ export function runCloudCodeTurn({
   prompt,
   model = '',
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const env = { ...process.env };
   const args = [
@@ -654,10 +676,19 @@ export function runCloudCodeTurn({
       const text = chunk.toString('utf8');
       output += text;
       onTextDelta(text, output);
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderrText += chunk.toString('utf8');
+      const text = chunk.toString('utf8');
+      stderrText += text;
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.on('error', (err) => {
@@ -717,7 +748,8 @@ export function runAiderTurn({
   deepseekApiKey = '',
   qwenApiKey = '',
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const env = {
     ...process.env,
@@ -765,10 +797,19 @@ export function runAiderTurn({
       const text = chunk.toString('utf8');
       output += text;
       onTextDelta(text, output);
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderrText += chunk.toString('utf8');
+      const text = chunk.toString('utf8');
+      stderrText += text;
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed) onLog(trimmed);
+      }
     });
 
     child.on('error', (err) => {
@@ -843,7 +884,8 @@ export function runUnifiedAgentTurn({
   extraDirs = [],
   onConversationId = () => {},
   onTextDelta = () => {},
-  onStepEvent = () => {}
+  onStepEvent = () => {},
+  onLog = () => {}
 }) {
   const normModel = String(model || '').trim().toLowerCase();
 
@@ -867,7 +909,8 @@ export function runUnifiedAgentTurn({
       deepseekApiKey,
       qwenApiKey,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -879,7 +922,8 @@ export function runUnifiedAgentTurn({
       model,
       openaiApiKey,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -890,7 +934,8 @@ export function runUnifiedAgentTurn({
       prompt,
       model,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -926,7 +971,8 @@ export function runUnifiedAgentTurn({
       provider,
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -944,7 +990,8 @@ export function runUnifiedAgentTurn({
       extraDirs,
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -964,7 +1011,8 @@ export function runUnifiedAgentTurn({
       extraDirs,
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -982,7 +1030,8 @@ export function runUnifiedAgentTurn({
       provider: 'custom',
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -999,7 +1048,8 @@ export function runUnifiedAgentTurn({
       provider: 'deepseek',
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -1016,7 +1066,8 @@ export function runUnifiedAgentTurn({
       provider: 'openai',
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -1033,7 +1084,8 @@ export function runUnifiedAgentTurn({
       provider: 'anthropic',
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -1050,7 +1102,8 @@ export function runUnifiedAgentTurn({
       provider: 'qwen',
       onConversationId,
       onTextDelta,
-      onStepEvent
+      onStepEvent,
+      onLog
     });
   }
 
@@ -1068,7 +1121,8 @@ export function runUnifiedAgentTurn({
     extraDirs,
     onConversationId,
     onTextDelta,
-    onStepEvent
+    onStepEvent,
+    onLog
   });
 }
 

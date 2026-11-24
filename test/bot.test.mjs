@@ -3325,4 +3325,78 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.waitForBackgroundTasks();
     assert.equal(st.phase, 'IDLE');
   });
+
+  it('streams tool inputs, command outputs, engine logs, and agent responses to live agent logs', async () => {
+    const loggedLines = [];
+    controller.logger = {
+      log: (msg) => loggedLines.push(msg)
+    };
+
+    nextAgentBehavior = async (opts) => {
+      // 1. Engine startup / raw log
+      opts.onLog?.('Engine initialized (58 tools available)');
+
+      // 2. Thinking
+      opts.onStepEvent?.({
+        stepType: 'model_call',
+        state: 'RUNNING',
+        thinking: 'Investigating auth configuration in package.json'
+      });
+
+      // 3. Tool Active with tool arguments
+      opts.onStepEvent?.({
+        stepType: 'tool',
+        toolName: 'run_command',
+        state: 'ACTIVE',
+        toolArgs: { CommandLine: 'npm test -- --grep "session"' }
+      });
+
+      // 4. Tool Done with tool output
+      opts.onStepEvent?.({
+        stepType: 'tool',
+        toolName: 'run_command',
+        state: 'DONE',
+        toolArgs: { CommandLine: 'npm test -- --grep "session"' },
+        toolOutput: 'PASS src/session.test.js\n  ✓ validates session token (42ms)\n  ✓ refreshes expired token (15ms)'
+      });
+
+      // 5. File read tool
+      opts.onStepEvent?.({
+        stepType: 'tool',
+        toolName: 'read_file',
+        state: 'ACTIVE',
+        toolArgs: { Path: 'src/session.js' }
+      });
+      opts.onStepEvent?.({
+        stepType: 'tool',
+        toolName: 'read_file',
+        state: 'DONE',
+        toolOutput: 'export function validate() { return true; }'
+      });
+
+      // 6. Streaming agent response
+      opts.onTextDelta?.('Checked session tests. All 2 tests passed.');
+
+      return {
+        conversationId: 'conv-live-logs',
+        response: 'Checked session tests. All 2 tests passed.'
+      };
+    };
+
+    await controller.handleUpdate(makeUserMsg('Verify session tests in Payments'));
+    await controller.waitForBackgroundTasks();
+
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Engine initialized (58 tools available)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] 🧠 Investigating auth configuration in package.json')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (ACTIVE)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] $ npm test -- --grep "session"')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] PASS src/session.test.js')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent]   ✓ validates session token (42ms)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (DONE)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (ACTIVE)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] [read] src/session.js')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] export function validate() { return true; }')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (DONE)')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Checked session tests. All 2 tests passed.')));
+  });
 });

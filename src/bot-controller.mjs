@@ -184,7 +184,16 @@ export class BotController {
 
   log(category, msg) {
     if (this.logger?.log) {
-      this.logger.log(`[${category}] ${msg}`);
+      const text = String(msg ?? '');
+      if (text.includes('\n')) {
+        for (const line of text.split(/\r?\n/)) {
+          if (line.trim().length > 0) {
+            this.logger.log(`[${category}] ${line}`);
+          }
+        }
+      } else {
+        this.logger.log(`[${category}] ${text}`);
+      }
     }
   }
 
@@ -1097,6 +1106,28 @@ export class BotController {
     const text = `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.${promptSnippet}`;
     const replyToMessageId = st.activeTurn?.userMessageId || st.activeTurn?.statusMessageId || undefined;
     return { text, promptSnippet, replyToMessageId };
+  }
+
+  #formatToolArgsSummary(args) {
+    if (!args || typeof args !== 'object') return '';
+    try {
+      const keys = Object.keys(args);
+      if (keys.length === 0) return '';
+      const parts = [];
+      for (const k of keys.slice(0, 4)) {
+        let val = args[k];
+        if (typeof val === 'string') {
+          val = val.length > 60 ? `${val.slice(0, 57)}…` : val;
+        } else if (typeof val === 'object' && val !== null) {
+          val = JSON.stringify(val);
+          val = val.length > 40 ? `${val.slice(0, 37)}…` : val;
+        }
+        parts.push(`${k}: ${val}`);
+      }
+      return parts.join(', ');
+    } catch {
+      return '';
+    }
   }
 
   #buildQueuedExecutionNotice(wsLabel, nextItem, { reason = 'skipping_jenkins', chatId = null } = {}) {
@@ -3222,6 +3253,27 @@ export class BotController {
     this.log('stage', `AI Agent Executing: ${wsLabel}`);
     this.log('agent', `Executing ${ws.engine || 'agy'} with model ${effectiveModel.modelId} on workspace "${wsLabel}"`);
     const runSingleAttempt = async (attemptConversationId) => {
+      let textDeltaBuffer = '';
+      const flushTextDeltaBuffer = (isFinal = false) => {
+        if (!textDeltaBuffer) return;
+        if (textDeltaBuffer.includes('\n')) {
+          const parts = textDeltaBuffer.split('\n');
+          textDeltaBuffer = isFinal ? '' : parts.pop() || '';
+          for (const line of parts) {
+            const clean = line.trim();
+            if (clean) {
+              this.log('agent', clean);
+            }
+          }
+        } else if (isFinal) {
+          const clean = textDeltaBuffer.trim();
+          if (clean) {
+            this.log('agent', clean);
+          }
+          textDeltaBuffer = '';
+        }
+      };
+
       const { promise, abort } = this.agentRunner({
         agyBin: this.configStore.config.agyBin,
         aiderBin: this.configStore.config.aiderBin,
@@ -3254,10 +3306,73 @@ export class BotController {
             lastMsg.conversationId = convId;
           }
         },
-        onStepEvent: (evt) => {
-          if (evt.toolName) {
-            this.log('agent', `Tool execution: ${evt.toolName} (${evt.state || 'running'})`);
+        onTextDelta: (delta) => {
+          textDeltaBuffer += delta;
+          flushTextDeltaBuffer(false);
+        },
+        onLog: (line) => {
+          if (line && String(line).trim()) {
+            this.log('agent', String(line).trim());
           }
+        },
+        onStepEvent: (evt) => {
+          if (evt.thinking) {
+            for (const tLine of String(evt.thinking).split(/\r?\n/)) {
+              if (tLine.trim()) {
+                this.log('agent', `🧠 ${tLine.trim()}`);
+              }
+            }
+          }
+
+          if (evt.toolName) {
+            const stateStr = String(evt.state || 'running').toUpperCase();
+            this.log('agent', `Tool execution: ${evt.toolName} (${evt.state || 'running'})`);
+
+            // If starting/active, log tool arguments (command, file path, query)
+            if (stateStr === 'ACTIVE' || stateStr === 'RUNNING') {
+              if (evt.toolArgs && typeof evt.toolArgs === 'object') {
+                const cmd = evt.toolArgs.CommandLine || evt.toolArgs.command || evt.toolArgs.cmd;
+                const filePath = evt.toolArgs.Path || evt.toolArgs.path || evt.toolArgs.filePath;
+                if (cmd) {
+                  this.log('agent', `$ ${cmd}`);
+                } else if (filePath) {
+                  if (evt.toolArgs.Target || evt.toolArgs.target) {
+                    this.log('agent', `[edit] ${filePath}`);
+                  } else if (evt.toolArgs.Content || evt.toolArgs.content) {
+                    this.log('agent', `[write] ${filePath}`);
+                  } else {
+                    this.log('agent', `[read] ${filePath}`);
+                  }
+                } else {
+                  const summary = this.#formatToolArgsSummary(evt.toolArgs);
+                  if (summary) {
+                    this.log('agent', `→ ${summary}`);
+                  }
+                }
+              }
+            }
+
+            // If finished (DONE, SUCCESS, ERROR), log tool output lines
+            if (stateStr === 'DONE' || stateStr === 'SUCCESS' || stateStr === 'ERROR') {
+              if (evt.toolOutput) {
+                const outText = String(evt.toolOutput).trim();
+                if (outText) {
+                  const lines = outText.split(/\r?\n/);
+                  const maxLinesToLog = 25;
+                  const slice = lines.slice(0, maxLinesToLog);
+                  for (const outLine of slice) {
+                    if (outLine.trim().length > 0) {
+                      this.log('agent', outLine);
+                    }
+                  }
+                  if (lines.length > maxLinesToLog) {
+                    this.log('agent', `... (${lines.length - maxLinesToLog} more lines)`);
+                  }
+                }
+              }
+            }
+          }
+
           const nowMs = Date.now();
           if (statusMessageId && nowMs - lastProgressEditMs > 3000) {
             lastProgressEditMs = nowMs;
@@ -3295,6 +3410,7 @@ export class BotController {
       try {
         return await promise;
       } finally {
+        flushTextDeltaBuffer(true);
         this.runtime.delete(ws.id);
       }
     };

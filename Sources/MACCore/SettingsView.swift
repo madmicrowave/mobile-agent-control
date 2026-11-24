@@ -4195,6 +4195,8 @@ private struct LiveActivityTabView: View {
             cleanMsg = String(cleanMsg.dropFirst(11))
         } else if cleanMsg.hasPrefix("[agent] ") {
             cleanMsg = String(cleanMsg.dropFirst(8))
+        } else if cleanMsg.hasPrefix("[tool] ") {
+            cleanMsg = String(cleanMsg.dropFirst(7))
         } else if cleanMsg.hasPrefix("[git] ") {
             cleanMsg = String(cleanMsg.dropFirst(6))
         } else if cleanMsg.hasPrefix("[jenkins] ") {
