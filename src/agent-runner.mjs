@@ -9,7 +9,8 @@ import {
   runAgyTurn,
   resolveEffectiveModelAndLevel,
   DEFAULT_AGENT_MODEL_FAMILIES,
-  BOT_CONTROLLER_PROMPT_SUFFIX
+  BOT_CONTROLLER_PROMPT_SUFFIX,
+  DEFAULT_AGY_TIMEOUT
 } from './agy-runner.mjs';
 
 const execAsync = promisify(exec);
@@ -882,6 +883,7 @@ export function runUnifiedAgentTurn({
   modelLevel = '',
   skipPermissions = true,
   extraDirs = [],
+  timeout = DEFAULT_AGY_TIMEOUT,
   onConversationId = () => {},
   onTextDelta = () => {},
   onStepEvent = () => {},
@@ -988,6 +990,7 @@ export function runUnifiedAgentTurn({
       modelLevel,
       skipPermissions,
       extraDirs,
+      timeout,
       onConversationId,
       onTextDelta,
       onStepEvent,
@@ -1009,6 +1012,7 @@ export function runUnifiedAgentTurn({
       modelLevel,
       skipPermissions,
       extraDirs,
+      timeout,
       onConversationId,
       onTextDelta,
       onStepEvent,
@@ -1119,6 +1123,7 @@ export function runUnifiedAgentTurn({
     modelLevel,
     skipPermissions,
     extraDirs,
+    timeout,
     onConversationId,
     onTextDelta,
     onStepEvent,

@@ -231,6 +231,67 @@ export const DEFAULT_AGENT_MODEL_FAMILIES = [
   }
 ];
 
+export const MAX_AGY_TIMEOUT_SECONDS = 300; // 5 minutes max
+export const DEFAULT_AGY_TIMEOUT = '5m0s';
+
+/**
+ * Normalizes a requested timeout string into agy CLI `--print-timeout` format (e.g. '5m0s').
+ * Strictly caps the timeout to 5 minutes maximum (300 seconds), never 30 minutes.
+ */
+export function normalizeAgyTimeout(rawTimeout = DEFAULT_AGY_TIMEOUT) {
+  if (!rawTimeout || typeof rawTimeout !== 'string') {
+    return DEFAULT_AGY_TIMEOUT;
+  }
+  const trimmed = rawTimeout.trim().toLowerCase();
+  const minSecMatch = trimmed.match(
+    /^(\d+(?:\.\d+)?)\s*m(?:in|ins|inutes)?(?:\s*(\d+(?:\.\d+)?)\s*s(?:ec|ecs|econds)?)?$/
+  );
+  if (minSecMatch) {
+    const mins = parseFloat(minSecMatch[1]);
+    const secs = minSecMatch[2] ? parseFloat(minSecMatch[2]) : 0;
+    const totalSecs = mins * 60 + secs;
+    if (totalSecs > MAX_AGY_TIMEOUT_SECONDS || totalSecs <= 0) {
+      return DEFAULT_AGY_TIMEOUT;
+    }
+    return `${Math.floor(mins)}m${Math.floor(secs)}s`;
+  }
+  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s(?:ec|ecs|econds)?$/);
+  if (secMatch) {
+    const totalSecs = parseFloat(secMatch[1]);
+    if (totalSecs > MAX_AGY_TIMEOUT_SECONDS || totalSecs <= 0) {
+      return DEFAULT_AGY_TIMEOUT;
+    }
+    const mins = Math.floor(totalSecs / 60);
+    const remSecs = Math.floor(totalSecs % 60);
+    return `${mins}m${remSecs}s`;
+  }
+  return DEFAULT_AGY_TIMEOUT;
+}
+
+/**
+ * Returns true if an error or output message represents an agy CLI timeout / deadline exceeded.
+ */
+export function isAgyTimeoutError(textOrError) {
+  if (!textOrError) return false;
+  const msg =
+    typeof textOrError === 'string'
+      ? textOrError
+      : String(
+          textOrError?.message ||
+            textOrError?.short_error ||
+            textOrError?.reason ||
+            textOrError ||
+            ''
+        );
+  return (
+    /print\s+timeout/i.test(msg) ||
+    /DEADLINE_EXCEEDED/i.test(msg) ||
+    /print_timeout/i.test(msg) ||
+    /timed?\s*out\s+after/i.test(msg) ||
+    /timeout\s+after\s+\d+/i.test(msg)
+  );
+}
+
 export function resolveDefaultAgyBin() {
   const localCandidate = path.join(os.homedir(), '.local', 'bin', 'agy');
   return fs.existsSync(localCandidate) ? localCandidate : 'agy';
@@ -255,6 +316,7 @@ export function isMissingTrajectoryError(error) {
 export function isFatalAgentResponseError(responseText) {
   const trimmed = String(responseText || '').trim();
   if (!trimmed) return true;
+  if (isAgyTimeoutError(trimmed)) return false;
   return (
     isMissingTrajectoryError(trimmed) ||
     /^(?:error:\s*failed to send message|failed to send message:|resource_exhausted|quota exceeded|rate limit exceeded|unauthenticated|you are not logged in|failed to load conversation)/i.test(
@@ -458,7 +520,7 @@ export function buildAgyArgs({
   modelLevel = '',
   skipPermissions = true,
   extraDirs = [],
-  timeout = '30m0s'
+  timeout = DEFAULT_AGY_TIMEOUT
 }) {
   const sections = [];
   const trimmedPrompt = String(prompt || '').trim();
@@ -478,7 +540,8 @@ export function buildAgyArgs({
   sections.push(BOT_CONTROLLER_PROMPT_SUFFIX);
 
   const fullPrompt = sections.join('\n\n');
-  const args = ['-p', fullPrompt, '--output-format', 'stream-json', '--print-timeout', timeout];
+  const effectiveTimeout = normalizeAgyTimeout(timeout);
+  const args = ['-p', fullPrompt, '--output-format', 'stream-json', '--print-timeout', effectiveTimeout];
 
   if (skipPermissions) {
     args.push('--dangerously-skip-permissions');
@@ -537,6 +600,7 @@ export function runAgyTurn({
   modelLevel = '',
   skipPermissions = true,
   extraDirs = [],
+  timeout = DEFAULT_AGY_TIMEOUT,
   onConversationId = () => {},
   onTextDelta = () => {},
   onStepEvent = () => {},
@@ -550,7 +614,8 @@ export function runAgyTurn({
     model,
     modelLevel,
     skipPermissions,
-    extraDirs
+    extraDirs,
+    timeout
   });
 
   const homeDir = os.homedir();
@@ -679,18 +744,41 @@ export function runAgyTurn({
         return;
       }
 
-      if (code !== 0 && !finalResult) {
-        const detail = stderrText.trim() || `exit code ${code}`;
-        reject(new Error(`agy exited with error: ${detail}`));
-        return;
-      }
-
       const responseText =
         finalResult && typeof finalResult.response === 'string'
           ? finalResult.response
           : streamedText;
 
       const trimmedResponse = String(responseText || '').trim();
+
+      // Check if agy timed out (print timeout, DEADLINE_EXCEEDED, etc.)
+      const isTimeout =
+        isAgyTimeoutError(stderrText) ||
+        isAgyTimeoutError(trimmedResponse) ||
+        isAgyTimeoutError(finalResult?.short_error) ||
+        isAgyTimeoutError(finalResult?.reason) ||
+        isAgyTimeoutError(finalResult?.status);
+
+      if (isTimeout) {
+        // If not finished due to timeout, count it as success per user instruction!
+        const successResponse =
+          trimmedResponse ||
+          'Agent finished execution (turn reached the 5-minute timeout limit and completed successfully).';
+        resolve({
+          conversationId: detectedConversationId,
+          response: successResponse,
+          durationSeconds: finalResult?.duration_seconds ?? MAX_AGY_TIMEOUT_SECONDS,
+          usage: finalResult?.usage ?? null,
+          timedOut: true
+        });
+        return;
+      }
+
+      if (code !== 0 && !finalResult) {
+        const detail = stderrText.trim() || `exit code ${code}`;
+        reject(new Error(`agy exited with error: ${detail}`));
+        return;
+      }
 
       // If agy reported a non-SUCCESS status, only reject if there is no valid assistant response
       // or if the response itself is an unrecoverable system/API error.

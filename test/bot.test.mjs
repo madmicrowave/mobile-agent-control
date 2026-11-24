@@ -31,6 +31,10 @@ import {
   buildAgyArgs,
   isMissingTrajectoryError,
   isFatalAgentResponseError,
+  isAgyTimeoutError,
+  normalizeAgyTimeout,
+  DEFAULT_AGY_TIMEOUT,
+  MAX_AGY_TIMEOUT_SECONDS,
   resolveEffectiveModelAndLevel
 } from '../src/agy-runner.mjs';
 import {
@@ -520,6 +524,29 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.ok(args.includes('/tmp/shared-lib'));
     assert.match(args[1], /Attached User Photo\(s\)/);
     assert.match(args[1], /\/tmp\/bot-uploads\/shot1\.jpg/);
+
+    // Timeout normalization & capping: defaults to 5m0s, strictly capped at 5 minutes max, never 30 minutes
+    assert.equal(normalizeAgyTimeout(), '5m0s');
+    assert.equal(normalizeAgyTimeout('30m0s'), '5m0s');
+    assert.equal(normalizeAgyTimeout('30m'), '5m0s');
+    assert.equal(normalizeAgyTimeout('10m'), '5m0s');
+    assert.equal(normalizeAgyTimeout('600s'), '5m0s');
+    assert.equal(normalizeAgyTimeout('2m30s'), '2m30s');
+    assert.equal(normalizeAgyTimeout('120s'), '2m0s');
+
+    // Timeout error detection & non-fatal resolution
+    assert.ok(isAgyTimeoutError('[agy] print timeout after 30m0s with turn in progress; returning partial output'));
+    assert.ok(isAgyTimeoutError('[agy] print timeout after 5m0s with turn in progress; returning partial output'));
+    assert.ok(isAgyTimeoutError('AGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}'));
+    assert.ok(isAgyTimeoutError('error: print timeout after 5m0s'));
+    assert.equal(isAgyTimeoutError('syntax error: unexpected token'), false);
+    assert.equal(isFatalAgentResponseError('[agy] print timeout after 5m0s'), false);
+
+    // buildAgyArgs default timeout is 5m0s and strictly caps 30m0s to 5m0s
+    assert.ok(args.includes('--print-timeout'));
+    assert.equal(args[args.indexOf('--print-timeout') + 1], '5m0s');
+    const cappedArgs = buildAgyArgs({ prompt: 'test', timeout: '30m0s' });
+    assert.equal(cappedArgs[cappedArgs.indexOf('--print-timeout') + 1], '5m0s');
 
     const plistXml = buildLaunchdPlistXml({
       projectRoot: '/opt/mobile-agent-control',
@@ -3208,6 +3235,46 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 
+  it('counts timeout as success when execution reaches timeout limit, preserving edits and prompting for commit', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    nextAgentBehavior = async () => {
+      // Modify a file in the workspace repo
+      const targetFile = path.join(coreRepo.cloneDir, 'timeout_feature.js');
+      await fsp.writeFile(targetFile, 'export const timeoutWorkDone = true;\n', 'utf8');
+
+      throw new Error(
+        'Agent finished with status ERROR: [agy] print timeout after 5m0s with turn in progress; returning partial output\nerror: print timeout after 5m0s\nAGY_ERROR: {"status":"DEADLINE_EXCEEDED","reason":"print_timeout"}'
+      );
+    };
+
+    await controller.handleUpdate(makeUserMsg('Run long-running task'));
+    await controller.waitForBackgroundTasks();
+
+    // Must be treated as success (NOT ❌ Agent stopped/failed)
+    assert.ok(
+      !mockTg.sentMessages.some((m) => /❌.*Agent stopped\/failed/i.test(m.text)),
+      'Timeout must not send failure error message'
+    );
+    assert.ok(
+      mockTg.sentMessages.some((m) => /Agent Response:/i.test(m.text)),
+      'Must send normal agent response on timeout'
+    );
+
+    // Workspace must enter AWAITING_COMMIT_CHOICE for the modified file
+    const st = configStore.getWorkspaceState('payments');
+    assert.equal(st.phase, 'AWAITING_COMMIT_CHOICE');
+    const commitMsg = mockTg.lastSent();
+    assert.match(commitMsg.text, /Commit &amp; push these changes\?/);
+    assert.match(commitMsg.text, /timeout_feature\.js/);
+
+    // Reset workspace to IDLE
+    await controller.handleUpdate(makeCallback('cmt:no:payments', commitMsg.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
+  });
+
   it('preserves code edits when a fatal agent error occurs instead of silently discarding them', async () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));
@@ -3499,17 +3566,17 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeUserMsg('Verify session tests in Payments'));
     await controller.waitForBackgroundTasks();
 
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Engine initialized (58 tools available)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] 🧠 Investigating auth configuration in package.json')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (ACTIVE)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] $ npm test -- --grep "session"')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] PASS src/session.test.js')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent]   ✓ validates session token (42ms)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (DONE)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (ACTIVE)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] [read] src/session.js')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] export function validate() { return true; }')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (DONE)')));
-    assert.ok(loggedLines.some((l) => l.includes('[agent] Checked session tests. All 2 tests passed.')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Engine initialized (58 tools available) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] 🧠 Investigating auth configuration in package.json [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (ACTIVE) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] $ npm test -- --grep "session" [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] PASS src/session.test.js [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent]   ✓ validates session token (42ms) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: run_command (DONE) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (ACTIVE) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] [read] src/session.js [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] export function validate() { return true; } [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (DONE) [ws:Payments Platform]')));
+    assert.ok(loggedLines.some((l) => l.includes('[agent] Checked session tests. All 2 tests passed. [ws:Payments Platform]')));
   });
 });

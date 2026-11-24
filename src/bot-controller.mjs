@@ -21,6 +21,10 @@ import {
   GEMINI_MODEL_FAMILIES,
   VALID_MODEL_LEVELS,
   isMissingTrajectoryError,
+  isFatalAgentResponseError,
+  isAgyTimeoutError,
+  normalizeAgyTimeout,
+  DEFAULT_AGY_TIMEOUT,
   resolveEffectiveModelAndLevel,
   resolveDefaultAgyBin,
   runAgyTurn
@@ -261,17 +265,18 @@ export class BotController {
     }
   }
 
-  log(category, msg) {
+  log(category, msg, workspace) {
     if (this.logger?.log) {
+      const wsTag = workspace ? ` [ws:${workspace}]` : '';
       const text = String(msg ?? '');
       if (text.includes('\n')) {
         for (const line of text.split(/\r?\n/)) {
           if (line.trim().length > 0) {
-            this.logger.log(`[${category}] ${line}`);
+            this.logger.log(`[${category}] ${line}${wsTag}`);
           }
         }
       } else {
-        this.logger.log(`[${category}] ${text}`);
+        this.logger.log(`[${category}] ${text}${wsTag}`);
       }
     }
   }
@@ -1272,7 +1277,7 @@ export class BotController {
     st.phase = 'IDLE';
     await this.configStore.saveState();
 
-    this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
+    this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`, wsLabel);
     await this.startAgentTurn(chatId, ws, nextItem.text || '', {
       replyToMessageId: notice.anchorMsgId || null,
       queueInfo: {
@@ -1827,7 +1832,7 @@ export class BotController {
               inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
             }
           });
-          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}) running in parallel with Jenkins: ${preview}`);
+          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}) running in parallel with Jenkins: ${preview}`, wsLabel);
 
           st.pendingPhotos = candidate.photos || [];
           await this.startAgentTurn(chatId, ws, candidate.text || '', {
@@ -1849,7 +1854,7 @@ export class BotController {
               inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }]]
             }
           });
-          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
+          this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`, wsLabel);
           return;
         }
 
@@ -1864,7 +1869,7 @@ export class BotController {
             inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }]]
           }
         });
-        this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
+        this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`, wsLabel);
         return;
       }
 
@@ -1912,7 +1917,7 @@ export class BotController {
             replyMarkup: { inline_keyboard: [] }
           });
         }
-        this.log('agent', `Message removed from queue for workspace "${wsLabel}": ${preview}`);
+        this.log('agent', `Message removed from queue for workspace "${wsLabel}": ${preview}`, wsLabel);
         return;
       }
 
@@ -3456,7 +3461,7 @@ export class BotController {
     }
 
     this.log('stage', `AI Agent Executing: ${wsLabel}`);
-    this.log('agent', `Executing ${ws.engine || 'agy'} with model ${effectiveModel.modelId} on workspace "${wsLabel}"`);
+    this.log('agent', `Executing ${ws.engine || 'agy'} with model ${effectiveModel.modelId} on workspace "${wsLabel}"`, wsLabel);
     const runSingleAttempt = async (attemptConversationId) => {
       let textDeltaBuffer = '';
       const flushTextDeltaBuffer = (isFinal = false) => {
@@ -3467,13 +3472,13 @@ export class BotController {
           for (const line of parts) {
             const clean = line.trim();
             if (clean) {
-              this.log('agent', clean);
+              this.log('agent', clean, wsLabel);
             }
           }
         } else if (isFinal) {
           const clean = textDeltaBuffer.trim();
           if (clean) {
-            this.log('agent', clean);
+            this.log('agent', clean, wsLabel);
           }
           textDeltaBuffer = '';
         }
@@ -3502,6 +3507,7 @@ export class BotController {
         modelLevel: effectiveModel.effort || ws.modelLevel || 'high',
         skipPermissions: Boolean(this.configStore.config.skipPermissions),
         extraDirs: ws.extraDirs || [],
+        timeout: ws.timeout || this.configStore.config.agentTimeout || DEFAULT_AGY_TIMEOUT,
         onConversationId: (convId) => {
           st.conversationId = convId;
           st.continueLatest = false;
@@ -3517,21 +3523,21 @@ export class BotController {
         },
         onLog: (line) => {
           if (line && String(line).trim()) {
-            this.log('agent', String(line).trim());
+            this.log('agent', String(line).trim(), wsLabel);
           }
         },
         onStepEvent: (evt) => {
           if (evt.thinking) {
             for (const tLine of String(evt.thinking).split(/\r?\n/)) {
               if (tLine.trim()) {
-                this.log('agent', `🧠 ${tLine.trim()}`);
+                this.log('agent', `🧠 ${tLine.trim()}`, wsLabel);
               }
             }
           }
 
           if (evt.toolName) {
             const stateStr = String(evt.state || 'running').toUpperCase();
-            this.log('agent', `Tool execution: ${evt.toolName} (${evt.state || 'running'})`);
+            this.log('agent', `Tool execution: ${evt.toolName} (${evt.state || 'running'})`, wsLabel);
 
             // If starting/active, log tool arguments (command, file path, query)
             if (stateStr === 'ACTIVE' || stateStr === 'RUNNING') {
@@ -3539,19 +3545,19 @@ export class BotController {
                 const cmd = evt.toolArgs.CommandLine || evt.toolArgs.command || evt.toolArgs.cmd;
                 const filePath = evt.toolArgs.Path || evt.toolArgs.path || evt.toolArgs.filePath;
                 if (cmd) {
-                  this.log('agent', `$ ${cmd}`);
+                  this.log('agent', `$ ${cmd}`, wsLabel);
                 } else if (filePath) {
                   if (evt.toolArgs.Target || evt.toolArgs.target) {
-                    this.log('agent', `[edit] ${filePath}`);
+                    this.log('agent', `[edit] ${filePath}`, wsLabel);
                   } else if (evt.toolArgs.Content || evt.toolArgs.content) {
-                    this.log('agent', `[write] ${filePath}`);
+                    this.log('agent', `[write] ${filePath}`, wsLabel);
                   } else {
-                    this.log('agent', `[read] ${filePath}`);
+                    this.log('agent', `[read] ${filePath}`, wsLabel);
                   }
                 } else {
                   const summary = this.#formatToolArgsSummary(evt.toolArgs);
                   if (summary) {
-                    this.log('agent', `→ ${summary}`);
+                    this.log('agent', `→ ${summary}`, wsLabel);
                   }
                 }
               }
@@ -3567,11 +3573,11 @@ export class BotController {
                   const slice = lines.slice(0, maxLinesToLog);
                   for (const outLine of slice) {
                     if (outLine.trim().length > 0) {
-                      this.log('agent', outLine);
+                      this.log('agent', outLine, wsLabel);
                     }
                   }
                   if (lines.length > maxLinesToLog) {
-                    this.log('agent', `... (${lines.length - maxLinesToLog} more lines)`);
+                    this.log('agent', `... (${lines.length - maxLinesToLog} more lines)`, wsLabel);
                   }
                 }
               }
@@ -3668,91 +3674,118 @@ export class BotController {
         chatId,
         text: `🤖 <b>${escapeHtml(wsLabel)} — Agent Response:</b>\n\n${markdownToTelegramHtml(replyText)}`
       });
-      this.log('agent', `Turn execution finished in workspace "${wsLabel}".`);
+      this.log('agent', `Turn execution finished in workspace "${wsLabel}".`, wsLabel);
       this.log('stage', 'Ready for Telegram requests');
     } catch (agentErr) {
-      this.log('agent', `Agent stopped/failed in workspace "${wsLabel}": ${agentErr.message}`);
-      this.log('stage', 'Ready for Telegram requests');
-      this.runtime.delete(ws.id);
-      if (statusMessageId) {
-        await this.telegram.clearInlineButtons(chatId, statusMessageId);
-      }
+      if (isAgyTimeoutError(agentErr.message)) {
+        this.log('agent', `Agent reached timeout limit in workspace "${wsLabel}"; counting turn as success.`, wsLabel);
+        this.log('stage', 'Ready for Telegram requests');
+        this.runtime.delete(ws.id);
+        if (statusMessageId) {
+          await this.telegram.clearInlineButtons(chatId, statusMessageId);
+        }
 
-      // Check if changes were made to repository files despite the failure/stop
-      const deltas = [];
-      for (const repo of ws.repos || []) {
-        try {
-          const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
-          if (delta.changedFiles.length > 0 || delta.headAdvanced) {
-            deltas.push(delta);
-          }
-        } catch {}
-      }
-
-      if (deltas.length > 0) {
-        st.phase = 'AWAITING_COMMIT_CHOICE';
-        st.pendingDeltas = deltas;
-        st.lastError = agentErr.message;
-        await this.configStore.saveState();
+        const replyText =
+          st.activeTurn?.agentResponse ||
+          'Agent completed turn execution within the 5-minute timeout window.';
+        st.activeTurn.agentResponse = replyText;
+        st.messages.push({
+          role: 'assistant',
+          text: replyText,
+          conversationId: st.conversationId || null,
+          at: this.nowProvider().toISOString()
+        });
+        if (st.messages.length > 80) st.messages = st.messages.slice(-80);
 
         await this.telegram.sendMessage({
           chatId,
-          text:
-            `⚠️ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
-            `${escapeHtml(agentErr.message)}\n\n` +
-            `Code edits were made before stopping and have been preserved.`
+          text: `🤖 <b>${escapeHtml(wsLabel)} — Agent Response:</b>\n\n${markdownToTelegramHtml(replyText)}`
         });
-        await this.sendCommitPrompt(chatId, ws, deltas);
-        return;
-      }
-
-      if (!isAddFix) {
-        for (const repo of ws.repos || []) {
-          await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
+        this.log('agent', `Turn execution finished in workspace "${wsLabel}".`, wsLabel);
+      } else {
+        this.log('agent', `Agent stopped/failed in workspace "${wsLabel}": ${agentErr.message}`, wsLabel);
+        this.log('stage', 'Ready for Telegram requests');
+        this.runtime.delete(ws.id);
+        if (statusMessageId) {
+          await this.telegram.clearInlineButtons(chatId, statusMessageId);
         }
-        st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
-        st.activeTurn = st.deployingTurn || null;
-        st.deployingTurn = null;
-        st.baselineSnapshots = null;
-        st.pendingDeltas = [];
-        st.lastError = agentErr.message;
-        const droppedQueueCount = st.messageQueue?.length || 0;
-        if (st.messageQueue && st.messageQueue.length > 0) {
-          for (const item of st.messageQueue) {
-            if (item.queueMessageId) {
-              await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+
+        // Check if changes were made to repository files despite the failure/stop
+        const deltas = [];
+        for (const repo of ws.repos || []) {
+          try {
+            const delta = await detectRepoChangesSinceSnapshot(repo, st.baselineSnapshots?.[repo.name]);
+            if (delta.changedFiles.length > 0 || delta.headAdvanced) {
+              deltas.push(delta);
+            }
+          } catch {}
+        }
+
+        if (deltas.length > 0) {
+          st.phase = 'AWAITING_COMMIT_CHOICE';
+          st.pendingDeltas = deltas;
+          st.lastError = agentErr.message;
+          await this.configStore.saveState();
+
+          await this.telegram.sendMessage({
+            chatId,
+            text:
+              `⚠️ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
+              `${escapeHtml(agentErr.message)}\n\n` +
+              `Code edits were made before stopping and have been preserved.`
+          });
+          await this.sendCommitPrompt(chatId, ws, deltas);
+          return;
+        }
+
+        if (!isAddFix) {
+          for (const repo of ws.repos || []) {
+            await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
+          }
+          st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
+          st.activeTurn = st.deployingTurn || null;
+          st.deployingTurn = null;
+          st.baselineSnapshots = null;
+          st.pendingDeltas = [];
+          st.lastError = agentErr.message;
+          const droppedQueueCount = st.messageQueue?.length || 0;
+          if (st.messageQueue && st.messageQueue.length > 0) {
+            for (const item of st.messageQueue) {
+              if (item.queueMessageId) {
+                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+              }
             }
           }
+          st.messageQueue = [];
+          await this.configStore.saveState();
+
+          await this.telegram.sendMessage({
+            chatId,
+            text:
+              `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
+              `${escapeHtml(agentErr.message)}\n\n` +
+              `Uncommitted edits from this run were cleaned up.` +
+              (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
+              ` Ready for your next message.`,
+            replyMarkup: MAIN_REPLY_KEYBOARD
+          });
+        } else {
+          st.phase = 'AWAITING_COMMIT_CHOICE';
+          st.lastError = agentErr.message;
+          await this.configStore.saveState();
+
+          await this.telegram.sendMessage({
+            chatId,
+            text:
+              `❌ <b>Agent stopped/failed while applying fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
+              `${escapeHtml(agentErr.message)}\n\n` +
+              `Existing uncommitted edits are preserved.`
+          });
+          st.pendingDeltas = deltas;
+          await this.sendCommitPrompt(chatId, ws, deltas);
         }
-        st.messageQueue = [];
-        await this.configStore.saveState();
-
-        await this.telegram.sendMessage({
-          chatId,
-          text:
-            `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
-            `${escapeHtml(agentErr.message)}\n\n` +
-            `Uncommitted edits from this run were cleaned up.` +
-            (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
-            ` Ready for your next message.`,
-          replyMarkup: MAIN_REPLY_KEYBOARD
-        });
-      } else {
-        st.phase = 'AWAITING_COMMIT_CHOICE';
-        st.lastError = agentErr.message;
-        await this.configStore.saveState();
-
-        await this.telegram.sendMessage({
-          chatId,
-          text:
-            `❌ <b>Agent stopped/failed while applying fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
-            `${escapeHtml(agentErr.message)}\n\n` +
-            `Existing uncommitted edits are preserved.`
-        });
-        st.pendingDeltas = deltas;
-        await this.sendCommitPrompt(chatId, ws, deltas);
+        return;
       }
-      return;
     }
 
     // ── Inspect Changed Files Across Workspace Sub-Repos ─────────────────────

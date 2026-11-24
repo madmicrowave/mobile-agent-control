@@ -3522,9 +3522,26 @@ private struct MACParsedLogLine: Identifiable {
     let badgeColor: Color
     let icon: String
     let lineNumber: String
+    let workspaceName: String?
     let messageText: String
     let messageColor: Color
     let isLoading: Bool
+
+    func withWorkspaceName(_ ws: String?) -> MACParsedLogLine {
+        MACParsedLogLine(
+            id: id,
+            rawText: rawText,
+            source: source,
+            badgeLabel: badgeLabel,
+            badgeColor: badgeColor,
+            icon: icon,
+            lineNumber: lineNumber,
+            workspaceName: ws,
+            messageText: messageText,
+            messageColor: messageColor,
+            isLoading: isLoading
+        )
+    }
 }
 
 private final class LiveActivityTabVM: ObservableObject {
@@ -3567,9 +3584,28 @@ private struct LiveActivityTabView: View {
     @StateObject private var resourceMonitor = MACResourceMonitor()
 
     private var parsedLines: [MACParsedLogLine] {
-        appState.logLines.enumerated().map { idx, line in
-            parseLogLine(line, index: idx)
+        var currentActiveWorkspace: String? = nil
+        var result: [MACParsedLogLine] = []
+        result.reserveCapacity(appState.logLines.count)
+
+        for (idx, line) in appState.logLines.enumerated() {
+            var item = parseLogLine(line, index: idx)
+            if let explicitWs = item.workspaceName, !explicitWs.isEmpty {
+                currentActiveWorkspace = explicitWs
+            } else if item.source == .agent && item.workspaceName == nil {
+                item = item.withWorkspaceName(currentActiveWorkspace)
+            }
+
+            if line.contains("Turn execution finished") ||
+               line.contains("Agent stopped/failed") ||
+               line.contains("Ready for Telegram requests") ||
+               line.contains("⚪ Bot stopped") {
+                currentActiveWorkspace = nil
+            }
+
+            result.append(item)
         }
+        return result
     }
 
     private var filteredLines: [MACParsedLogLine] {
@@ -3585,6 +3621,9 @@ private struct LiveActivityTabView: View {
             if !matchesCategory { return false }
 
             if !vm.searchText.isEmpty {
+                if let ws = item.workspaceName, ws.localizedCaseInsensitiveContains(vm.searchText) {
+                    return true
+                }
                 return item.rawText.localizedCaseInsensitiveContains(vm.searchText)
             }
             return true
@@ -4092,6 +4131,28 @@ private struct LiveActivityTabView: View {
                 .foregroundColor(.secondary.opacity(0.55))
                 .frame(width: 28, alignment: .trailing)
 
+            // Workspace Badge
+            if let ws = item.workspaceName, !ws.isEmpty {
+                Button {
+                    vm.searchText = ws
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 8))
+                        Text(ws)
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color(red: 0.18, green: 0.48, blue: 0.88).opacity(0.9))
+                    .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .help("Filter logs by \(ws)")
+            }
+
             // Message text
             Text(item.messageText)
                 .font(.system(size: 11.5, weight: .medium, design: .monospaced))
@@ -4187,6 +4248,44 @@ private struct LiveActivityTabView: View {
         }
 
         var cleanMsg = line
+        var wsName: String? = nil
+
+        // Extract [ws:NAME] tag if present
+        if let wsRange = cleanMsg.range(of: #"\s*\[ws:([^\]]+)\]"#, options: .regularExpression) {
+            let matched = String(cleanMsg[wsRange])
+            if let innerStart = matched.range(of: "[ws:")?.upperBound,
+               let innerEnd = matched.range(of: "]", options: .backwards)?.lowerBound {
+                let candidate = String(matched[innerStart..<innerEnd]).trimmingCharacters(in: .whitespaces)
+                if !candidate.isEmpty {
+                    wsName = candidate
+                }
+            }
+            cleanMsg.removeSubrange(wsRange)
+        }
+
+        // Fallback extraction if no [ws:NAME] tag
+        if wsName == nil {
+            if let quoteRange = cleanMsg.range(of: #"workspace\s+"([^"]+)""#, options: .regularExpression) {
+                let matched = String(cleanMsg[quoteRange])
+                if let firstQuote = matched.firstIndex(of: "\""),
+                   let lastQuote = matched.lastIndex(of: "\""),
+                   firstQuote < lastQuote {
+                    let candidate = String(matched[matched.index(after: firstQuote)..<lastQuote]).trimmingCharacters(in: .whitespaces)
+                    if !candidate.isEmpty {
+                        wsName = candidate
+                    }
+                }
+            } else if let execRange = cleanMsg.range(of: #"AI Agent Executing:\s*(.+)$"#, options: .regularExpression) {
+                let matched = String(cleanMsg[execRange])
+                if let colon = matched.firstIndex(of: ":") {
+                    let candidate = String(matched[matched.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    if !candidate.isEmpty {
+                        wsName = candidate
+                    }
+                }
+            }
+        }
+
         if cleanMsg.hasPrefix("[MAC] ") {
             cleanMsg = String(cleanMsg.dropFirst(6))
         } else if cleanMsg.hasPrefix("[bot] ") {
@@ -4213,6 +4312,7 @@ private struct LiveActivityTabView: View {
             badgeColor: badgeColor,
             icon: icon,
             lineNumber: String(format: "%03d", index + 1),
+            workspaceName: wsName,
             messageText: cleanMsg,
             messageColor: msgColor,
             isLoading: isLoading
