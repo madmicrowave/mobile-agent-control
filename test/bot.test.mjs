@@ -3309,6 +3309,21 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(gateMsg.text, /Refactor auth session handling and token validation/);
     assert.equal(gateMsg.reply_to_message_id, userMessageId);
 
+    // 1b) Test switching to workspace while agent is running -> Antigravity running notice comes BEFORE "Resuming pending step:"
+    mockTg.clearSent();
+    await controller.sendCurrentWorkspaceGatePrompt(
+      CHAT_ID,
+      ws,
+      `🗂 <b>Switched to Workspace:</b>\n\n<b>${ws.label || ws.id}</b>\n\nResuming pending step:`
+    );
+    const switchedMsg = mockTg.lastSent();
+    assert.ok(switchedMsg, 'Switched message must be sent');
+    assert.match(
+      switchedMsg.text,
+      /Switched to Workspace:[\s\S]*⏳ Antigravity agent is currently running in[\s\S]*Resuming pending step:[\s\S]*Active Request:/
+    );
+    assert.equal(switchedMsg.reply_to_message_id, userMessageId);
+
     // 2) User sends a new message while agent is running -> prompt to queue should quote the new message
     mockTg.clearSent();
     const secondUserMsg = makeUserMsg('Add tests for token expiry');

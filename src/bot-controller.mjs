@@ -5181,10 +5181,16 @@ export class BotController {
 
     switch (st.phase) {
       case 'RUNNING_AGENT': {
-        const { text: agentText, replyToMessageId } = this.#buildRunningAgentNotice(wsLabel, st);
+        const { text: agentText, promptSnippet, replyToMessageId } = this.#buildRunningAgentNotice(wsLabel, st);
+        let messageText = `${prefix}${agentText}`;
+        if (bannerHtml && bannerHtml.includes('Resuming pending step:')) {
+          const bannerBeforeResume = bannerHtml.replace(/\n*Resuming pending step:.*$/i, '').trim();
+          const baseNotice = `⏳ Antigravity agent is currently running in <b>${escapeHtml(wsLabel)}</b>.`;
+          messageText = `${bannerBeforeResume}\n\n${baseNotice}\n\nResuming pending step:${promptSnippet}`;
+        }
         const sent = await this.telegram.sendMessage({
           chatId,
-          text: `${prefix}${agentText}`,
+          text: messageText,
           replyMarkup: {
             inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
           },
