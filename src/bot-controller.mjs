@@ -886,8 +886,7 @@ export class BotController {
           replyMarkup: {
             inline_keyboard: [
               [
-                { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` },
-                { text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }
+                { text: '📥 Queue Message', callback_data: `agent:queue:${ws.id}:${candidateId}` }
               ]
             ]
           },
@@ -1176,6 +1175,9 @@ export class BotController {
     if (!st.messageQueue || st.messageQueue.length === 0) return false;
     const wsLabel = this.getWorkspaceLabel(ws);
     const nextItem = st.messageQueue.shift();
+    if (nextItem?.queueMessageId) {
+      await this.telegram.clearInlineButtons(nextItem.chatId || chatId, nextItem.queueMessageId).catch(() => {});
+    }
     const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
       reason,
       chatId
@@ -1765,7 +1767,7 @@ export class BotController {
               `<i>"${escapeHtml(preview)}"</i>\n\n` +
               `It will be executed before Jenkins deployment once the current agent finishes.`,
             replyMarkup: {
-              inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+              inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }]]
             }
           });
           this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
@@ -1778,9 +1780,60 @@ export class BotController {
           text:
             `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}:</b>\n` +
             `<i>"${escapeHtml(preview)}"</i>\n\n` +
-            `It will be executed once you complete or skip the current step.`
+            `It will be executed once you complete or skip the current step.`,
+          replyMarkup: {
+            inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }]]
+          }
         });
         this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`);
+        return;
+      }
+
+      if (data.startsWith('agent:dequeue:')) {
+        const parts = data.split(':');
+        const wsId = parts[2];
+        const candidateId = parts[3];
+        const ws = this.getWorkspace(wsId);
+        if (!ws) return;
+        const wsLabel = this.getWorkspaceLabel(ws);
+        const st = this.configStore.getWorkspaceState(ws.id);
+
+        const queueIndex = st.messageQueue ? st.messageQueue.findIndex(item => item.id === candidateId) : -1;
+        if (queueIndex === -1) {
+          if (chatId && messageId) {
+            await this.telegram.clearInlineButtons(chatId, messageId).catch(() => {});
+          }
+          await this.telegram.sendMessage({
+            chatId,
+            text: `⚠️ Cannot remove from queue: message processing has already started or it is no longer queued in <b>${escapeHtml(wsLabel)}</b>.`
+          });
+          return;
+        }
+
+        const [removedItem] = st.messageQueue.splice(queueIndex, 1);
+        st.messageQueue.forEach((item, idx) => {
+          item.queueNumber = idx + 1;
+        });
+        await this.configStore.saveState();
+
+        const preview = removedItem.text
+          ? (removedItem.text.length > 70 ? removedItem.text.slice(0, 67) + '…' : removedItem.text)
+          : (removedItem.photos?.length ? `[${removedItem.photos.length} file(s)]` : '(Message)');
+
+        const targetChatId = chatId || removedItem.chatId;
+        const targetMessageId = messageId || removedItem.queueMessageId;
+        if (targetChatId && targetMessageId) {
+          await this.telegram.editMessageText({
+            chatId: targetChatId,
+            messageId: targetMessageId,
+            text:
+              `🗑 <b>Removed from queue for ${escapeHtml(wsLabel)}:</b>\n` +
+              `<i>"${escapeHtml(preview)}"</i>\n\n` +
+              `This message was removed and will not be executed.`,
+            replyMarkup: { inline_keyboard: [] }
+          });
+        }
+        this.log('agent', `Message removed from queue for workspace "${wsLabel}": ${preview}`);
         return;
       }
 
@@ -1794,6 +1847,13 @@ export class BotController {
           const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
           const stopSt = this.configStore.getWorkspaceState(wsId);
           const cancelledCount = stopSt.messageQueue?.length || 0;
+          if (stopSt.messageQueue && stopSt.messageQueue.length > 0) {
+            for (const item of stopSt.messageQueue) {
+              if (item.queueMessageId) {
+                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+              }
+            }
+          }
           stopSt.messageQueue = [];
           stopSt.accumulatedCommits = [];
           await this.configStore.saveState();
@@ -3512,6 +3572,13 @@ export class BotController {
         st.pendingDeltas = [];
         st.lastError = agentErr.message;
         const droppedQueueCount = st.messageQueue?.length || 0;
+        if (st.messageQueue && st.messageQueue.length > 0) {
+          for (const item of st.messageQueue) {
+            if (item.queueMessageId) {
+              await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+            }
+          }
+        }
         st.messageQueue = [];
         await this.configStore.saveState();
 

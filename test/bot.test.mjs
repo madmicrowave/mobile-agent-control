@@ -2931,23 +2931,25 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.match(runningMsg.text, /Antigravity agent is currently running/);
     assert.equal(runningMsg.reply_to_message_id, turn2UserMsg.message.message_id);
 
-    // Verify inline keyboard has "Queue Message" before "Stop Agent"
+    // Verify inline keyboard has only "Queue Message" (single button)
     const kb = runningMsg.reply_markup?.inline_keyboard?.[0] || [];
-    assert.equal(kb.length, 2);
+    assert.equal(kb.length, 1);
     assert.equal(kb[0].text, '📥 Queue Message');
     assert.match(kb[0].callback_data, /^agent:queue:payments:q_/);
-    assert.equal(kb[1].text, '🛑 Stop Agent');
-    assert.equal(kb[1].callback_data, 'agent:stop:payments');
 
     // 3) User clicks "Queue Message" button
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback(kb[0].callback_data, runningMsg.message_id));
 
-    // Verify confirmation and message edit
+    // Verify confirmation and message edit with "Remove from Queue" button
     assert.equal(configStore.getWorkspaceState('payments').messageQueue.length, 1);
     const queuedEdited = mockTg.lastSentOrEdited();
     assert.match(queuedEdited.text, /Message queued \(#1\)/);
     assert.match(queuedEdited.text, /Start turn 2 queued/);
+    const queueButtons = queuedEdited.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(queueButtons.length, 1);
+    assert.equal(queueButtons[0].text, '🗑 Remove from Queue');
+    assert.match(queueButtons[0].callback_data, /^agent:dequeue:payments:q_/);
 
     // 4) Finish Turn 1
     mockTg.clearSent();
@@ -3013,6 +3015,85 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // MUST contain BOTH jobs from Turn 1 (GATE) and Turn 2 (BACKOFFICE)!
     assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-GATE/);
     assert.match(jnkPromptMsg.text, /Prod\/payments\/payments\.example\.com-BACKOFFICE/);
+  });
+
+  it('allows removing queued message from queue before processing starts, and disallows after processing starts', async () => {
+    // 1) Select payments workspace and reset to IDLE
+    const ws = controller.getWorkspace('payments');
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'IDLE';
+    st.runningJenkins = null;
+    st.activeTurn = null;
+    st.messageQueue = [];
+    st.accumulatedCommits = [];
+    await configStore.saveState();
+
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    let turn1Resolver;
+    const turn1Promise = new Promise((resolve) => {
+      turn1Resolver = resolve;
+    });
+
+    nextAgentBehavior = async () => {
+      await turn1Promise;
+      return {
+        conversationId: 'conv-dequeue-test',
+        response: 'Turn 1 finished.'
+      };
+    };
+
+    // User sends prompt to start Turn 1
+    const turn1Msg = makeUserMsg('Start turn 1');
+    await controller.handleUpdate(turn1Msg);
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
+
+    // User sends prompt while Turn 1 is running
+    mockTg.clearSent();
+    const queuedUserMsg = makeUserMsg('This should be queued and then removed');
+    await controller.handleUpdate(queuedUserMsg);
+
+    const runningNotice = mockTg.lastSent();
+    assert.match(runningNotice.text, /Antigravity agent is currently running/);
+    const queuePromptButtons = runningNotice.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(queuePromptButtons.length, 1, 'Must have only 1 button: Queue Message');
+    assert.equal(queuePromptButtons[0].text, '📥 Queue Message');
+
+    // Click Queue Message
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(queuePromptButtons[0].callback_data, runningNotice.message_id));
+    assert.equal(configStore.getWorkspaceState('payments').messageQueue.length, 1);
+
+    const queuedMsg = mockTg.lastSentOrEdited();
+    assert.match(queuedMsg.text, /Message queued \(#1\)/);
+    const dequeueBtn = queuedMsg.reply_markup?.inline_keyboard?.[0]?.[0];
+    assert.ok(dequeueBtn, 'Must have Remove from Queue button');
+    assert.equal(dequeueBtn.text, '🗑 Remove from Queue');
+    assert.match(dequeueBtn.callback_data, /^agent:dequeue:payments:/);
+
+    // Click Remove from Queue before Turn 1 finishes (processing not started)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(dequeueBtn.callback_data, queuedMsg.message_id));
+
+    // Must be removed from queue!
+    assert.equal(configStore.getWorkspaceState('payments').messageQueue.length, 0);
+    const removedMsg = mockTg.lastSentOrEdited();
+    assert.match(removedMsg.text, /Removed from queue for Payments/);
+    assert.match(removedMsg.text, /This message was removed and will not be executed/);
+    assert.deepEqual(removedMsg.reply_markup?.inline_keyboard, []);
+
+    // Attempting to remove from queue again (or once already removed)
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(dequeueBtn.callback_data, queuedMsg.message_id));
+    const warningMsg = mockTg.lastSent();
+    assert.match(warningMsg.text, /Cannot remove from queue/);
+
+    // Finish Turn 1
+    turn1Resolver();
+    await controller.waitForBackgroundTasks();
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 
   it('clears inline buttons on both original prompt message and subsequent gate notice messages when user confirms', async () => {
