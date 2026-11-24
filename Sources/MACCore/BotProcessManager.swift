@@ -455,9 +455,14 @@ public final class MACAppState: ObservableObject {
                 } else {
                     status = .running(botUsername: nil)
                 }
-            } else if rawLine.contains("Fatal startup error:") {
-                let reason = rawLine.components(separatedBy: "Fatal startup error:").last?.trimmingCharacters(in: .whitespaces) ?? "Startup failed"
-                status = .error(reason)
+            } else if trimmed.hasPrefix("[bot] Fatal startup error:") || trimmed.hasPrefix("Fatal startup error:") {
+                if case .running = status {
+                    // Already running; ignore accidental diffs, echoes, or source code printouts
+                } else {
+                    let marker = trimmed.hasPrefix("[bot] Fatal startup error:") ? "[bot] Fatal startup error:" : "Fatal startup error:"
+                    let reason = trimmed.components(separatedBy: marker).last?.trimmingCharacters(in: .whitespaces) ?? "Startup failed"
+                    status = .error(reason.isEmpty ? "Startup failed" : reason)
+                }
             }
         }
     }
@@ -478,6 +483,10 @@ public final class MACAppState: ObservableObject {
     public func clearLogs() {
         logLines.removeAll()
         logRevision &+= 1
+    }
+
+    public func processLogChunkForTesting(_ chunk: String) {
+        handleBotOutput(chunk, token: currentProcessToken)
     }
 
     private func updateStageFromLogLine(_ line: String) {

@@ -649,6 +649,7 @@ export function runAgyTurn({
     let streamedText = '';
     let finalResult = null;
     let stderrText = '';
+    let rawStdoutTail = '';
 
     const rl = readline.createInterface({
       input: child.stdout,
@@ -656,6 +657,10 @@ export function runAgyTurn({
     });
 
     rl.on('line', (line) => {
+      rawStdoutTail += line + '\n';
+      if (rawStdoutTail.length > 8000) {
+        rawStdoutTail = rawStdoutTail.slice(-8000);
+      }
       const trimmed = line.trim();
       if (!trimmed) return;
 
@@ -754,6 +759,7 @@ export function runAgyTurn({
       // Check if agy timed out (print timeout, DEADLINE_EXCEEDED, etc.)
       const isTimeout =
         isAgyTimeoutError(stderrText) ||
+        isAgyTimeoutError(rawStdoutTail) ||
         isAgyTimeoutError(trimmedResponse) ||
         isAgyTimeoutError(finalResult?.short_error) ||
         isAgyTimeoutError(finalResult?.reason) ||

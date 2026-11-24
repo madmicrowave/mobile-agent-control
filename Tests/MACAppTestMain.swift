@@ -352,11 +352,32 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(appState.status == .running(botUsername: "mac_unit_bot"), "Expected bot running after Restart...")
     expect(promptedPasswords.count == 2 && promptedPasswords[1].0 == true, "Restart prompted for new password")
 
+    // Verify that log lines containing "Fatal startup error:" inside code or diffs do not erroneously flip .running to .error
+    appState.processLogChunkForTesting("let reason = rawLine.components(separatedBy: \"Fatal startup error:\").last?.trimmingCharacters(in: .whitespaces) ?? \"Startup failed\"\n")
+    expect(appState.status == .running(botUsername: "mac_unit_bot"), "Code diff containing 'Fatal startup error:' must not change status to error while running")
+
+    // Verify accidental echo while running is ignored
+    appState.processLogChunkForTesting("[bot] Fatal startup error: something bad\n")
+    expect(appState.status == .running(botUsername: "mac_unit_bot"), "Echoed fatal startup error line must not change status to error when bot is already running")
+
     // Trigger Stop
     controller.handleStopClicked()
     expect(appState.status == .stopped, "Expected status == .stopped after Stop")
     expect(!appState.isSleepPrevented, "Expected sleep prevention released after Stop")
     expect(controller.startMenuItem.isEnabled && !controller.stopMenuItem.isEnabled, "Stopped menu item states")
+
+    // When stopped/starting, non-prefixed lines must not trigger error
+    appState.processLogChunkForTesting("+ let err = \"Fatal startup error: not a real error\"\n")
+    expect(appState.status == .stopped, "Non-prefixed diff line must not trigger error during startup/stopped")
+
+    // Genuine startup error with prefix triggers .error
+    appState.processLogChunkForTesting("[bot] Fatal startup error: Invalid Telegram bot token\n")
+    if case .error(let reason) = appState.status {
+        expect(reason == "Invalid Telegram bot token", "Expected extracted error reason, got \(reason)")
+    } else {
+        expect(false, "Expected .error status after genuine startup error, got \(appState.status)")
+    }
+    appState.status = .stopped
 
     // Multi-monitor display confinement & safe menu update verification
     let confinement = controller.confinementRect(for: controller.menu, on: NSScreen.main)
