@@ -2971,29 +2971,27 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const { stdout: logOut } = await runGit(coreRepo.cloneDir, ['log', '-2', '--pretty=%s']);
     assert.match(logOut, /Start turn 1/);
 
-    // Verify commit confirmation and that Jenkins deploy was skipped for queued message
+    // Verify commit confirmation and that Jenkins deploy was skipped for queued message in a single combined message
     assert.ok(
       mockTg.sentMessages.some((m) =>
         /Committed &(?:amp;)? pushed/i.test(m.text)
       )
     );
-    const skipDeployMsg = mockTg.sentMessages.find((m) =>
+    const combinedWorkingMsg = mockTg.sentMessages.find((m) =>
       /Skipping Jenkins deploy for previous message/i.test(m.text)
     );
-    assert.ok(skipDeployMsg);
-    // Verify queue number #1 and prompt preview in skipping message
-    assert.match(skipDeployMsg.text, /executing queued message \(#1\)/i);
-    assert.match(skipDeployMsg.text, /Queued Request \(#1\):/i);
-    assert.match(skipDeployMsg.text, /Start turn 2 queued/);
+    assert.ok(combinedWorkingMsg, 'Expected single combined message with Skipping Jenkins deploy header');
+    // Verify single combined message includes skipping notice, Antigravity working, and queue details
+    assert.match(combinedWorkingMsg.text, /executing queued message \(#1\)/i);
+    assert.match(combinedWorkingMsg.text, /Antigravity working…/i);
+    assert.match(combinedWorkingMsg.text, /Queued Request \(#1\):/i);
+    assert.match(combinedWorkingMsg.text, /Start turn 2 queued/);
     // Verify anchored to original user request via reply_to_message_id
-    assert.equal(skipDeployMsg.reply_to_message_id, turn2UserMsg.message.message_id);
-
-    // Verify working message also displays the queued request and anchor
-    const workingMsg = mockTg.sentMessages.find((m) =>
-      /Antigravity working/i.test(m.text) && /Queued Request \(#1\)/i.test(m.text)
+    assert.equal(combinedWorkingMsg.reply_to_message_id, turn2UserMsg.message.message_id);
+    // Verify Stop Agent button is present on the combined message
+    assert.ok(
+      combinedWorkingMsg.reply_markup?.inline_keyboard?.flat()?.some((b) => b.callback_data === 'agent:stop:payments')
     );
-    assert.ok(workingMsg);
-    assert.equal(workingMsg.reply_to_message_id, turn2UserMsg.message.message_id);
 
     // 7) Verify Turn 2 started and ran before Jenkins
     assert.equal(turn2Started, true);

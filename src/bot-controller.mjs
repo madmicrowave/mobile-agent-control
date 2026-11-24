@@ -1104,7 +1104,9 @@ export class BotController {
 
     return {
       text,
+      reasonHeader,
       previewText,
+      anchorLink,
       queueNum,
       anchorMsgId
     };
@@ -1117,12 +1119,6 @@ export class BotController {
     const notice = this.#buildQueuedExecutionNotice(wsLabel, nextItem, {
       reason,
       chatId
-    });
-
-    await this.telegram.sendMessage({
-      chatId,
-      text: notice.text,
-      replyToMessageId: notice.anchorMsgId || undefined
     });
 
     if (st.activeTurn && !st.deployingTurn) {
@@ -1138,7 +1134,12 @@ export class BotController {
     this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`);
     await this.startAgentTurn(chatId, ws, nextItem.text || '', {
       replyToMessageId: notice.anchorMsgId || null,
-      queueInfo: { queueNumber: notice.queueNum, promptText: notice.previewText }
+      queueInfo: {
+        queueNumber: notice.queueNum,
+        promptText: notice.previewText,
+        anchorLink: notice.anchorLink || '',
+        noticeHeader: notice.reasonHeader || ''
+      }
     });
     return true;
   }
@@ -3061,8 +3062,12 @@ export class BotController {
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const modelInfo = this.resolveWorkspaceModel(ws);
+    const noticeHeader = queueInfo?.noticeHeader
+      ? `${queueInfo.noticeHeader}\n\n`
+      : '';
+    const anchorSnippet = queueInfo?.anchorLink ? `\n${queueInfo.anchorLink}` : '';
     const queueSnippet = queueInfo?.queueNumber
-      ? `📥 <b>Queued Request (#${queueInfo.queueNumber}):</b>\n<i>"${escapeHtml(queueInfo.promptText)}"</i>\n\n`
+      ? `📥 <b>Queued Request (#${queueInfo.queueNumber}):</b>\n<i>"${escapeHtml(queueInfo.promptText)}"</i>${anchorSnippet}\n\n`
       : '';
 
     const statusMsg = await this.telegram.sendMessage({
@@ -3071,7 +3076,8 @@ export class BotController {
         ? `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}…</b>\n\n` +
           `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
           `\n<i>Working on requested fixes in the same process…</i>`
-        : `🤖 Antigravity working…\n\n` +
+        : noticeHeader +
+          `🤖 Antigravity working…\n\n` +
           `<b>${escapeHtml(wsLabel)}</b>\n\n` +
           queueSnippet +
           `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
@@ -3209,14 +3215,20 @@ export class BotController {
             const stepLabel = evt.toolName
               ? `${evt.stepType}: ${evt.toolName} (${evt.state})`
               : `${evt.stepType} (${evt.state})`;
-            const queueSnippet = st.activeTurn?.queueInfo?.queueNumber
-              ? `📥 <b>Queued Request (#${st.activeTurn.queueInfo.queueNumber}):</b>\n<i>"${escapeHtml(st.activeTurn.queueInfo.promptText)}"</i>\n\n`
+            const qInfo = st.activeTurn?.queueInfo;
+            const noticeHeader = qInfo?.noticeHeader
+              ? `${qInfo.noticeHeader}\n\n`
+              : '';
+            const anchorSnippet = qInfo?.anchorLink ? `\n${qInfo.anchorLink}` : '';
+            const queueSnippet = qInfo?.queueNumber
+              ? `📥 <b>Queued Request (#${qInfo.queueNumber}):</b>\n<i>"${escapeHtml(qInfo.promptText)}"</i>${anchorSnippet}\n\n`
               : '';
             this.telegram
               .editMessageText({
                 chatId,
                 messageId: statusMessageId,
                 text:
+                  noticeHeader +
                   `🤖 Antigravity working…\n\n` +
                   `<b>${escapeHtml(wsLabel)}</b>\n\n` +
                   queueSnippet +
