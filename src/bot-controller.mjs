@@ -1,6 +1,8 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import http from 'node:http';
+import { execSync } from 'node:child_process';
 import {
   snapshotWorkspaceRepos,
   detectRepoChangesSinceSnapshot,
@@ -49,6 +51,80 @@ const LEGACY_REPLY_BTN_SETTINGS = '➕ Register / Settings';
 
 export const MAX_FILES_PER_TURN = 5;
 export const BIG_MESSAGE_SPLIT_THRESHOLD = 3800;
+
+export function formatResetDuration(resetTime, now = Date.now()) {
+  if (!resetTime) return '0m';
+  const diffMs = new Date(resetTime).getTime() - now;
+  if (diffMs <= 0) return '0m';
+
+  if (diffMs >= 24 * 3600 * 1000) {
+    const totalDays = Math.max(1, Math.round(diffMs / (24 * 3600 * 1000)));
+    return `${totalDays}d`;
+  }
+  if (diffMs >= 60 * 60 * 1000) {
+    const totalHours = Math.max(1, Math.round(diffMs / (3600 * 1000)));
+    return `${totalHours}H`;
+  }
+  const totalMins = Math.max(1, Math.round(diffMs / (60 * 1000)));
+  return `${totalMins}m`;
+}
+
+function fetchTokenFromHub(port) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/`, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => {
+        const m = data.match(/"csrfToken":"([^"]+)"/);
+        resolve(m ? m[1] : null);
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(1500, () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+function fetchQuotaFromHub(port, token) {
+  return new Promise((resolve) => {
+    const postData = '{}';
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port,
+        path: '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          'x-antigravity-csrf-token': token,
+          'x-codeium-csrf-token': token,
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('error', () => resolve(null));
+    req.setTimeout(2000, () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.write(postData);
+    req.end();
+  });
+}
 
 export const MAIN_REPLY_KEYBOARD = {
   keyboard: [[{ text: REPLY_BTN_SWITCH_WORKSPACE }, { text: REPLY_BTN_SETTINGS }]],
@@ -147,6 +223,9 @@ export class BotController {
 
     /** @type {Map<string, number>} */
     this.lastAuthPromptMessageIdByChat = new Map();
+
+    this.agyUsageSummaryProvider = null;
+    this.agyQuotaCache = { timestamp: 0, data: null };
   }
 
   #trackAsync(promise) {
@@ -2397,6 +2476,66 @@ export class BotController {
     return [...GEMINI_MODEL_FAMILIES];
   }
 
+  async getAgyUsageSummary(modelId = '') {
+    if (this.agyUsageSummaryProvider) {
+      return this.agyUsageSummaryProvider(modelId);
+    }
+
+    let quotaData = null;
+    const now = this.nowProvider ? this.nowProvider().getTime() : Date.now();
+    if (this.agyQuotaCache?.data && now - this.agyQuotaCache.timestamp < 45000) {
+      quotaData = this.agyQuotaCache.data;
+    } else {
+      let ports = [];
+      try {
+        const out = execSync('ps -A -o args', { encoding: 'utf8', timeout: 2000 });
+        for (const line of out.split('\n')) {
+          const match = line.match(/agy.*--hub-port=(\d+)/);
+          if (match) ports.push(Number(match[1]));
+        }
+      } catch {}
+
+      for (const port of ports) {
+        const token = await fetchTokenFromHub(port);
+        if (!token) continue;
+        const res = await fetchQuotaFromHub(port, token);
+        if (res?.response?.groups?.length) {
+          quotaData = res.response;
+          this.agyQuotaCache = { timestamp: now, data: quotaData };
+          break;
+        }
+      }
+    }
+
+    if (!quotaData) return '';
+
+    const groups = quotaData.groups || [];
+    const isClaudeOrGpt = /claude|gpt|3p/i.test(modelId);
+    const targetGroup =
+      groups.find((g) => (isClaudeOrGpt ? /claude|gpt|3p/i.test(g.displayName || '') : /gemini/i.test(g.displayName || ''))) ||
+      groups[0];
+
+    if (!targetGroup || !targetGroup.buckets) return '';
+
+    const fiveHourBucket = targetGroup.buckets.find((b) => b.window === '5h' || (b.bucketId && b.bucketId.includes('5h')));
+    const weeklyBucket = targetGroup.buckets.find((b) => b.window === 'weekly' || (b.bucketId && b.bucketId.includes('weekly')));
+
+    const parts = [];
+    if (fiveHourBucket && typeof fiveHourBucket.remainingFraction === 'number') {
+      const pct = Math.round(fiveHourBucket.remainingFraction * 100);
+      const reset = formatResetDuration(fiveHourBucket.resetTime, now);
+      parts.push(`5h: ${pct}%/${reset}`);
+    }
+    if (weeklyBucket && typeof weeklyBucket.remainingFraction === 'number') {
+      const pct = Math.round(weeklyBucket.remainingFraction * 100);
+      const reset = formatResetDuration(weeklyBucket.resetTime, now);
+      parts.push(`W: ${pct}%/${reset}`);
+    }
+
+    if (parts.length === 0) return '';
+    return `(${parts.join('|')})`;
+  }
+
   // ── Step 1: Select AI Execution Engine ─────────────────────────────────────
   async sendWorkspaceEngineSelect(chatId, wsId, editMessageId = null) {
     const ws = this.getWorkspace(wsId);
@@ -2413,11 +2552,17 @@ export class BotController {
     const engineLabel = this.getEngineLabel(currentEngine);
     const modelInfo = this.resolveWorkspaceModel(ws);
 
+    let agyUsageSuffix = '';
+    try {
+      agyUsageSuffix = await this.getAgyUsageSummary(modelInfo.modelId || '');
+    } catch {}
+
     const engineButtons = configuredEngines.map((eng) => {
       const isSelected = currentEngine === eng.id;
+      const usageStr = eng.id === 'agy' && agyUsageSuffix ? ` ${agyUsageSuffix}` : '';
       return [
         {
-          text: `${isSelected ? '✅ ' : '⚡ '}${eng.label}`,
+          text: `${isSelected ? '✅ ' : '⚡ '}${eng.label}${usageStr}`,
           callback_data: `eng:${ws.id}:${eng.id}`
         }
       ];

@@ -53,7 +53,8 @@ import {
   BotController,
   REPLY_BTN_SETTINGS,
   REPLY_BTN_SWITCH_IDE,
-  REPLY_BTN_SWITCH_WORKSPACE
+  REPLY_BTN_SWITCH_WORKSPACE,
+  formatResetDuration
 } from '../src/bot-controller.mjs';
 import { PassThrough } from 'node:stream';
 import {
@@ -2127,6 +2128,22 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(dynStep1Cbs.includes('eng:payments:direct-api'));
     assert.ok(!dynStep1Cbs.includes('eng:payments:aider'));
     assert.ok(!dynStep1Cbs.includes('eng:payments:codex'));
+
+    // Verify AGY CLI button label displays usage summary: AGY CLI (5h: 63%/2H|W: 34%/4d)
+    const baseNow = 1700000000000;
+    assert.equal(formatResetDuration(new Date(baseNow + 4 * 86400000).toISOString(), baseNow), '4d');
+    assert.equal(formatResetDuration(new Date(baseNow + 2 * 3600000).toISOString(), baseNow), '2H');
+    assert.equal(formatResetDuration(new Date(baseNow + 45 * 60000).toISOString(), baseNow), '45m');
+    assert.equal(formatResetDuration(new Date(baseNow - 1000).toISOString(), baseNow), '0m');
+
+    controller.agyUsageSummaryProvider = () => '(5h: 63%/2H|W: 34%/4d)';
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('eng:menu:payments', dynStep1.message_id));
+    const agyUsageStep1 = mockTg.lastSentOrEdited();
+    const agyBtn = agyUsageStep1.reply_markup.inline_keyboard.flat().find((b) => b.callback_data === 'eng:payments:agy');
+    assert.ok(agyBtn, 'AGY button must exist');
+    assert.match(agyBtn.text, /AGY CLI \(5h: 63%\/2H\|W: 34%\/4d\)/);
+    controller.agyUsageSummaryProvider = null;
 
     // Switch to Direct API engine -> Step 2 displays ONLY OpenAI models
     mockTg.clearSent();
