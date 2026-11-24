@@ -4589,11 +4589,12 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
+    const isMulti = deployTargets.length > 1;
     const jobNames = deployTargets.map((d) => `${d.jenkinsJob} (${d.branch})`).join(', ');
     const progressMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🚀 <b>Triggered Jenkins deploy…</b>\n\n` +
+        `🚀 <b>Triggered ${isMulti ? `${deployTargets.length} ` : ''}Jenkins deploy${isMulti ? 's in parallel' : ''}…</b>\n\n` +
         `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `<code>${escapeHtml(jobNames)}</code>`
     });
@@ -4628,60 +4629,105 @@ export class BotController {
   async #executeJenkinsBuilds(chatId, ws, st, deployTargets, isAfterRevert, progressMsgId) {
     const wsLabel = this.getWorkspaceLabel(ws);
     const jenkins = this.jenkinsFactory(this.configStore.config.jenkins);
-    const results = [];
-    let failedBuild = null;
 
+    const jobStatusMap = new Map();
     for (const target of deployTargets) {
-      let lastEditMs = 0;
+      jobStatusMap.set(target.jenkinsJob, 'triggered');
+    }
+
+    let lastEditMs = 0;
+    const updateProgressMessage = () => {
+      const nowMs = Date.now();
+      if (!progressMsgId || nowMs - lastEditMs <= 3000) return;
+      lastEditMs = nowMs;
+      const statusLines = deployTargets.map((t) => {
+        const status = jobStatusMap.get(t.jenkinsJob) || 'running…';
+        return deployTargets.length > 1
+          ? `• ${shortJenkinsJobLabel(t.jenkinsJob)}: ${status}`
+          : status;
+      });
+      this.telegram
+        .editMessageText({
+          chatId,
+          messageId: progressMsgId,
+          text:
+            `🚀 <b>Jenkins running…</b>\n\n` +
+            `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+            `<code>${escapeHtml(statusLines.join('\n'))}</code>`
+        })
+        .catch(() => {});
+    };
+
+    const buildPromises = deployTargets.map(async (target) => {
       try {
-        this.log('jenkins', `Build triggered for ${target.jenkinsJob} (branch: ${target.branch})`);
+        this.log('jenkins', `Build triggered for ${target.jenkinsJob} (branch: ${target.branch})`, wsLabel);
         this.log('stage', `Jenkins CI Deploying: ${target.jenkinsJob}`);
+
         const res = await jenkins.triggerAndWaitForBuild({
           jobName: target.jenkinsJob,
           branch: target.branch,
           onUpdate: (upd) => {
-            this.log('jenkins', `Build update: ${target.jenkinsJob} (${upd.message || upd.status})`);
-            const nowMs = Date.now();
-            if (progressMsgId && nowMs - lastEditMs > 3000) {
-              lastEditMs = nowMs;
-              this.telegram
-                .editMessageText({
-                  chatId,
-                  messageId: progressMsgId,
-                  text:
-                    `🚀 <b>Jenkins running…</b>\n\n` +
-                    `<b>${escapeHtml(wsLabel)}</b>\n\n` +
-                    `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
-                })
-                .catch(() => {});
-            }
+            const updText = upd.message || upd.status || 'running';
+            this.log('jenkins', `Build update: ${target.jenkinsJob} (${updText})`, wsLabel);
+            jobStatusMap.set(target.jenkinsJob, updText);
+            updateProgressMessage();
           }
         });
 
-        results.push(res);
-        this.log('jenkins', `Build ${target.jenkinsJob} completed with status: ${res.result}`);
+        this.log('jenkins', `Build ${target.jenkinsJob} completed with status: ${res.result}`, wsLabel);
         this.log('stage', res.result === 'SUCCESS' ? 'CI/CD Build Succeeded' : 'CI/CD Build Failed');
-        if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
-          failedBuild = {
+        jobStatusMap.set(target.jenkinsJob, res.result);
+        updateProgressMessage();
+
+        return { target, res, error: null };
+      } catch (err) {
+        this.log('jenkins', `Build ${target.jenkinsJob} failed with error: ${err.message}`, wsLabel);
+        jobStatusMap.set(target.jenkinsJob, 'ERROR');
+        updateProgressMessage();
+
+        return {
+          target,
+          res: {
             jobName: target.jenkinsJob,
             branch: target.branch,
-            buildNumber: res.buildNumber,
-            buildUrl: res.buildUrl,
-            result: res.result,
-            errorLog: res.consoleTail || `Jenkins ended with status ${res.result}`
-          };
-          break;
-        }
-      } catch (err) {
-        failedBuild = {
+            buildNumber: null,
+            buildUrl: '',
+            result: 'ERROR',
+            consoleTail: err.message
+          },
+          error: err
+        };
+      }
+    });
+
+    const buildResults = await Promise.all(buildPromises);
+
+    const results = [];
+    const failedBuilds = [];
+
+    for (const { target, res, error } of buildResults) {
+      results.push(res);
+      if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
+        failedBuilds.push({
           jobName: target.jenkinsJob,
           branch: target.branch,
-          buildNumber: null,
-          buildUrl: '',
-          result: 'ERROR',
-          errorLog: err.message
-        };
-        break;
+          buildNumber: res.buildNumber,
+          buildUrl: res.buildUrl,
+          result: res.result || 'ERROR',
+          errorLog: res.consoleTail || error?.message || `Jenkins ended with status ${res.result}`
+        });
+      }
+    }
+
+    let failedBuild = null;
+    if (failedBuilds.length > 0) {
+      failedBuild = failedBuilds[0];
+      if (failedBuilds.length > 1) {
+        const extraSummary = failedBuilds
+          .slice(1)
+          .map((f) => `• ${f.jobName} (#${f.buildNumber || '?'}) ${f.result}`)
+          .join('\n');
+        failedBuild.errorLog = `${failedBuild.errorLog}\n\nAdditionally failed:\n${extraSummary}`;
       }
     }
 
@@ -5032,11 +5078,12 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
+    const isMultiProd = prodTargets.length > 1;
     const jobNames = prodTargets.map((d) => `${d.jenkinsJob} (${d.branch})`).join(', ');
     const progressMsg = await this.telegram.sendMessage({
       chatId,
       text:
-        `🚀 <b>Triggered Production Jenkins deploy…</b>\n\n` +
+        `🚀 <b>Triggered ${isMultiProd ? `${prodTargets.length} ` : ''}Production Jenkins deploy${isMultiProd ? 's in parallel' : ''}…</b>\n\n` +
         `<b>${escapeHtml(wsLabel)}</b>\n\n` +
         `<code>${escapeHtml(jobNames)}</code>`
     });
@@ -5070,55 +5117,96 @@ export class BotController {
   async #executeProdJenkinsBuilds(chatId, ws, st, prodTargets, progressMsgId) {
     const wsLabel = this.getWorkspaceLabel(ws);
     const jenkins = this.jenkinsFactory(this.configStore.config.jenkins);
-    const results = [];
-    let failedBuild = null;
 
+    const jobStatusMap = new Map();
     for (const target of prodTargets) {
-      let lastEditMs = 0;
+      jobStatusMap.set(target.jenkinsJob, 'triggered');
+    }
+
+    let lastEditMs = 0;
+    const updateProgressMessage = () => {
+      const nowMs = Date.now();
+      if (!progressMsgId || nowMs - lastEditMs <= 3000) return;
+      lastEditMs = nowMs;
+      const statusLines = prodTargets.map((t) => {
+        const status = jobStatusMap.get(t.jenkinsJob) || 'running…';
+        return prodTargets.length > 1
+          ? `• ${shortJenkinsJobLabel(t.jenkinsJob)}: ${status}`
+          : status;
+      });
+      this.telegram
+        .editMessageText({
+          chatId,
+          messageId: progressMsgId,
+          text:
+            `🚀 <b>Production Jenkins running…</b>\n\n` +
+            `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+            `<code>${escapeHtml(statusLines.join('\n'))}</code>`
+        })
+        .catch(() => {});
+    };
+
+    const buildPromises = prodTargets.map(async (target) => {
       try {
+        this.log('jenkins', `Production build triggered for ${target.jenkinsJob} (branch: ${target.branch})`, wsLabel);
         const res = await jenkins.triggerAndWaitForBuild({
           jobName: target.jenkinsJob,
           branch: target.branch,
           onUpdate: (upd) => {
-            const nowMs = Date.now();
-            if (progressMsgId && nowMs - lastEditMs > 3000) {
-              lastEditMs = nowMs;
-              this.telegram
-                .editMessageText({
-                  chatId,
-                  messageId: progressMsgId,
-                  text:
-                    `🚀 <b>Production Jenkins running…</b>\n\n` +
-                    `<b>${escapeHtml(wsLabel)}</b>\n\n` +
-                    `<code>${escapeHtml(upd.message || `${target.jenkinsJob}: ${upd.status}`)}</code>`
-                })
-                .catch(() => {});
-            }
+            const updText = upd.message || upd.status || 'running';
+            jobStatusMap.set(target.jenkinsJob, updText);
+            updateProgressMessage();
           }
         });
-
-        results.push(res);
-        if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
-          failedBuild = {
+        jobStatusMap.set(target.jenkinsJob, res.result);
+        updateProgressMessage();
+        return { target, res, error: null };
+      } catch (err) {
+        jobStatusMap.set(target.jenkinsJob, 'ERROR');
+        updateProgressMessage();
+        return {
+          target,
+          res: {
             jobName: target.jenkinsJob,
             branch: target.branch,
-            buildNumber: res.buildNumber,
-            buildUrl: res.buildUrl,
-            result: res.result,
-            errorLog: res.consoleTail || `Jenkins ended with status ${res.result}`
-          };
-          break;
-        }
-      } catch (err) {
-        failedBuild = {
+            buildNumber: null,
+            buildUrl: '',
+            result: 'ERROR',
+            consoleTail: err.message
+          },
+          error: err
+        };
+      }
+    });
+
+    const buildResults = await Promise.all(buildPromises);
+
+    const results = [];
+    const failedBuilds = [];
+
+    for (const { target, res, error } of buildResults) {
+      results.push(res);
+      if (res.result !== 'SUCCESS' && res.result !== 'TRIGGERED') {
+        failedBuilds.push({
           jobName: target.jenkinsJob,
           branch: target.branch,
-          buildNumber: null,
-          buildUrl: '',
-          result: 'ERROR',
-          errorLog: err.message
-        };
-        break;
+          buildNumber: res.buildNumber,
+          buildUrl: res.buildUrl,
+          result: res.result || 'ERROR',
+          errorLog: res.consoleTail || error?.message || `Jenkins ended with status ${res.result}`
+        });
+      }
+    }
+
+    let failedBuild = null;
+    if (failedBuilds.length > 0) {
+      failedBuild = failedBuilds[0];
+      if (failedBuilds.length > 1) {
+        const extraSummary = failedBuilds
+          .slice(1)
+          .map((f) => `• ${f.jobName} (#${f.buildNumber || '?'}) ${f.result}`)
+          .join('\n');
+        failedBuild.errorLog = `${failedBuild.errorLog}\n\nAdditionally failed:\n${extraSummary}`;
       }
     }
 

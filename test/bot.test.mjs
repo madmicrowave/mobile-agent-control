@@ -3579,4 +3579,37 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(loggedLines.some((l) => l.includes('[agent] Tool execution: read_file (DONE) [ws:Payments Platform]')));
     assert.ok(loggedLines.some((l) => l.includes('[agent] Checked session tests. All 2 tests passed. [ws:Payments Platform]')));
   });
+
+  it('triggers multiple Jenkins jobs in parallel when running all workspace jobs', async () => {
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(path.join(coreRepo.workRoot, 'payments_gate', 'parallel_test.txt'), 'parallel deploy test\n');
+      return {
+        conversationId: 'conv-parallel-jobs',
+        response: 'Implemented parallel jobs change'
+      };
+    };
+
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Change for parallel jobs deploy'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('jnk:all:payments'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(mockJenkins.triggeredBuilds.length, 2);
+    const triggeredNames = mockJenkins.triggeredBuilds.map((b) => b.jobName);
+    assert.ok(triggeredNames.includes('Prod/payments/payments.example.com-GATE'));
+    assert.ok(triggeredNames.includes('Prod/payments/payments.example.com-BACKOFFICE'));
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+    assert.ok(mockTg.sentMessages.some((m) => /Triggered 2 Jenkins deploys in parallel/.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Jenkins Deploy Succeeded!/.test(m.text)));
+  });
 });
