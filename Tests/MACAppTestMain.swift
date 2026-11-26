@@ -394,15 +394,38 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         expect(resolvedOvershoot != nil, "Expected tolerance-handled click above screen top boundary to resolve to a display")
     }
 
-    // Verify log revision tracking and clearLogs behavior
+    // Verify log revision tracking, buffer limits, batch logs, and clearLogs behavior
     let initialCount = appState.logLines.count
     let initialRev = appState.logRevision
     appState.appendLog("Sample log line 1")
     expect(appState.logRevision == initialRev + 1, "appendLog increments logRevision")
     expect(appState.logLines.count == initialCount + 1, "logLines holds appended line")
+
+    // Test buffer limit enforcement and trimming
+    let origLimit = appState.maxLogLines
+    appState.maxLogLines = 5
+    for i in 1...10 {
+        appState.appendLog("Overflow test line \(i)")
+    }
+    expect(appState.logLines.count == 5, "Expected logLines capped at maxLogLines (5), got \(appState.logLines.count)")
+    expect(appState.logLines.last == "Overflow test line 10", "Latest line is preserved")
+    expect(appState.logLines.first == "Overflow test line 6", "Oldest excess lines trimmed")
+    expect(appState.logStartSequence > 0, "logStartSequence tracks trimmed offset")
+
+    // Test batch appendLogs
+    let revBeforeBatch = appState.logRevision
+    appState.appendLogs(["Batch line 1", "Batch line 2", "Batch line 3"])
+    expect(appState.logRevision == revBeforeBatch + 1, "appendLogs increments logRevision once for batch")
+    expect(appState.logLines.count == 5, "Buffer remains capped at 5 after batch append")
+    expect(appState.logLines.last == "Batch line 3", "Latest batch item preserved")
+
     appState.clearLogs()
-    expect(appState.logRevision == initialRev + 2, "clearLogs increments logRevision")
+    expect(appState.logRevision == revBeforeBatch + 2, "clearLogs increments logRevision")
     expect(appState.logLines.isEmpty, "clearLogs clears all logLines")
+    expect(appState.logStartSequence == 0, "clearLogs resets sequence offset")
+
+    // Restore original buffer limit
+    appState.maxLogLines = origLimit
     expect(!appState.status.isRunningOrStarting, "Stopped bot state reflects isRunningOrStarting == false")
 
     controller.menuNeedsUpdate(controller.menu)

@@ -59,7 +59,23 @@ public final class MACAppState: ObservableObject {
     @Published public var selectedWorkspaceId: String?
     @Published public var logLines: [String] = []
     @Published public var logRevision: Int = 0
-    @Published public var maxLogLines: Int = 3000
+    @Published public var logStartSequence: UInt64 = 0
+
+    public static let defaultMaxLogLines: Int = 3000
+    public static let maxLogLinesStorageKey = "MAC_maxLogLines"
+
+    @Published public var maxLogLines: Int = {
+        let stored = UserDefaults.standard.integer(forKey: "MAC_maxLogLines")
+        return stored > 0 ? stored : 3000
+    }() {
+        didSet {
+            UserDefaults.standard.set(maxLogLines, forKey: Self.maxLogLinesStorageKey)
+            if trimLogsToMax() {
+                logRevision &+= 1
+            }
+            onStateChanged?()
+        }
+    }
     @Published public var statusBannerMessage: String?
     @Published public var activeStage: String = "Idle"
     @Published public var activeStageDetail: String = "Ready for Telegram requests"
@@ -437,12 +453,15 @@ public final class MACAppState: ObservableObject {
     private func handleBotOutput(_ chunk: String, token: UUID) {
         guard token == currentProcessToken else { return }
         let lines = chunk.components(separatedBy: .newlines)
+        var batch: [String] = []
+        batch.reserveCapacity(lines.count)
+
         for rawLine in lines {
             let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
             // Strip raw password stars prompt noise
             if trimmed.contains("Enter session password for this bot run:") { continue }
-            appendLog(rawLine)
+            batch.append(rawLine)
             updateStageFromLogLine(rawLine)
 
             if let range = rawLine.range(of: #"Telegram Bot\s*:\s*@([A-Za-z0-9_]+)"#, options: .regularExpression) {
@@ -465,6 +484,10 @@ public final class MACAppState: ObservableObject {
                 }
             }
         }
+
+        if !batch.isEmpty {
+            appendLogs(batch)
+        }
     }
 
     public func appendLog(_ line: String) {
@@ -473,15 +496,27 @@ public final class MACAppState: ObservableObject {
         logRevision &+= 1
     }
 
-    public func trimLogsToMax() {
+    public func appendLogs(_ newLines: [String]) {
+        guard !newLines.isEmpty else { return }
+        logLines.append(contentsOf: newLines)
+        trimLogsToMax()
+        logRevision &+= 1
+    }
+
+    @discardableResult
+    public func trimLogsToMax() -> Bool {
         if logLines.count > maxLogLines {
-            logLines.removeFirst(logLines.count - maxLogLines)
-            logRevision &+= 1
+            let excess = logLines.count - maxLogLines
+            logStartSequence &+= UInt64(excess)
+            logLines.removeFirst(excess)
+            return true
         }
+        return false
     }
 
     public func clearLogs() {
         logLines.removeAll()
+        logStartSequence = 0
         logRevision &+= 1
     }
 

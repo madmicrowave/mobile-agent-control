@@ -3515,7 +3515,7 @@ private enum MACLogCategory: String, CaseIterable, Identifiable {
 }
 
 private struct MACParsedLogLine: Identifiable {
-    let id: Int
+    let id: UInt64
     let rawText: String
     let source: MACLogCategory
     let badgeLabel: String
@@ -3544,11 +3544,50 @@ private struct MACParsedLogLine: Identifiable {
     }
 }
 
+@MainActor
 private final class LiveActivityTabVM: ObservableObject {
     @Published var selectedCategories: Set<MACLogCategory> = [.all]
     @Published var searchText: String = ""
     @Published var autoScroll: Bool = true
     @Published var scrollTrigger: Int = 0
+
+    private(set) var lastRevision: Int = -1
+    private(set) var cachedParsedLines: [MACParsedLogLine] = []
+    private(set) var categoryCounts: [MACLogCategory: Int] = [:]
+
+    func updateLogsIfNeeded(appState: MACAppState) {
+        guard appState.logRevision != lastRevision else { return }
+        lastRevision = appState.logRevision
+
+        var currentActiveWorkspace: String? = nil
+        var lines: [MACParsedLogLine] = []
+        lines.reserveCapacity(appState.logLines.count)
+        var counts: [MACLogCategory: Int] = [:]
+
+        let startSeq = appState.logStartSequence
+        for (idx, line) in appState.logLines.enumerated() {
+            let seqId = startSeq &+ UInt64(idx)
+            var item = Self.parseLogLine(line, index: idx, sequenceId: seqId)
+            if let explicitWs = item.workspaceName, !explicitWs.isEmpty {
+                currentActiveWorkspace = explicitWs
+            } else if item.source == .agent && item.workspaceName == nil {
+                item = item.withWorkspaceName(currentActiveWorkspace)
+            }
+
+            if line.contains("Turn execution finished") ||
+               line.contains("Agent stopped/failed") ||
+               line.contains("Ready for Telegram requests") ||
+               line.contains("⚪ Bot stopped") {
+                currentActiveWorkspace = nil
+            }
+
+            lines.append(item)
+            counts[item.source, default: 0] += 1
+        }
+
+        cachedParsedLines = lines
+        categoryCounts = counts
+    }
 
     func toggleCategory(_ cat: MACLogCategory) {
         if cat == .all {
@@ -3576,6 +3615,153 @@ private final class LiveActivityTabVM: ObservableObject {
         }
         return selectedCategories.contains(cat)
     }
+
+    static func parseLogLine(_ line: String, index: Int, sequenceId: UInt64) -> MACParsedLogLine {
+        let lower = line.lowercased()
+        let isError = line.contains("❌") || line.contains("🔴") || lower.contains("error:") || lower.contains("failed") || lower.contains("fatal") || line.contains("⛔")
+        let isSuccess = line.contains("✅") || lower.contains("success") || lower.contains("restored")
+        let isWarning = line.contains("⚠️") || lower.contains("conflict") || lower.contains("retrying") || lower.contains("wait")
+        let isLoading = lower.contains("...") || lower.contains("in progress") || lower.contains("running") || lower.contains("polling") || lower.contains("dispatching") || lower.contains("triggering")
+
+        // Determine category
+        let category: MACLogCategory
+        let badgeLabel: String
+        let badgeColor: Color
+        let icon: String
+
+        if isError {
+            category = .errors
+            badgeLabel = "ERR"
+            badgeColor = .red
+            icon = "exclamationmark.triangle.fill"
+        } else if line.contains("[telegram]") || lower.contains("@botfather") || line.contains("Telegram Bot") || lower.contains("long-polling") {
+            category = .telegram
+            badgeLabel = "TG"
+            badgeColor = .cyan
+            icon = "paperplane.fill"
+        } else if line.contains("[agent]") || line.contains("[stage]") || line.contains("[tool]") || lower.contains("agy") || lower.contains("gemini") || lower.contains("claude") || lower.contains("deepseek") || lower.contains("model:") || lower.contains("agent runner") {
+            category = .agent
+            badgeLabel = line.contains("[tool]") ? "TOOL" : "AGENT"
+            badgeColor = line.contains("[tool]") ? Color(red: 0.88, green: 0.38, blue: 0.95) : .purple
+            icon = line.contains("[tool]") ? "wrench.and.screwdriver.fill" : "cpu.fill"
+        } else if line.contains("[jenkins]") || line.contains("[github]") || line.contains("[gcp]") || line.contains("[ci]") || line.contains("Jenkins") || lower.contains("build #") || lower.contains("ci/cd") {
+            category = .cicd
+            badgeLabel = line.contains("[github]") ? "GH" : (line.contains("[gcp]") ? "GCP" : "JENKINS")
+            badgeColor = isSuccess ? .green : (isError ? .red : .blue)
+            icon = "shippingbox.fill"
+        } else if line.contains("[git]") || lower.contains("commit") || lower.contains("push") || lower.contains("branch") || lower.contains("git:") {
+            category = .git
+            badgeLabel = "GIT"
+            badgeColor = .mint
+            icon = "point.3.connected.trianglepath.dotted"
+        } else if line.contains("[MAC]") || lower.contains("sleep") || lower.contains("session auth") || lower.contains("login item") {
+            category = .system
+            badgeLabel = "MAC"
+            badgeColor = isSuccess ? .green : .secondary
+            icon = "apple.logo"
+        } else {
+            category = .system
+            badgeLabel = "LOG"
+            badgeColor = .secondary.opacity(0.8)
+            icon = "terminal"
+        }
+
+        // Determine message color
+        let msgColor: Color
+        if isError {
+            msgColor = Color(red: 1.0, green: 0.45, blue: 0.45)
+        } else if isSuccess {
+            msgColor = Color(red: 0.4, green: 0.9, blue: 0.5)
+        } else if isWarning {
+            msgColor = Color(red: 1.0, green: 0.78, blue: 0.3)
+        } else if category == .telegram {
+            msgColor = Color(red: 0.5, green: 0.85, blue: 1.0)
+        } else if category == .agent {
+            msgColor = Color(red: 0.85, green: 0.72, blue: 1.0)
+        } else if category == .cicd {
+            msgColor = Color(red: 0.65, green: 0.82, blue: 1.0)
+        } else if category == .git {
+            msgColor = Color(red: 0.55, green: 0.92, blue: 0.82)
+        } else if line.contains("===") || line.contains("---") {
+            msgColor = Color.secondary.opacity(0.65)
+        } else {
+            msgColor = Color.primary.opacity(0.88)
+        }
+
+        var cleanMsg = line
+        var wsName: String? = nil
+
+        // Extract [ws:NAME] tag if present
+        if let wsRange = cleanMsg.range(of: #"\s*\[ws:([^\]]+)\]"#, options: .regularExpression) {
+            let matched = String(cleanMsg[wsRange])
+            if let innerStart = matched.range(of: "[ws:")?.upperBound,
+               let innerEnd = matched.range(of: "]", options: .backwards)?.lowerBound {
+                let candidate = String(matched[innerStart..<innerEnd]).trimmingCharacters(in: .whitespaces)
+                if !candidate.isEmpty {
+                    wsName = candidate
+                }
+            }
+            cleanMsg.removeSubrange(wsRange)
+        }
+
+        // Fallback extraction if no [ws:NAME] tag
+        if wsName == nil {
+            if let quoteRange = cleanMsg.range(of: #"workspace\s+"([^"]+)""#, options: .regularExpression) {
+                let matched = String(cleanMsg[quoteRange])
+                if let firstQuote = matched.firstIndex(of: "\""),
+                   let lastQuote = matched.lastIndex(of: "\""),
+                   firstQuote < lastQuote {
+                    let candidate = String(matched[matched.index(after: firstQuote)..<lastQuote]).trimmingCharacters(in: .whitespaces)
+                    if !candidate.isEmpty {
+                        wsName = candidate
+                    }
+                }
+            } else if let execRange = cleanMsg.range(of: #"AI Agent Executing:\s*(.+)$"#, options: .regularExpression) {
+                let matched = String(cleanMsg[execRange])
+                if let colon = matched.firstIndex(of: ":") {
+                    let candidate = String(matched[matched.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    if !candidate.isEmpty {
+                        wsName = candidate
+                    }
+                }
+            }
+        }
+
+        if cleanMsg.hasPrefix("[MAC] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[bot] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[telegram] ") {
+            cleanMsg = String(cleanMsg.dropFirst(11))
+        } else if cleanMsg.hasPrefix("[agent] ") {
+            cleanMsg = String(cleanMsg.dropFirst(8))
+        } else if cleanMsg.hasPrefix("[tool] ") {
+            cleanMsg = String(cleanMsg.dropFirst(7))
+        } else if cleanMsg.hasPrefix("[git] ") {
+            cleanMsg = String(cleanMsg.dropFirst(6))
+        } else if cleanMsg.hasPrefix("[jenkins] ") {
+            cleanMsg = String(cleanMsg.dropFirst(10))
+        } else if cleanMsg.hasPrefix("[stage] ") {
+            cleanMsg = String(cleanMsg.dropFirst(8))
+        }
+
+        let displayNum = sequenceId &+ 1
+        let lineNumStr = displayNum < 1000 ? String(format: "%03llu", displayNum) : "\(displayNum)"
+
+        return MACParsedLogLine(
+            id: sequenceId,
+            rawText: line,
+            source: category,
+            badgeLabel: badgeLabel,
+            badgeColor: badgeColor,
+            icon: icon,
+            lineNumber: lineNumStr,
+            workspaceName: wsName,
+            messageText: cleanMsg,
+            messageColor: msgColor,
+            isLoading: isLoading
+        )
+    }
 }
 
 private struct LiveActivityTabView: View {
@@ -3584,28 +3770,8 @@ private struct LiveActivityTabView: View {
     @StateObject private var resourceMonitor = MACResourceMonitor()
 
     private var parsedLines: [MACParsedLogLine] {
-        var currentActiveWorkspace: String? = nil
-        var result: [MACParsedLogLine] = []
-        result.reserveCapacity(appState.logLines.count)
-
-        for (idx, line) in appState.logLines.enumerated() {
-            var item = parseLogLine(line, index: idx)
-            if let explicitWs = item.workspaceName, !explicitWs.isEmpty {
-                currentActiveWorkspace = explicitWs
-            } else if item.source == .agent && item.workspaceName == nil {
-                item = item.withWorkspaceName(currentActiveWorkspace)
-            }
-
-            if line.contains("Turn execution finished") ||
-               line.contains("Agent stopped/failed") ||
-               line.contains("Ready for Telegram requests") ||
-               line.contains("⚪ Bot stopped") {
-                currentActiveWorkspace = nil
-            }
-
-            result.append(item)
-        }
-        return result
+        vm.updateLogsIfNeeded(appState: appState)
+        return vm.cachedParsedLines
     }
 
     private var filteredLines: [MACParsedLogLine] {
@@ -3658,6 +3824,15 @@ private struct LiveActivityTabView: View {
         return formatter.string(from: NSNumber(value: appState.maxLogLines)) ?? "\(appState.maxLogLines)"
     }
 
+    private var formattedLogCount: String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: appState.logLines.count)) ?? "\(appState.logLines.count)"
+    }
+
     private var headerBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "terminal.fill")
@@ -3668,26 +3843,43 @@ private struct LiveActivityTabView: View {
                 .font(.system(size: 14.5, weight: .bold))
 
             Menu {
-                Button("Buffer limit: 1,000 lines") {
+                let currentLimit = appState.maxLogLines
+                Button(currentLimit == 1000 ? "✓ Buffer limit: 1,000 lines" : "Buffer limit: 1,000 lines") {
                     appState.maxLogLines = 1000
                     appState.trimLogsToMax()
                 }
-                Button("Buffer limit: 3,000 lines (default)") {
+                Button(currentLimit == 3000 ? "✓ Buffer limit: 3,000 lines (default)" : "Buffer limit: 3,000 lines (default)") {
                     appState.maxLogLines = 3000
                     appState.trimLogsToMax()
                 }
-                Button("Buffer limit: 5,000 lines") {
+                Button(currentLimit == 5000 ? "✓ Buffer limit: 5,000 lines" : "Buffer limit: 5,000 lines") {
                     appState.maxLogLines = 5000
                     appState.trimLogsToMax()
                 }
-                Button("Buffer limit: 10,000 lines") {
+                Button(currentLimit == 10000 ? "✓ Buffer limit: 10,000 lines" : "Buffer limit: 10,000 lines") {
                     appState.maxLogLines = 10000
                     appState.trimLogsToMax()
                 }
+                Button(currentLimit == 20000 ? "✓ Buffer limit: 20,000 lines" : "Buffer limit: 20,000 lines") {
+                    appState.maxLogLines = 20000
+                    appState.trimLogsToMax()
+                }
+                Divider()
+                Button(role: .destructive) {
+                    appState.clearLogs()
+                } label: {
+                    Label(appState.logLines.isEmpty ? "Clear Buffer" : "Clear Buffer (\(formattedLogCount) lines)", systemImage: "trash")
+                }
+                .disabled(appState.logLines.isEmpty)
             } label: {
-                HStack(spacing: 4) {
-                    Text("Buffer: \(formattedBufferLimit)")
+                HStack(spacing: 5) {
+                    Text("Buffer: \(formattedLogCount) / \(formattedBufferLimit)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    if appState.logLines.count >= appState.maxLogLines && !appState.logLines.isEmpty {
+                        Text("(Full)")
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .foregroundColor(.orange)
+                    }
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8))
                 }
@@ -3825,10 +4017,11 @@ private struct LiveActivityTabView: View {
             Button {
                 appState.clearLogs()
             } label: {
-                Label("Clear", systemImage: "trash")
+                Label(appState.logLines.isEmpty ? "Clear" : "Clear (\(formattedLogCount))", systemImage: "trash")
                     .lineLimit(1)
             }
             .controlSize(.small)
+            .help(appState.logLines.isEmpty ? "Clear log buffer" : "Clear \(formattedLogCount) log lines from buffer")
             .disabled(appState.logLines.isEmpty)
             .fixedSize()
         }
@@ -4129,7 +4322,7 @@ private struct LiveActivityTabView: View {
             Text(item.lineNumber)
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.55))
-                .frame(width: 28, alignment: .trailing)
+                .frame(width: 38, alignment: .trailing)
 
             // Workspace Badge
             if let ws = item.workspaceName, !ws.isEmpty {
@@ -4172,150 +4365,7 @@ private struct LiveActivityTabView: View {
 
     private func countForCategory(_ cat: MACLogCategory) -> Int {
         if cat == .all { return appState.logLines.count }
-        return parsedLines.filter { $0.source == cat }.count
-    }
-
-    private func parseLogLine(_ line: String, index: Int) -> MACParsedLogLine {
-        let lower = line.lowercased()
-        let isError = line.contains("❌") || line.contains("🔴") || lower.contains("error:") || lower.contains("failed") || lower.contains("fatal") || line.contains("⛔")
-        let isSuccess = line.contains("✅") || lower.contains("success") || lower.contains("restored")
-        let isWarning = line.contains("⚠️") || lower.contains("conflict") || lower.contains("retrying") || lower.contains("wait")
-        let isLoading = lower.contains("...") || lower.contains("in progress") || lower.contains("running") || lower.contains("polling") || lower.contains("dispatching") || lower.contains("triggering")
-
-        // Determine category
-        let category: MACLogCategory
-        let badgeLabel: String
-        let badgeColor: Color
-        let icon: String
-
-        if isError {
-            category = .errors
-            badgeLabel = "ERR"
-            badgeColor = .red
-            icon = "exclamationmark.triangle.fill"
-        } else if line.contains("[telegram]") || lower.contains("@botfather") || line.contains("Telegram Bot") || lower.contains("long-polling") {
-            category = .telegram
-            badgeLabel = "TG"
-            badgeColor = .cyan
-            icon = "paperplane.fill"
-        } else if line.contains("[agent]") || line.contains("[stage]") || line.contains("[tool]") || lower.contains("agy") || lower.contains("gemini") || lower.contains("claude") || lower.contains("deepseek") || lower.contains("model:") || lower.contains("agent runner") {
-            category = .agent
-            badgeLabel = line.contains("[tool]") ? "TOOL" : "AGENT"
-            badgeColor = line.contains("[tool]") ? Color(red: 0.88, green: 0.38, blue: 0.95) : .purple
-            icon = line.contains("[tool]") ? "wrench.and.screwdriver.fill" : "cpu.fill"
-        } else if line.contains("[jenkins]") || line.contains("[github]") || line.contains("[gcp]") || line.contains("[ci]") || line.contains("Jenkins") || lower.contains("build #") || lower.contains("ci/cd") {
-            category = .cicd
-            badgeLabel = line.contains("[github]") ? "GH" : (line.contains("[gcp]") ? "GCP" : "JENKINS")
-            badgeColor = isSuccess ? .green : (isError ? .red : .blue)
-            icon = "shippingbox.fill"
-        } else if line.contains("[git]") || lower.contains("commit") || lower.contains("push") || lower.contains("branch") || lower.contains("git:") {
-            category = .git
-            badgeLabel = "GIT"
-            badgeColor = .mint
-            icon = "point.3.connected.trianglepath.dotted"
-        } else if line.contains("[MAC]") || lower.contains("sleep") || lower.contains("session auth") || lower.contains("login item") {
-            category = .system
-            badgeLabel = "MAC"
-            badgeColor = isSuccess ? .green : .secondary
-            icon = "apple.logo"
-        } else {
-            category = .system
-            badgeLabel = "LOG"
-            badgeColor = .secondary.opacity(0.8)
-            icon = "terminal"
-        }
-
-        // Determine message color
-        let msgColor: Color
-        if isError {
-            msgColor = Color(red: 1.0, green: 0.45, blue: 0.45)
-        } else if isSuccess {
-            msgColor = Color(red: 0.4, green: 0.9, blue: 0.5)
-        } else if isWarning {
-            msgColor = Color(red: 1.0, green: 0.78, blue: 0.3)
-        } else if category == .telegram {
-            msgColor = Color(red: 0.5, green: 0.85, blue: 1.0)
-        } else if category == .agent {
-            msgColor = Color(red: 0.85, green: 0.72, blue: 1.0)
-        } else if category == .cicd {
-            msgColor = Color(red: 0.65, green: 0.82, blue: 1.0)
-        } else if category == .git {
-            msgColor = Color(red: 0.55, green: 0.92, blue: 0.82)
-        } else if line.contains("===") || line.contains("---") {
-            msgColor = Color.secondary.opacity(0.65)
-        } else {
-            msgColor = Color.primary.opacity(0.88)
-        }
-
-        var cleanMsg = line
-        var wsName: String? = nil
-
-        // Extract [ws:NAME] tag if present
-        if let wsRange = cleanMsg.range(of: #"\s*\[ws:([^\]]+)\]"#, options: .regularExpression) {
-            let matched = String(cleanMsg[wsRange])
-            if let innerStart = matched.range(of: "[ws:")?.upperBound,
-               let innerEnd = matched.range(of: "]", options: .backwards)?.lowerBound {
-                let candidate = String(matched[innerStart..<innerEnd]).trimmingCharacters(in: .whitespaces)
-                if !candidate.isEmpty {
-                    wsName = candidate
-                }
-            }
-            cleanMsg.removeSubrange(wsRange)
-        }
-
-        // Fallback extraction if no [ws:NAME] tag
-        if wsName == nil {
-            if let quoteRange = cleanMsg.range(of: #"workspace\s+"([^"]+)""#, options: .regularExpression) {
-                let matched = String(cleanMsg[quoteRange])
-                if let firstQuote = matched.firstIndex(of: "\""),
-                   let lastQuote = matched.lastIndex(of: "\""),
-                   firstQuote < lastQuote {
-                    let candidate = String(matched[matched.index(after: firstQuote)..<lastQuote]).trimmingCharacters(in: .whitespaces)
-                    if !candidate.isEmpty {
-                        wsName = candidate
-                    }
-                }
-            } else if let execRange = cleanMsg.range(of: #"AI Agent Executing:\s*(.+)$"#, options: .regularExpression) {
-                let matched = String(cleanMsg[execRange])
-                if let colon = matched.firstIndex(of: ":") {
-                    let candidate = String(matched[matched.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-                    if !candidate.isEmpty {
-                        wsName = candidate
-                    }
-                }
-            }
-        }
-
-        if cleanMsg.hasPrefix("[MAC] ") {
-            cleanMsg = String(cleanMsg.dropFirst(6))
-        } else if cleanMsg.hasPrefix("[bot] ") {
-            cleanMsg = String(cleanMsg.dropFirst(6))
-        } else if cleanMsg.hasPrefix("[telegram] ") {
-            cleanMsg = String(cleanMsg.dropFirst(11))
-        } else if cleanMsg.hasPrefix("[agent] ") {
-            cleanMsg = String(cleanMsg.dropFirst(8))
-        } else if cleanMsg.hasPrefix("[tool] ") {
-            cleanMsg = String(cleanMsg.dropFirst(7))
-        } else if cleanMsg.hasPrefix("[git] ") {
-            cleanMsg = String(cleanMsg.dropFirst(6))
-        } else if cleanMsg.hasPrefix("[jenkins] ") {
-            cleanMsg = String(cleanMsg.dropFirst(10))
-        } else if cleanMsg.hasPrefix("[stage] ") {
-            cleanMsg = String(cleanMsg.dropFirst(8))
-        }
-
-        return MACParsedLogLine(
-            id: index,
-            rawText: line,
-            source: category,
-            badgeLabel: badgeLabel,
-            badgeColor: badgeColor,
-            icon: icon,
-            lineNumber: String(format: "%03d", index + 1),
-            workspaceName: wsName,
-            messageText: cleanMsg,
-            messageColor: msgColor,
-            isLoading: isLoading
-        )
+        vm.updateLogsIfNeeded(appState: appState)
+        return vm.categoryCounts[cat] ?? 0
     }
 }
