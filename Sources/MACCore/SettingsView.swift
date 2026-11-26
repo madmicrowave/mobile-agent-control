@@ -680,16 +680,19 @@ private struct GeneralTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // Section 1: AI Engines & Models
+                // Section 1: Settings (Autostart & Sleep Prevention)
+                settingsSectionCard
+
+                // Section 2: AI Engines & Models
                 aiEnginesSectionCard
 
-                // Section 2: Telegram
+                // Section 3: Telegram
                 telegramSectionCard
 
-                // Section 3: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
+                // Section 4: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
 
-                // Section 4: Configuration Backup & Restore (Export / Import)
+                // Section 5: Configuration Backup & Restore (Export / Import)
                 configExportImportSectionCard
             }
             .padding(.trailing, 8)
@@ -1195,6 +1198,31 @@ private struct GeneralTabView: View {
         }
     }
 
+    private var settingsSectionCard: some View {
+        MACSectionCard(title: "Settings", systemImage: "gearshape.fill") {
+            HStack(spacing: 16) {
+                Toggle(
+                    "Start application automatically at macOS startup (Autostart)",
+                    isOn: Binding(
+                        get: { appState.launchAtLogin },
+                        set: { appState.toggleLaunchAtLogin($0) }
+                    )
+                )
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
+                        .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
+                    Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
+                }
+                .fixedSize()
+            }
+        }
+    }
+
     private var aiEnginesSectionCard: some View {
         MACSectionCard(title: "AI Engines & Models", systemImage: "cpu.fill") {
             // 1. Engine selection (First selection, labeled "Engine")
@@ -1348,29 +1376,6 @@ private struct GeneralTabView: View {
                 aiderTabContent
             default:
                 agyTabContent
-            }
-
-            Divider()
-
-            HStack(spacing: 16) {
-                Toggle(
-                    "Start application automatically at macOS startup (Autostart)",
-                    isOn: Binding(
-                        get: { appState.launchAtLogin },
-                        set: { appState.toggleLaunchAtLogin($0) }
-                    )
-                )
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
-                        .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
-                    Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
-                }
-                .fixedSize()
             }
         }
     }
