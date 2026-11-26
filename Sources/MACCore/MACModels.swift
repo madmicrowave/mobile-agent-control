@@ -15,6 +15,8 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         MACModelOption(id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tiered: true),
         MACModelOption(id: "gemini-4-argon", label: "Gemini 4 Argon", tiered: true),
         MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true),
+        MACModelOption(id: "gemini-4-neon", label: "Gemini 4 Neon", tiered: true),
+        MACModelOption(id: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen", tiered: true),
         MACModelOption(id: "google-cloud-code", label: "Google Cloud Code", tiered: true),
         MACModelOption(id: "openai-codex", label: "OpenAI Codex", tiered: false),
         MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true),
@@ -36,11 +38,11 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         switch norm {
         case "agy", "auto", "":
             return allOptions.filter {
-                ["gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "claude-opus-5-5", "claude-sonnet-5-5"].contains($0.id)
+                ["gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen", "claude-opus-5-5", "claude-sonnet-5-5"].contains($0.id)
             }
         case "cloudcode", "cloud-code":
             return allOptions.filter {
-                ["google-cloud-code", "gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon"].contains($0.id)
+                ["google-cloud-code", "gemini-3.8-flash", "gemini-4-argon", "gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen"].contains($0.id)
             }
         case "codex":
             return allOptions.filter {
@@ -59,16 +61,21 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         }
     }
 
-    public static let validLevels: [String] = ["low", "medium", "high"]
+    public static let validLevels: [String] = ["low", "medium", "high", "xhigh"]
 
     public static func normalizeFamilyAndLevel(rawModel: String, rawLevel: String) -> (family: String, level: String, modelId: String, displayLabel: String) {
         let cleanLevelRaw = rawLevel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let mappedLevel = (cleanLevelRaw == "xhigh" || cleanLevelRaw == "max") ? "high" : cleanLevelRaw
+        let mappedLevel: String
+        if cleanLevelRaw == "xhigh" || cleanLevelRaw == "extra high" || cleanLevelRaw == "extra-high" || cleanLevelRaw == "max" {
+            mappedLevel = "xhigh"
+        } else {
+            mappedLevel = cleanLevelRaw
+        }
         var level = validLevels.contains(mappedLevel) ? mappedLevel : ""
 
         let trimmedModel = rawModel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         var baseFamily = trimmedModel
-        for suffix in ["-low", "-medium", "-high"] where trimmedModel.hasSuffix(suffix) {
+        for suffix in ["-low", "-medium", "-high", "-xhigh"] where trimmedModel.hasSuffix(suffix) {
             baseFamily = String(trimmedModel.dropLast(suffix.count))
             if level.isEmpty {
                 level = String(suffix.dropFirst())

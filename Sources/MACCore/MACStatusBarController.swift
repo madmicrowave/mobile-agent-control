@@ -425,40 +425,59 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         }
     }
 
+    @objc private func handleExportConfigClicked() {
+        MACConfigExportImportManager.exportConfig(appState: appState)
+    }
+
+    @objc private func handleImportConfigClicked() {
+        MACConfigExportImportManager.importConfig(appState: appState)
+    }
+
     private func installStandardApplicationMenu() {
         let mainMenu = NSMenu()
 
-        // 1. App Menu
+        // 1. App Menu (AI MAC)
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
-        let appMenu = NSMenu(title: "MAC")
-        let aboutItem = NSMenuItem(title: "About MAC", action: #selector(handleAboutClicked), keyEquivalent: "")
+        let appMenu = NSMenu(title: "AI MAC")
+
+        let attrTitle = NSMutableAttributedString(
+            string: "AI ",
+            attributes: [
+                .foregroundColor: NSColor.systemBlue,
+                .font: NSFont.boldSystemFont(ofSize: 11)
+            ]
+        )
+        attrTitle.append(NSAttributedString(
+            string: "MAC",
+            attributes: [
+                .foregroundColor: NSColor.labelColor,
+                .font: NSFont.boldSystemFont(ofSize: 13.5)
+            ]
+        ))
+        appMenuItem.attributedTitle = attrTitle
+        appMenuItem.title = "AI MAC"
+
+        let aboutItem = NSMenuItem(title: "About AI MAC", action: #selector(handleAboutClicked), keyEquivalent: "")
         aboutItem.target = self
         appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
-        let openItem = NSMenuItem(title: "Open App", action: #selector(handleOpenAppClicked), keyEquivalent: ",")
-        openItem.target = self
-        appMenu.addItem(openItem)
-        appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+
+        let exportItem = NSMenuItem(title: "Export Configuration...", action: #selector(handleExportConfigClicked), keyEquivalent: "e")
+        exportItem.target = self
+        appMenu.addItem(exportItem)
+
+        let importItem = NSMenuItem(title: "Import Configuration...", action: #selector(handleImportConfigClicked), keyEquivalent: "i")
+        importItem.target = self
+        appMenu.addItem(importItem)
+
         appMenu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit AI MAC", action: #selector(handleQuitClicked), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
 
-        // 2. Edit Menu (essential so Cmd+C / Cmd+V / Cmd+A / Cmd+Z work in text fields)
-        let editMenuItem = NSMenuItem()
-        mainMenu.addItem(editMenuItem)
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
-        editMenu.addItem(.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
-        editMenuItem.submenu = editMenu
+        // Edit menu removed per user instruction (edit at top must be removed not needed)
 
         NSApp.mainMenu = mainMenu
     }

@@ -247,6 +247,60 @@ public final class MACAppState: ObservableObject {
         }
     }
 
+    public func autodetectAgyModels() async -> [MACModelOption] {
+        let agyBin = config.agyBin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "agy" : config.agyBin
+        let proc = Process()
+        let pipe = Pipe()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = [agyBin, "models"]
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+
+        var env = ProcessInfo.processInfo.environment
+        let extraPaths = [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin"
+        ]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
+        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+        proc.environment = env
+
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+            var discovered: [MACModelOption] = []
+            var seen = Set<String>()
+
+            for line in text.components(separatedBy: .newlines) {
+                let clean = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if clean.isEmpty || clean.contains("Fetching available models") { continue }
+                let parts = clean.split(separator: " ", omittingEmptySubsequences: true)
+                guard let first = parts.first else { continue }
+                let fullId = String(first)
+
+                var family = fullId
+                for sfx in ["-low", "-medium", "-high", "-xhigh"] where fullId.hasSuffix(sfx) {
+                    family = String(fullId.dropLast(sfx.count))
+                    break
+                }
+
+                if seen.insert(family).inserted {
+                    let label = MACModelOption.allOptions.first(where: { $0.id == family })?.label
+                        ?? family.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
+                    discovered.append(MACModelOption(id: family, label: label, tiered: true))
+                }
+            }
+            return discovered
+        } catch {
+            return []
+        }
+    }
+
     public func toggleLaunchAtLogin(_ enabled: Bool) {
         do {
             try launchAtLoginManager.setEnabled(enabled)

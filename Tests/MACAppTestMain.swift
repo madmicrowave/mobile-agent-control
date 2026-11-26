@@ -159,9 +159,17 @@ private func testConfigStoreRoundTrip() throws {
 private func testEngineModelFilteringAndEngineConfiguration() throws {
     let agyModels = MACModelOption.options(forEngine: "agy").map(\.id)
     expect(agyModels.contains("gemini-3.8-flash"), "AGY supports gemini-3.8-flash")
+    expect(agyModels.contains("gemini-4-neon"), "AGY supports gemini-4-neon")
+    expect(agyModels.contains("gemini-4-hydrogen"), "AGY supports gemini-4-hydrogen")
     expect(agyModels.contains("claude-opus-5-5"), "AGY supports claude-opus-5-5")
     expect(!agyModels.contains("openai-codex"), "AGY must not list openai-codex")
     expect(!agyModels.contains("gpt-oss-120b-medium"), "AGY must not list gpt-oss-120b-medium")
+
+    let (neonFam, neonLvl, _, _) = MACModelOption.normalizeFamilyAndLevel(rawModel: "gemini-4-neon", rawLevel: "extra high")
+    expect(neonFam == "gemini-4-neon" && neonLvl == "xhigh", "extra high maps to xhigh for neon")
+
+    let (normFam, normLvl, _, _) = MACModelOption.normalizeFamilyAndLevel(rawModel: "gemini-4-hydrogen-xhigh", rawLevel: "")
+    expect(normFam == "gemini-4-hydrogen" && normLvl == "xhigh", "hydrogen-xhigh suffix resolves to xhigh")
 
     let codexModels = MACModelOption.options(forEngine: "codex").map(\.id)
     expect(codexModels.contains("openai-codex"), "Codex supports openai-codex")
@@ -468,6 +476,28 @@ func testResourceMonitorAndMetrics() throws {
     print("✓ MACResourceMonitor process sampling and metrics formatting passed")
 }
 
+private func testConfigExportImportAndCrypto() throws {
+    let plainData = "{\"telegramBotToken\":\"12345:TOKEN\",\"agentEngine\":\"agy\"}".data(using: .utf8)!
+    let password = "superSecretPassword123"
+
+    let encryptedPayload = try MACConfigCrypto.encrypt(data: plainData, password: password)
+    expect(encryptedPayload.count > 44, "Encrypted payload must contain salt, nonce, ciphertext, and tag")
+
+    let decryptedData = try MACConfigCrypto.decrypt(data: encryptedPayload, password: password)
+    expect(decryptedData == plainData, "Decrypted data must match original plaintext")
+
+    // Wrong password must throw
+    var wrongPasswordThrew = false
+    do {
+        _ = try MACConfigCrypto.decrypt(data: encryptedPayload, password: "wrongPassword")
+    } catch {
+        wrongPasswordThrew = true
+    }
+    expect(wrongPasswordThrew, "Decryption with wrong password must fail")
+
+    print("✓ MACConfigCrypto AES-GCM encryption & decryption round trip passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -480,6 +510,7 @@ struct MACAppTests {
             try testJobParsingAndRepoDiscovery()
             try testConfigStoreRoundTrip()
             try testEngineModelFilteringAndEngineConfiguration()
+            try testConfigExportImportAndCrypto()
             try testSleepPreventerAndLaunchAgent()
             try MainActor.assumeIsolated {
                 try testMenuBarControllerAndBotLifecycle()

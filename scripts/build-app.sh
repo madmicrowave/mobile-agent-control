@@ -44,9 +44,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>mac</string>
+  <string>AI MAC</string>
   <key>CFBundleDisplayName</key>
-  <string>mac</string>
+  <string>AI MAC</string>
   <key>CFBundleIdentifier</key>
   <string>com.domonk.mac</string>
   <key>CFBundleVersion</key>

@@ -675,28 +675,10 @@ export async function runConfigureAiEnginesWizard({
 
   const p = (idx, text) => (stepOffset !== null ? `${stepOffset + idx}. ${text}` : `${idx + 1}. ${text}`);
 
-  // 1. Default Model
-  const curModel = cfg.defaultModel || 'gemini-3.8-flash';
-  const modelAns = (
-    await ask(`${p(0, 'Default AI Model')} [${curModel}]: `)
-  ).trim();
-  if (modelAns) {
-    cfg.defaultModel = modelAns;
-  }
-
-  // 2. Default Effort Level
-  const curLevel = cfg.defaultModelLevel || 'high';
-  const levelAns = (
-    await ask(`${p(1, 'Default Effort (low / medium / high)')} [${curLevel}]: `)
-  ).trim().toLowerCase();
-  if (['low', 'medium', 'high'].includes(levelAns)) {
-    cfg.defaultModelLevel = levelAns;
-  }
-
-  // 3. Agent Engine
+  // 1. Engine
   const curEngine = cfg.agentEngine || 'agy';
   const engineAns = (
-    await ask(`${p(2, 'AI Execution Engine (1: agy [default], 2: cloudcode, 3: codex, 4: direct-api, 5: aider)')} [${curEngine}]: `)
+    await ask(`${p(0, 'Engine (1: agy [default], 2: cloudcode, 3: codex, 4: direct-api, 5: aider)')} [${curEngine}]: `)
   ).trim().toLowerCase();
   if (['1', 'agy'].includes(engineAns)) {
     cfg.agentEngine = 'agy';
@@ -708,6 +690,24 @@ export async function runConfigureAiEnginesWizard({
     cfg.agentEngine = 'direct-api';
   } else if (['5', 'aider'].includes(engineAns)) {
     cfg.agentEngine = 'aider';
+  }
+
+  // 2. Default Model
+  const curModel = cfg.defaultModel || 'gemini-3.8-flash';
+  const modelAns = (
+    await ask(`${p(1, 'Default Model')} [${curModel}]: `)
+  ).trim();
+  if (modelAns) {
+    cfg.defaultModel = modelAns;
+  }
+
+  // 3. Default Effort Level
+  const curLevel = cfg.defaultModelLevel || 'high';
+  const levelAns = (
+    await ask(`${p(2, 'Default Effort (low / medium / high / xhigh)')} [${curLevel}]: `)
+  ).trim().toLowerCase();
+  if (['low', 'medium', 'high', 'xhigh'].includes(levelAns)) {
+    cfg.defaultModelLevel = levelAns;
   }
 
   // 4. CLI Binaries

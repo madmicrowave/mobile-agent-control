@@ -449,10 +449,12 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     );
   });
 
-  it('builds agy CLI arguments with attached photos, --add-dir, AI models (Gemini & Claude Opus 5.5), and 3 model levels (low/medium/high)', () => {
-    assert.deepEqual(VALID_MODEL_LEVELS, ['low', 'medium', 'high']);
+  it('builds agy CLI arguments with attached photos, --add-dir, AI models (Gemini & Claude Opus 5.5), and 4 model levels (low/medium/high/xhigh)', () => {
+    assert.deepEqual(VALID_MODEL_LEVELS, ['low', 'medium', 'high', 'xhigh']);
     assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'claude-opus-5-5'));
     assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'gemini-4-carbon'));
+    assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'gemini-4-neon'));
+    assert.ok(GEMINI_MODEL_FAMILIES.some((f) => f.family === 'gemini-4-hydrogen'));
 
     const resolved = resolveEffectiveModelAndLevel({ model: 'gemeni 3.8', modelLevel: 'high' });
     assert.equal(resolved.modelId, 'gemini-3.8-flash-high');
@@ -464,6 +466,22 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     });
     assert.equal(switchedTier.modelId, 'gemini-3.8-flash-low');
     assert.equal(switchedTier.effort, 'low');
+
+    const neonXHigh = resolveEffectiveModelAndLevel({
+      model: 'gemini-4-neon',
+      modelLevel: 'extra high'
+    });
+    assert.equal(neonXHigh.modelId, 'gemini-4-neon-xhigh');
+    assert.equal(neonXHigh.effort, 'xhigh');
+    assert.equal(neonXHigh.displayLabel, 'Gemini 4 Neon (xhigh)');
+
+    const hydrogenXHigh = resolveEffectiveModelAndLevel({
+      model: 'gemini 4 hydrogen',
+      modelLevel: 'xhigh'
+    });
+    assert.equal(hydrogenXHigh.modelId, 'gemini-4-hydrogen-xhigh');
+    assert.equal(hydrogenXHigh.effort, 'xhigh');
+    assert.equal(hydrogenXHigh.displayLabel, 'Gemini 4 Hydrogen (xhigh)');
 
     const carbonLow = resolveEffectiveModelAndLevel({
       model: 'gemini 4 carbon',
@@ -497,13 +515,13 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.equal(opusResolved.effort, 'medium');
     assert.equal(opusResolved.displayLabel, 'Claude Opus 5.5 (medium)');
 
-    // Legacy xhigh/max normalizes cleanly to high
-    const legacyMax = resolveEffectiveModelAndLevel({
+    // Model without xhigh tier falls back to high
+    const flashMax = resolveEffectiveModelAndLevel({
       model: 'gemini-3.8-flash',
       modelLevel: 'max'
     });
-    assert.equal(legacyMax.modelId, 'gemini-3.8-flash-high');
-    assert.equal(legacyMax.effort, 'high');
+    assert.equal(flashMax.modelId, 'gemini-3.8-flash-high');
+    assert.equal(flashMax.effort, 'xhigh');
 
     const args = buildAgyArgs({
       prompt: 'Update header',

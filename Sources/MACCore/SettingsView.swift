@@ -575,10 +575,19 @@ private final class GeneralTabVM: ObservableObject {
     @Published var codexBinPath: String = ""
     @Published var cloudCodeBinPath: String = ""
     @Published var agentEngine: String = "agy"
-    @Published var selectedEngineTab: String = "agy" // "agy", "aider", "codex", "cloudcode", "direct-api"
+    @Published var selectedEngineTab: String = "agy" { // "agy", "aider", "codex", "cloudcode", "direct-api"
+        didSet {
+            let available = availableModelOptions
+            if !available.contains(where: { $0.id == defaultModelFamily }) {
+                defaultModelFamily = available.first?.id ?? "gemini-3.8-flash"
+            }
+        }
+    }
     @Published var selectedDirectApiSubtab: String = "deepseek" // "deepseek", "openai", "anthropic", "qwen", "custom"
     @Published var defaultModelFamily: String = "gemini-3.8-flash"
     @Published var defaultModelLevel: String = "high"
+    @Published var autodetectedAgyModels: [MACModelOption] = []
+    @Published var isAutodetectingModels: Bool = false
 
     // Direct API Keys & Endpoints
     @Published var deepseekApiKey: String = ""
@@ -637,8 +646,24 @@ private final class GeneralTabVM: ObservableObject {
         MACModelOption.normalizeFamilyAndLevel(rawModel: defaultModelFamily, rawLevel: defaultModelLevel).modelId
     }
 
+    var availableModelOptions: [MACModelOption] {
+        let base = MACModelOption.options(forEngine: selectedEngineTab)
+        if selectedEngineTab == "agy" && !autodetectedAgyModels.isEmpty {
+            var merged = base
+            for m in autodetectedAgyModels {
+                if !merged.contains(where: { $0.id == m.id }) {
+                    merged.append(m)
+                }
+            }
+            return merged
+        }
+        return base
+    }
+
     var selectedDefaultModelLabel: String {
-        MACModelOption.allOptions.first(where: { $0.id == defaultModelFamily })?.label ?? defaultModelFamily
+        availableModelOptions.first(where: { $0.id == defaultModelFamily })?.label
+            ?? MACModelOption.allOptions.first(where: { $0.id == defaultModelFamily })?.label
+            ?? defaultModelFamily
     }
 }
 
@@ -647,7 +672,9 @@ private struct GeneralTabView: View {
     @StateObject private var vm = GeneralTabVM()
 
     private var levelOptions: [MACSegmentedOption<String>] {
-        MACModelOption.validLevels.map { MACSegmentedOption(id: $0, title: $0, value: $0) }
+        MACModelOption.validLevels.map {
+            MACSegmentedOption(id: $0, title: $0 == "xhigh" ? "extra high" : $0, value: $0)
+        }
     }
 
     var body: some View {
@@ -662,6 +689,8 @@ private struct GeneralTabView: View {
                 // Section 3: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
 
+                // Section 4: Configuration Backup & Restore (Export / Import)
+                configExportImportSectionCard
             }
             .padding(.trailing, 8)
             .padding(.bottom, 12)
@@ -1168,64 +1197,9 @@ private struct GeneralTabView: View {
 
     private var aiEnginesSectionCard: some View {
         MACSectionCard(title: "AI Engines & Models", systemImage: "cpu.fill") {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Default AI Model")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Menu {
-                        ForEach(MACModelOption.allOptions) { opt in
-                            Button {
-                                vm.defaultModelFamily = opt.id
-                            } label: {
-                                if vm.defaultModelFamily == opt.id {
-                                    Label(opt.label, systemImage: "checkmark")
-                                } else {
-                                    Text(opt.label)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text(vm.selectedDefaultModelLabel)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            Spacer()
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.primary.opacity(0.07))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Default Effort")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Divider()
-
+            // 1. Engine selection (First selection, labeled "Engine")
             VStack(alignment: .leading, spacing: 8) {
-                Text("AI Engine")
+                Text("Engine")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -1282,6 +1256,85 @@ private struct GeneralTabView: View {
                 }
             }
 
+            // 2. Default Model and Default Effort
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Default Model")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            runModelAutodetection()
+                        } label: {
+                            HStack(spacing: 3) {
+                                if vm.isAutodetectingModels {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.system(size: 9))
+                                }
+                                Text(vm.isAutodetectingModels ? "Detecting..." : "Autodetect")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(vm.isAutodetectingModels)
+                    }
+
+                    Menu {
+                        ForEach(vm.availableModelOptions) { opt in
+                            Button {
+                                vm.defaultModelFamily = opt.id
+                            } label: {
+                                if vm.defaultModelFamily == opt.id {
+                                    Label(opt.label, systemImage: "checkmark")
+                                } else {
+                                    Text(opt.label)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text(vm.selectedDefaultModelLabel)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.primary.opacity(0.07))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Default Effort")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Divider()
+
             switch vm.selectedEngineTab {
             case "agy":
                 agyTabContent
@@ -1318,6 +1371,68 @@ private struct GeneralTabView: View {
                         .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
                 }
                 .fixedSize()
+            }
+        }
+    }
+
+    private func runModelAutodetection() {
+        vm.isAutodetectingModels = true
+        Task {
+            if vm.selectedEngineTab == "agy" {
+                let models = await appState.autodetectAgyModels()
+                await MainActor.run {
+                    vm.isAutodetectingModels = false
+                    if !models.isEmpty {
+                        vm.autodetectedAgyModels = models
+                        if !vm.availableModelOptions.contains(where: { $0.id == vm.defaultModelFamily }) {
+                            vm.defaultModelFamily = vm.availableModelOptions.first?.id ?? "gemini-3.8-flash"
+                        }
+                        appState.statusBannerMessage = "Autodetected \(models.count) model families from agy CLI."
+                    } else {
+                        appState.statusBannerMessage = "No additional models detected from agy CLI."
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    vm.isAutodetectingModels = false
+                    appState.statusBannerMessage = "Using standard verified models for \(vm.selectedEngineTab)."
+                }
+            }
+        }
+    }
+
+    private var configExportImportSectionCard: some View {
+        MACSectionCard(title: "Configuration Backup & Restore", systemImage: "arrow.triangle.2.circlepath.circle.fill") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Export or import all General settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        MACConfigExportImportManager.exportConfig(appState: appState)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Export Configuration...")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .controlSize(.regular)
+
+                    Button {
+                        MACConfigExportImportManager.importConfig(appState: appState)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Import Configuration...")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .controlSize(.regular)
+                }
             }
         }
     }
@@ -2420,7 +2535,9 @@ private struct WorkspaceEditorFormView: View {
     }
 
     private var levelOptions: [MACSegmentedOption<String>] {
-        MACModelOption.validLevels.map { MACSegmentedOption(id: $0, title: $0, value: $0) }
+        MACModelOption.validLevels.map {
+            MACSegmentedOption(id: $0, title: $0 == "xhigh" ? "extra high" : $0, value: $0)
+        }
     }
 
     private var workspaceEngineOptions: [MACSegmentedOption<String>] {

@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-export const VALID_MODEL_LEVELS = ['low', 'medium', 'high'];
+export const VALID_MODEL_LEVELS = ['low', 'medium', 'high', 'xhigh'];
 
 export const GEMINI_MODEL_FAMILIES = [
   {
@@ -46,6 +46,20 @@ export const GEMINI_MODEL_FAMILIES = [
       'gemeni 4 carbon'
     ],
     tieredLevels: ['low', 'medium', 'high']
+  },
+  {
+    shortCode: 'g4n',
+    family: 'gemini-4-neon',
+    label: 'Gemini 4 Neon',
+    aliases: ['gemini-4-neon', 'gemini 4 neon', 'neon'],
+    tieredLevels: ['low', 'medium', 'high', 'xhigh']
+  },
+  {
+    shortCode: 'g4h',
+    family: 'gemini-4-hydrogen',
+    label: 'Gemini 4 Hydrogen',
+    aliases: ['gemini-4-hydrogen', 'gemini 4 hydrogen', 'hydrogen'],
+    tieredLevels: ['low', 'medium', 'high', 'xhigh']
   },
   {
     shortCode: 'co55',
@@ -359,7 +373,7 @@ export function isFatalAgentResponseError(responseText) {
  */
 export function resolveEffectiveModelAndLevel({ model = '', modelLevel = '' } = {}) {
   const rawLevel = String(modelLevel || '').trim().toLowerCase();
-  const normalizedLevel = ['xhigh', 'max'].includes(rawLevel) ? 'high' : rawLevel;
+  const normalizedLevel = ['extra high', 'extra-high', 'max'].includes(rawLevel) ? 'xhigh' : rawLevel;
   const explicitLevel = VALID_MODEL_LEVELS.includes(normalizedLevel) ? normalizedLevel : '';
 
   const rawModel = String(model || '').trim();
@@ -374,8 +388,8 @@ export function resolveEffectiveModelAndLevel({ model = '', modelLevel = '' } = 
     };
   }
 
-  // Detect if rawModel already ends with a tier suffix like `-low`, `-medium`, `-high`
-  const suffixMatch = lowerModel.match(/^(.*)-(low|medium|high)$/);
+  // Detect if rawModel already ends with a tier suffix like `-low`, `-medium`, `-high`, `-xhigh`
+  const suffixMatch = lowerModel.match(/^(.*)-(low|medium|high|xhigh)$/);
   const baseCandidate = suffixMatch ? suffixMatch[1] : lowerModel;
   const suffixLevel = suffixMatch ? suffixMatch[2] : '';
 
@@ -393,7 +407,7 @@ export function resolveEffectiveModelAndLevel({ model = '', modelLevel = '' } = 
     if (matchedFamily.tieredLevels.length > 0) {
       const modelTier = matchedFamily.tieredLevels.includes(effectiveEffort)
         ? effectiveEffort
-        : 'high';
+        : (matchedFamily.tieredLevels.includes('high') ? 'high' : matchedFamily.tieredLevels[0]);
       const resolvedId = `${matchedFamily.family}-${modelTier}`;
       return {
         family: matchedFamily.family,
@@ -499,7 +513,7 @@ export async function discoverGeminiModelFamilies(
   for (const item of rawModels) {
     const id = String(item.id || '').trim().toLowerCase();
     if (!id.startsWith('gemini-')) continue;
-    const tierMatch = id.match(/^(.*)-(low|medium|high)$/);
+    const tierMatch = id.match(/^(.*)-(low|medium|high|xhigh)$/);
     const family = tierMatch ? tierMatch[1] : id;
     const tier = tierMatch ? tierMatch[2] : '';
     const cleanLabel = String(item.label || family)

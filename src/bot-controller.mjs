@@ -2660,7 +2660,13 @@ export class BotController {
       familyRows.push(familyButtons.slice(i, i + 2));
     }
 
-    const levelButtons = VALID_MODEL_LEVELS.map((lvl) => {
+    const selectedFamily = availableFamilies.find((f) => f.family === updatedModelInfo.family);
+    const supportedLevels =
+      selectedFamily && selectedFamily.tieredLevels && selectedFamily.tieredLevels.length > 0
+        ? selectedFamily.tieredLevels
+        : ['low', 'medium', 'high'];
+
+    const levelButtons = supportedLevels.map((lvl) => {
       const isSelected = updatedModelInfo.effort === lvl;
       return {
         text: `${isSelected ? '✅ ' : ''}${lvl.toUpperCase()}`,
@@ -2811,7 +2817,7 @@ export class BotController {
     if (!matchedFam) {
       await this.telegram.sendMessage({
         chatId,
-        text: `⚠️ Choose one of the supported models below (${GEMINI_MODEL_FAMILIES.map((f) => escapeHtml(f.label)).join(', ')}) and levels (<code>low</code> / <code>medium</code> / <code>high</code>):`
+        text: `⚠️ Choose one of the supported models below (${GEMINI_MODEL_FAMILIES.map((f) => escapeHtml(f.label)).join(', ')}) and levels (<code>low</code> / <code>medium</code> / <code>high</code> / <code>xhigh</code>):`
       });
       await this.sendWorkspaceRepoInfo(chatId, ws.id);
       return;
