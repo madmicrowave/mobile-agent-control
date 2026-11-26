@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
-import { resolveDefaultAgyBin, normalizeAgyTimeout, DEFAULT_AGY_TIMEOUT } from './agy-runner.mjs';
+import { resolveDefaultAgyBin, normalizeAgyTimeout, isAgyTimeoutDisabled, DEFAULT_AGY_TIMEOUT } from './agy-runner.mjs';
 import { isExecutableFile, resolveDefaultAiderBin, resolveDefaultCodexBin, resolveDefaultCloudCodeBin } from './agent-runner.mjs';
 
 export const INITIAL_WORKSPACES_SEED = [];
@@ -278,7 +278,7 @@ export class ConfigStore {
     if (!this.config.agentEngine || this.config.agentEngine === 'auto') {
       this.config.agentEngine = process.env.AGENT_ENGINE || 'agy';
     }
-    if (!this.config.agentTimeout) {
+    if (!this.config.agentTimeout || this.config.agentTimeout === '5m0s') {
       this.config.agentTimeout = process.env.AGENT_TIMEOUT || DEFAULT_AGY_TIMEOUT;
     }
     this.config.agentTimeout = normalizeAgyTimeout(this.config.agentTimeout);

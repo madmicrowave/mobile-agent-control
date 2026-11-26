@@ -33,6 +33,7 @@ import {
   isFatalAgentResponseError,
   isAgyTimeoutError,
   normalizeAgyTimeout,
+  isAgyTimeoutDisabled,
   DEFAULT_AGY_TIMEOUT,
   MAX_AGY_TIMEOUT_SECONDS,
   resolveEffectiveModelAndLevel
@@ -525,14 +526,24 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.match(args[1], /Attached User Photo\(s\)/);
     assert.match(args[1], /\/tmp\/bot-uploads\/shot1\.jpg/);
 
-    // Timeout normalization & capping: defaults to 5m0s, strictly capped at 5 minutes max, never 30 minutes
-    assert.equal(normalizeAgyTimeout(), '5m0s');
-    assert.equal(normalizeAgyTimeout('30m0s'), '5m0s');
-    assert.equal(normalizeAgyTimeout('30m'), '5m0s');
-    assert.equal(normalizeAgyTimeout('10m'), '5m0s');
-    assert.equal(normalizeAgyTimeout('600s'), '5m0s');
+    // Timeout normalization & capping: defaults to 30m0s, strictly capped at 30 minutes max, supports disabling with 0s/none/disabled/off
+    assert.equal(normalizeAgyTimeout(), '30m0s');
+    assert.equal(normalizeAgyTimeout('30m0s'), '30m0s');
+    assert.equal(normalizeAgyTimeout('30m'), '30m0s');
+    assert.equal(normalizeAgyTimeout('10m'), '10m0s');
+    assert.equal(normalizeAgyTimeout('600s'), '10m0s');
     assert.equal(normalizeAgyTimeout('2m30s'), '2m30s');
     assert.equal(normalizeAgyTimeout('120s'), '2m0s');
+    assert.equal(normalizeAgyTimeout('45m'), '30m0s');
+    assert.equal(normalizeAgyTimeout('60m'), '30m0s');
+    assert.equal(normalizeAgyTimeout('0'), '0s');
+    assert.equal(normalizeAgyTimeout('0s'), '0s');
+    assert.equal(normalizeAgyTimeout('none'), '0s');
+    assert.equal(normalizeAgyTimeout('disabled'), '0s');
+    assert.equal(normalizeAgyTimeout('off'), '0s');
+    assert.ok(isAgyTimeoutDisabled('0s'));
+    assert.ok(isAgyTimeoutDisabled('disabled'));
+    assert.equal(isAgyTimeoutDisabled('30m0s'), false);
 
     // Timeout error detection & non-fatal resolution
     assert.ok(isAgyTimeoutError('[agy] print timeout after 30m0s with turn in progress; returning partial output'));
@@ -542,11 +553,13 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
     assert.equal(isAgyTimeoutError('syntax error: unexpected token'), false);
     assert.equal(isFatalAgentResponseError('[agy] print timeout after 5m0s'), false);
 
-    // buildAgyArgs default timeout is 5m0s and strictly caps 30m0s to 5m0s
+    // buildAgyArgs default timeout is 30m0s, caps at 30m0s, and supports disabled 0s
     assert.ok(args.includes('--print-timeout'));
-    assert.equal(args[args.indexOf('--print-timeout') + 1], '5m0s');
-    const cappedArgs = buildAgyArgs({ prompt: 'test', timeout: '30m0s' });
-    assert.equal(cappedArgs[cappedArgs.indexOf('--print-timeout') + 1], '5m0s');
+    assert.equal(args[args.indexOf('--print-timeout') + 1], '30m0s');
+    const cappedArgs = buildAgyArgs({ prompt: 'test', timeout: '45m' });
+    assert.equal(cappedArgs[cappedArgs.indexOf('--print-timeout') + 1], '30m0s');
+    const disabledArgs = buildAgyArgs({ prompt: 'test', timeout: '0' });
+    assert.equal(disabledArgs[disabledArgs.indexOf('--print-timeout') + 1], '0s');
 
     const plistXml = buildLaunchdPlistXml({
       projectRoot: '/opt/mobile-agent-control',

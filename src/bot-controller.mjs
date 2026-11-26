@@ -3687,7 +3687,7 @@ export class BotController {
 
         const replyText =
           st.activeTurn?.agentResponse ||
-          'Agent completed turn execution within the 5-minute timeout window.';
+          'Agent completed turn execution within the timeout window.';
         st.activeTurn.agentResponse = replyText;
         st.messages.push({
           role: 'assistant',

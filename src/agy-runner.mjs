@@ -231,40 +231,68 @@ export const DEFAULT_AGENT_MODEL_FAMILIES = [
   }
 ];
 
-export const MAX_AGY_TIMEOUT_SECONDS = 300; // 5 minutes max
-export const DEFAULT_AGY_TIMEOUT = '5m0s';
+export const MAX_AGY_TIMEOUT_SECONDS = 1800; // 30 minutes max
+export const DEFAULT_AGY_TIMEOUT = '30m0s';
 
 /**
- * Normalizes a requested timeout string into agy CLI `--print-timeout` format (e.g. '5m0s').
- * Strictly caps the timeout to 5 minutes maximum (300 seconds), never 30 minutes.
+ * Returns true if the requested timeout indicates timeouts should be completely disabled.
+ */
+export function isAgyTimeoutDisabled(timeout) {
+  if (timeout === 0 || timeout === '0' || timeout === '0s' || timeout === false) return true;
+  if (typeof timeout === 'string') {
+    const trimmed = timeout.trim().toLowerCase();
+    return (
+      trimmed === '0' ||
+      trimmed === '0s' ||
+      trimmed === '0m' ||
+      trimmed === '0m0s' ||
+      trimmed === 'none' ||
+      trimmed === 'disable' ||
+      trimmed === 'disabled' ||
+      trimmed === 'off' ||
+      trimmed === 'unlimited'
+    );
+  }
+  return false;
+}
+
+/**
+ * Normalizes a requested timeout string into agy CLI `--print-timeout` format (e.g. '30m0s' or '0s' for disabled).
+ * Defaults to 30 minutes ('30m0s'). Allows disabling with '0', '0s', 'none', 'disabled', or 'off'.
+ * Caps positive durations to 30 minutes maximum (1800 seconds).
  */
 export function normalizeAgyTimeout(rawTimeout = DEFAULT_AGY_TIMEOUT) {
+  if (isAgyTimeoutDisabled(rawTimeout)) {
+    return '0s';
+  }
   if (!rawTimeout || typeof rawTimeout !== 'string') {
     return DEFAULT_AGY_TIMEOUT;
   }
   const trimmed = rawTimeout.trim().toLowerCase();
-  const minSecMatch = trimmed.match(
-    /^(\d+(?:\.\d+)?)\s*m(?:in|ins|inutes)?(?:\s*(\d+(?:\.\d+)?)\s*s(?:ec|ecs|econds)?)?$/
+  if (isAgyTimeoutDisabled(trimmed)) {
+    return '0s';
+  }
+
+  // Support hours, minutes, seconds format (e.g. '30m', '30m0s', '1h', '600s')
+  const hrMinSecMatch = trimmed.match(
+    /^(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*m(?:in|ins|inutes)?)?\s*(?:(\d+(?:\.\d+)?)\s*s(?:ec|ecs|econds)?)?$/
   );
-  if (minSecMatch) {
-    const mins = parseFloat(minSecMatch[1]);
-    const secs = minSecMatch[2] ? parseFloat(minSecMatch[2]) : 0;
-    const totalSecs = mins * 60 + secs;
-    if (totalSecs > MAX_AGY_TIMEOUT_SECONDS || totalSecs <= 0) {
+  if (hrMinSecMatch && (hrMinSecMatch[1] || hrMinSecMatch[2] || hrMinSecMatch[3])) {
+    const hours = hrMinSecMatch[1] ? parseFloat(hrMinSecMatch[1]) : 0;
+    const mins = hrMinSecMatch[2] ? parseFloat(hrMinSecMatch[2]) : 0;
+    const secs = hrMinSecMatch[3] ? parseFloat(hrMinSecMatch[3]) : 0;
+    const totalSecs = hours * 3600 + mins * 60 + secs;
+    if (totalSecs <= 0) {
+      return '0s';
+    }
+    if (totalSecs > MAX_AGY_TIMEOUT_SECONDS) {
       return DEFAULT_AGY_TIMEOUT;
     }
-    return `${Math.floor(mins)}m${Math.floor(secs)}s`;
-  }
-  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s(?:ec|ecs|econds)?$/);
-  if (secMatch) {
-    const totalSecs = parseFloat(secMatch[1]);
-    if (totalSecs > MAX_AGY_TIMEOUT_SECONDS || totalSecs <= 0) {
-      return DEFAULT_AGY_TIMEOUT;
-    }
-    const mins = Math.floor(totalSecs / 60);
+    const totalMins = Math.floor(totalSecs / 60);
     const remSecs = Math.floor(totalSecs % 60);
-    return `${mins}m${remSecs}s`;
+    return `${totalMins}m${remSecs}s`;
   }
+
   return DEFAULT_AGY_TIMEOUT;
 }
 
@@ -769,7 +797,7 @@ export function runAgyTurn({
         // If not finished due to timeout, count it as success per user instruction!
         const successResponse =
           trimmedResponse ||
-          'Agent finished execution (turn reached the 5-minute timeout limit and completed successfully).';
+          'Agent finished execution (turn reached the 30-minute timeout limit and completed successfully).';
         resolve({
           conversationId: detectedConversationId,
           response: successResponse,
