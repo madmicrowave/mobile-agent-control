@@ -124,6 +124,11 @@ public final class MACExportAccessoryView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 60))
         self.wantsLayer = true
 
+        historyCheckbox.frame = NSRect(x: 16, y: 10, width: 408, height: 20)
+        encryptCheckbox.frame = NSRect(x: 16, y: 36, width: 408, height: 20)
+        passwordField.frame = NSRect(x: 16, y: 64, width: 280, height: 24)
+        confirmField.frame = NSRect(x: 16, y: 94, width: 280, height: 24)
+
         historyCheckbox.translatesAutoresizingMaskIntoConstraints = false
         encryptCheckbox.translatesAutoresizingMaskIntoConstraints = false
         passwordField.translatesAutoresizingMaskIntoConstraints = false
@@ -167,6 +172,26 @@ public final class MACExportAccessoryView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    public override func layout() {
+        super.layout()
+        let isChecked = encryptCheckbox.state == .on
+        let w = max(self.bounds.width, 440)
+        historyCheckbox.frame = NSRect(x: 16, y: 10, width: w - 32, height: 20)
+        encryptCheckbox.frame = NSRect(x: 16, y: 36, width: w - 32, height: 20)
+        if isChecked {
+            passwordField.frame = NSRect(x: 16, y: 64, width: 280, height: 24)
+            confirmField.frame = NSRect(x: 16, y: 94, width: 280, height: 24)
+        }
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            needsLayout = true
+            layoutSubtreeIfNeeded()
+        }
+    }
+
     @objc public func handleCheckboxChanged() {
         let isChecked = encryptCheckbox.state == .on
         passwordField.isHidden = !isChecked
@@ -182,6 +207,8 @@ public final class MACExportAccessoryView: NSView {
             encryptedBottomConstraint.isActive = false
             unencryptedBottomConstraint.isActive = true
         }
+        self.needsLayout = true
+        self.layoutSubtreeIfNeeded()
         self.invalidateIntrinsicContentSize()
         self.window?.layoutIfNeeded()
     }
@@ -220,6 +247,7 @@ public enum MACConfigExportImportManager {
         }
 
         let accessory = MACExportAccessoryView()
+        accessory.layoutSubtreeIfNeeded()
         savePanel.accessoryView = accessory
 
         NSApp.activate(ignoringOtherApps: true)

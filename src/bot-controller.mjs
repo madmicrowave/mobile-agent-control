@@ -1327,6 +1327,15 @@ export class BotController {
     return true;
   }
 
+  #recordHistory(st, entry) {
+    if (!st || !entry) return;
+    st.history = st.history || [];
+    st.history.push(entry);
+    if (st.history.length > 3000) {
+      st.history = st.history.slice(-3000);
+    }
+  }
+
   #cancelInputBatch(wsId) {
     const batch = this.pendingInputBatches.get(wsId);
     if (!batch) return;
@@ -3884,7 +3893,7 @@ export class BotController {
         return;
       }
 
-      st.history.push({
+      this.#recordHistory(st, {
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
@@ -4105,7 +4114,7 @@ export class BotController {
     }
 
     if (st.activeTurn) {
-      st.history.push({
+      this.#recordHistory(st, {
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
@@ -4584,7 +4593,7 @@ export class BotController {
     if (!shouldRun) {
       if (isAfterRevert) {
         if (st.activeTurn) {
-          st.history.push({
+          this.#recordHistory(st, {
             id: st.activeTurn.id,
             createdAt: st.activeTurn.createdAt,
             finishedAt: this.nowProvider().toISOString(),
@@ -4887,7 +4896,7 @@ export class BotController {
 
     if (isAfterRevert) {
       if (targetTurn) {
-        st.history.push({
+        this.#recordHistory(st, {
           id: targetTurn.id,
           createdAt: targetTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
@@ -4929,7 +4938,7 @@ export class BotController {
 
     if (isParallelAgentActive) {
       if (targetTurn && targetTurn !== st.activeTurn) {
-        st.history.push({
+        this.#recordHistory(st, {
           id: targetTurn.id,
           createdAt: targetTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
@@ -5084,7 +5093,7 @@ export class BotController {
     }
 
     if (st.activeTurn) {
-      st.history.push({
+      this.#recordHistory(st, {
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
@@ -5349,7 +5358,7 @@ export class BotController {
       .join('\n');
 
     if (targetTurn && targetTurn !== st.activeTurn) {
-      st.history.push({
+      this.#recordHistory(st, {
         id: targetTurn.id,
         createdAt: targetTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
@@ -5378,7 +5387,7 @@ export class BotController {
     }
 
     if (st.activeTurn) {
-      st.history.push({
+      this.#recordHistory(st, {
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
@@ -5450,7 +5459,7 @@ export class BotController {
       const matchedRevTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: true });
       const allWsRevTargets = this.buildAllWorkspaceTargets(ws, reverted);
       if (matchedRevTargets.length === 0 && allWsRevTargets.length === 0) {
-        st.history.push({
+        this.#recordHistory(st, {
           id: st.activeTurn.id,
           createdAt: st.activeTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),

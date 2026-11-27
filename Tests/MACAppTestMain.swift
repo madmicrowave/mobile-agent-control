@@ -559,6 +559,10 @@ private func testConfigExportImportAndCrypto() throws {
     expect(accessory.passwordField.isHidden && accessory.confirmField.isHidden, "Password fields hidden when encrypt unchecked")
     expect(accessory.intrinsicContentSize.height == 60, "Accessory height returns to 60 pt when unencrypted")
 
+    accessory.layout()
+    expect(accessory.historyCheckbox.frame.width > 0 && accessory.historyCheckbox.frame.height > 0, "History checkbox frame non-zero after layout")
+    expect(accessory.encryptCheckbox.frame.width > 0 && accessory.encryptCheckbox.frame.height > 0, "Encrypt checkbox frame non-zero after layout")
+
     print("✓ MACConfigCrypto AES-GCM encryption & MACExportAccessoryView Auto Layout passed")
 }
 
@@ -671,9 +675,28 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     expect(items[4].resultLabel == "Reverted", "Fifth item result is Reverted")
     expect(items[4].user == "@maksimsge", "Generic 'User' must be resolved to real username '@maksimsge'")
 
-    // 3. Test WorkspaceTimelineVM auto-refresh countdown, tick, and reset behavior
+    // Test limit parameter on history
+    let limitedItems = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir, limit: 1)
+    expect(limitedItems.count == 4, "Expected 4 items with limit 1 (1 working + 2 queued + 1 history), got \(limitedItems.count)")
+
+    // 3. Test WorkspaceTimelineVM auto-refresh countdown, tick, and reset behavior, plus historyLimit buffer options
     let timelineVM = WorkspaceTimelineVM()
     expect(timelineVM.autoRefreshSecondsRemaining == 60, "Initial countdown is 60s")
+    expect(timelineVM.historyLimit == 100, "Default history limit is 100")
+    expect(WorkspaceTimelineVM.allowedLimits == [100, 500, 1000, 3000], "Allowed history buffer limits are 100, 500, 1000, 3000")
+
+    timelineVM.setHistoryLimit(500)
+    expect(timelineVM.historyLimit == 500, "History limit updated to 500")
+    expect(UserDefaults.standard.integer(forKey: "MACWorkHistoryLimit") == 500, "Persisted 500 to UserDefaults")
+
+    timelineVM.setHistoryLimit(3000)
+    expect(timelineVM.historyLimit == 3000, "History limit updated to 3000")
+
+    timelineVM.setHistoryLimit(9999)
+    expect(timelineVM.historyLimit == 100, "Disallowed limit falls back to default 100")
+
+    timelineVM.setHistoryLimit(100)
+    expect(timelineVM.historyLimit == 100, "History limit reset to 100")
 
     var refreshTriggered = false
     timelineVM.tick { refreshTriggered = true }

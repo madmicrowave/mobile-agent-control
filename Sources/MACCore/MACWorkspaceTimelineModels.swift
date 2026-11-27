@@ -139,7 +139,7 @@ public enum MACWorkspaceTimelineReader {
         return remMinutes > 0 ? "\(hours)h \(remMinutes)m" : "\(hours)h"
     }
 
-    public static func loadTimeline(workspace: MACWorkspace, dataDir: URL) -> [MACTimelineItem] {
+    public static func loadTimeline(workspace: MACWorkspace, dataDir: URL, limit: Int = 100) -> [MACTimelineItem] {
         let stateURL = dataDir.appendingPathComponent("state.json")
         guard let rawData = try? Data(contentsOf: stateURL),
               let json = (try? JSONSerialization.jsonObject(with: rawData)) as? [String: Any],
@@ -456,7 +456,10 @@ public enum MACWorkspaceTimelineReader {
             return da > db
         }
 
+        let effectiveLimit = limit > 0 ? limit : 100
+        let limitedHistory = historyItems.count > effectiveLimit ? Array(historyItems.prefix(effectiveLimit)) : historyItems
+
         // Return ordered timeline: Currently Working (on top) -> Queued (latest on top) -> Worked Messages (latest on top)
-        return workingItems + queuedItems + historyItems
+        return workingItems + queuedItems + limitedHistory
     }
 }

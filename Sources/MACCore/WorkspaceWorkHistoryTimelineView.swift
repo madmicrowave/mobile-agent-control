@@ -2,14 +2,27 @@ import SwiftUI
 import AppKit
 
 public final class WorkspaceTimelineVM: ObservableObject {
+    public static let defaultHistoryLimit: Int = 100
+    public static let allowedLimits: [Int] = [100, 500, 1000, 3000]
+
     @Published public var items: [MACTimelineItem] = []
     @Published public var searchText: String = ""
     @Published public var filterStatus: String = "all"
     @Published public var isReloading: Bool = false
     @Published public var expandedItemIds: Set<String> = []
     @Published public var expandedFileItemIds: Set<String> = []
+    @Published public var historyLimit: Int
 
-    public init() {}
+    public init() {
+        let stored = UserDefaults.standard.integer(forKey: "MACWorkHistoryLimit")
+        self.historyLimit = Self.allowedLimits.contains(stored) ? stored : Self.defaultHistoryLimit
+    }
+
+    public func setHistoryLimit(_ newLimit: Int) {
+        let val = Self.allowedLimits.contains(newLimit) ? newLimit : Self.defaultHistoryLimit
+        self.historyLimit = val
+        UserDefaults.standard.set(val, forKey: "MACWorkHistoryLimit")
+    }
 
     public func toggleMessageExpand(_ id: String) {
         if expandedItemIds.contains(id) {
@@ -193,6 +206,9 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
             Spacer()
 
+            // Buffer limit menu (100, 500, 1000, 3000 - default 100)
+            bufferLimitMenu
+
             // Refresh button (placed before filter, with 60s countdown counter)
             Button {
                 vm.resetCountdown()
@@ -264,6 +280,54 @@ public struct WorkspaceWorkHistoryTimelineView: View {
         .cornerRadius(6)
     }
 
+    private var formattedHistoryLimit: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: vm.historyLimit)) ?? "\(vm.historyLimit)"
+    }
+
+    private var bufferLimitMenu: some View {
+        Menu {
+            let currentLimit = vm.historyLimit
+            Button(currentLimit == 100 ? "✓ Buffer limit: 100 messages (default)" : "Buffer limit: 100 messages (default)") {
+                vm.setHistoryLimit(100)
+                reloadTimeline()
+            }
+            Button(currentLimit == 500 ? "✓ Buffer limit: 500 messages" : "Buffer limit: 500 messages") {
+                vm.setHistoryLimit(500)
+                reloadTimeline()
+            }
+            Button(currentLimit == 1000 ? "✓ Buffer limit: 1,000 messages" : "Buffer limit: 1,000 messages") {
+                vm.setHistoryLimit(1000)
+                reloadTimeline()
+            }
+            Button(currentLimit == 3000 ? "✓ Buffer limit: 3,000 messages" : "Buffer limit: 3,000 messages") {
+                vm.setHistoryLimit(3000)
+                reloadTimeline()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text("Buffer: \(vm.items.count) / \(formattedHistoryLimit)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                if vm.items.count >= vm.historyLimit && !vm.items.isEmpty {
+                    Text("(Full)")
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundColor(.orange)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8))
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.06))
+            .cornerRadius(5)
+        }
+        .help("Work history buffer limit (persisted across sessions)")
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Image(systemName: "clock.arrow.circlepath")
@@ -294,8 +358,9 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
     private func reloadTimeline() {
         vm.isReloading = true
+        let limit = vm.historyLimit
         DispatchQueue.global(qos: .userInitiated).async {
-            let loaded = MACWorkspaceTimelineReader.loadTimeline(workspace: workspace, dataDir: dataDir)
+            let loaded = MACWorkspaceTimelineReader.loadTimeline(workspace: workspace, dataDir: dataDir, limit: limit)
             DispatchQueue.main.async {
                 self.vm.items = loaded
                 self.vm.isReloading = false

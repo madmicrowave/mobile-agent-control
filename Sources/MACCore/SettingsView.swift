@@ -1423,7 +1423,9 @@ private struct GeneralTabView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        MACConfigExportImportManager.exportConfig(appState: appState)
+                        DispatchQueue.main.async {
+                            MACConfigExportImportManager.exportConfig(appState: appState)
+                        }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")
@@ -1435,7 +1437,9 @@ private struct GeneralTabView: View {
                     .controlSize(.regular)
 
                     Button {
-                        MACConfigExportImportManager.importConfig(appState: appState)
+                        DispatchQueue.main.async {
+                            MACConfigExportImportManager.importConfig(appState: appState)
+                        }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.down")
