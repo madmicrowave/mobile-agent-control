@@ -3244,10 +3244,15 @@ private struct WorkspaceEditorFormView: View {
                                         Spacer()
                                     }
 
-                                    // Line under Default Branch: Job Dropdowns
+                                    if draft.ciProvider != "none" && !draft.ciProvider.isEmpty {
+                                        Divider()
+                                            .padding(.vertical, 2)
+                                    }
+
+                                    // Line under Default Branch: Job Dropdowns (Full Width, Stacked with Spacing)
                                     if draft.ciProvider == "jenkins" {
-                                        HStack(alignment: .top, spacing: 14) {
-                                            // Staging Jobs Column
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            // Staging Jobs Column (Full Width)
                                             VStack(alignment: .leading, spacing: 4) {
                                                 HStack(spacing: 4) {
                                                     Text("Staging Jobs")
