@@ -2078,9 +2078,24 @@ private struct WorkspaceSidebarEntry: Identifiable, Equatable {
     var id: UUID { uid }
 }
 
+public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
+    case settings = "Settings"
+    case history = "Work History"
+
+    public var id: String { rawValue }
+    public var title: String { rawValue }
+    public var systemImage: String {
+        switch self {
+        case .settings: return "slider.horizontal.3"
+        case .history: return "clock.arrow.circlepath"
+        }
+    }
+}
+
 private final class WorkspacesTabVM: ObservableObject {
     @Published var entries: [WorkspaceSidebarEntry] = []
     @Published var selectedUID: UUID?
+    @Published var selectedDetailTab: WorkspaceDetailTab = .settings
     private var didBootstrap: Bool = false
 
     func syncFromConfig(_ config: MACConfig, preferredWorkspaceId: String?) {
@@ -2206,31 +2221,75 @@ private struct WorkspacesTabView: View {
             Group {
                 if let idx = selectedIndex, vm.entries.indices.contains(idx) {
                     let entry = vm.entries[idx]
-                    WorkspaceEditorFormView(
-                        draft: Binding<MACWorkspace>(
-                            get: {
-                                guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else {
-                                    return entry.draft
+                    VStack(alignment: .leading, spacing: 0) {
+                        // 2 Tabs in Workspace Detail: Settings (default) | Work History
+                        HStack(spacing: 8) {
+                            ForEach(WorkspaceDetailTab.allCases) { tab in
+                                Button {
+                                    vm.selectedDetailTab = tab
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: tab.systemImage)
+                                            .font(.system(size: 11, weight: .semibold))
+                                        Text(tab.title)
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .fill(vm.selectedDetailTab == tab ? Color.accentColor : Color.primary.opacity(0.06))
+                                    )
+                                    .foregroundColor(vm.selectedDetailTab == tab ? .white : .primary)
                                 }
-                                return vm.entries[i].draft
-                            },
-                            set: { newVal in
-                                guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
-                                vm.entries[i].draft = newVal
+                                .buttonStyle(.plain)
                             }
-                        ),
-                        isNewWorkspace: entry.isNewUnsaved,
-                        config: appState.config,
-                        onAutoSave: {
-                            guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
-                            saveWorkspaceEntry(at: i, silent: true)
-                        },
-                        onDelete: {
-                            deleteWorkspaceEntry(uid: entry.uid)
+
+                            Spacer()
                         }
-                    )
-                    .id(entry.uid)
-                    .padding(.leading, 14)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 2)
+                        .padding(.bottom, 10)
+
+                        Divider()
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 10)
+
+                        if vm.selectedDetailTab == .settings {
+                            WorkspaceEditorFormView(
+                                draft: Binding<MACWorkspace>(
+                                    get: {
+                                        guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else {
+                                            return entry.draft
+                                        }
+                                        return vm.entries[i].draft
+                                    },
+                                    set: { newVal in
+                                        guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
+                                        vm.entries[i].draft = newVal
+                                    }
+                                ),
+                                isNewWorkspace: entry.isNewUnsaved,
+                                config: appState.config,
+                                onAutoSave: {
+                                    guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
+                                    saveWorkspaceEntry(at: i, silent: true)
+                                },
+                                onDelete: {
+                                    deleteWorkspaceEntry(uid: entry.uid)
+                                }
+                            )
+                            .id(entry.uid)
+                            .padding(.leading, 14)
+                        } else {
+                            WorkspaceWorkHistoryTimelineView(
+                                workspace: entry.draft,
+                                dataDir: appState.configStore.dataDir
+                            )
+                            .id("history-\(entry.uid)")
+                            .padding(.leading, 14)
+                        }
+                    }
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "folder.badge.plus")

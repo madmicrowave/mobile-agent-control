@@ -498,6 +498,104 @@ private func testConfigExportImportAndCrypto() throws {
     print("✓ MACConfigCrypto AES-GCM encryption & decryption round trip passed")
 }
 
+private func testWorkspaceDetailTabsAndTimelineHistory() throws {
+    // 1. Verify 2 tabs exist with Settings as default
+    expect(WorkspaceDetailTab.allCases.map(\.rawValue) == ["Settings", "Work History"], "Expected 2 tabs: Settings and Work History")
+    expect(WorkspaceDetailTab.settings.rawValue == "Settings", "Settings tab title")
+    expect(WorkspaceDetailTab.history.rawValue == "Work History", "Work History tab title")
+
+    // 2. Test Timeline loader from sample state.json
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("mac-timeline-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+    let sampleStateJSON = """
+    {
+      "workspaces": {
+        "payment-book": {
+          "activeTurn": {
+            "id": "turn-active-123",
+            "createdAt": "2026-11-26T22:00:00.000Z",
+            "prompt": "Fix payment expiration redirect bug",
+            "user": "@maksimsge",
+            "commits": [
+              {
+                "repoName": "backend",
+                "branch": "master",
+                "shortSha": "abc1234",
+                "commitMessage": "fix: redirect to payment page",
+                "changedFiles": ["src/routes/payment.ts", "src/services/pay.ts"]
+              }
+            ]
+          },
+          "messageQueue": [
+            {
+              "id": "q-1",
+              "queueNumber": 1,
+              "text": "Update footer copyright year to 2026",
+              "user": "@maksimsge",
+              "queuedAt": "2026-11-26T22:05:00.000Z",
+              "photos": []
+            }
+          ],
+          "history": [
+            {
+              "id": "turn-hist-1",
+              "createdAt": "2026-11-26T21:00:00.000Z",
+              "finishedAt": "2026-11-26T21:02:30.000Z",
+              "prompt": "Add dark mode toggle to navigation bar",
+              "user": "@maksimsge",
+              "outcome": "CONFIRMED",
+              "commits": [
+                {
+                  "repoName": "frontend",
+                  "branch": "master",
+                  "shortSha": "def5678",
+                  "commitMessage": "feat: dark mode toggle",
+                  "changedFiles": ["src/components/Nav.tsx", "src/styles/theme.css"]
+                }
+              ]
+            },
+            {
+              "id": "turn-hist-2",
+              "createdAt": "2026-11-26T20:00:00.000Z",
+              "finishedAt": "2026-11-26T20:01:00.000Z",
+              "prompt": "Revert bad commit",
+              "user": "@maksimsge",
+              "outcome": "REVERTED"
+            }
+          ]
+        }
+      }
+    }
+    """
+    let stateFile = tempDir.appendingPathComponent("state.json")
+    try sampleStateJSON.write(to: stateFile, atomically: true, encoding: .utf8)
+
+    let ws = MACWorkspace(id: "payment-book", label: "PAYMENT BOOK", path: "/tmp/payment-book")
+    let items = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir)
+
+    expect(items.count == 4, "Expected 4 timeline items (1 working + 1 queued + 2 history), got \\(items.count)")
+    expect(items[0].status == .working, "First item is active working turn")
+    expect(items[0].user == "@maksimsge", "User is @maksimsge")
+    expect(items[0].message == "Fix payment expiration redirect bug", "Prompt matches")
+    expect(items[0].files.contains("src/routes/payment.ts"), "Files extracted from commits")
+    expect(items[0].resultLabel == "Working...", "Result label is Working...")
+
+    expect(items[1].status == .queued(1), "Second item is queued #1")
+    expect(items[1].message == "Update footer copyright year to 2026", "Queued prompt matches")
+
+    expect(items[2].status == .success, "Third item is success")
+    expect(items[2].resultLabel == "Success", "Third item result is Success")
+    expect(items[2].elapsedTime == "2m 30s", "Elapsed time calculated accurately as 2m 30s, got \\(items[2].elapsedTime)")
+    expect(items[2].files.count == 2, "Files count is 2")
+
+    expect(items[3].status == .failed, "Fourth item is failed/reverted")
+    expect(items[3].resultLabel == "Reverted", "Fourth item result is Reverted")
+
+    print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline history loader passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -511,6 +609,7 @@ struct MACAppTests {
             try testConfigStoreRoundTrip()
             try testEngineModelFilteringAndEngineConfiguration()
             try testConfigExportImportAndCrypto()
+            try testWorkspaceDetailTabsAndTimelineHistory()
             try testSleepPreventerAndLaunchAgent()
             try MainActor.assumeIsolated {
                 try testMenuBarControllerAndBotLifecycle()

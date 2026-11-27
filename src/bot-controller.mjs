@@ -607,6 +607,11 @@ export class BotController {
     const chatId = msg.chat?.id;
     const userId = msg.from?.id;
     if (!chatId || !userId) return;
+    const senderName = msg.from
+      ? msg.from.username
+        ? `@${msg.from.username}`
+        : [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || String(userId)
+      : 'User';
 
     if (this.isUserSuspended(userId)) {
       // After user is suspended, bot must not answer until unblocked in app
@@ -952,6 +957,7 @@ export class BotController {
         text: promptText,
         photos: savedPhoto ? [savedPhoto] : [],
         mediaGroupId: msg.media_group_id || null,
+        user: senderName,
         createdAt: this.nowProvider().toISOString()
       });
 
@@ -1051,7 +1057,8 @@ export class BotController {
         if (text) {
           await this.startAgentTurn(chatId, ws, text, {
             extraNotice: `⚠️ Max ${MAX_FILES_PER_TURN} files allowed at once — kept the ${MAX_FILES_PER_TURN} already-attached files and skipped 1 extra file.`,
-            replyToMessageId: msg.message_id || null
+            replyToMessageId: msg.message_id || null,
+            user: senderName
           });
           return;
         }
@@ -1100,7 +1107,8 @@ export class BotController {
       // Single file WITH caption -> execute immediately as one single message!
       if (text) {
         await this.startAgentTurn(chatId, ws, text, {
-          replyToMessageId: msg.message_id || null
+          replyToMessageId: msg.message_id || null,
+          user: senderName
         });
         return;
       }
@@ -1125,7 +1133,8 @@ export class BotController {
     }
 
     await this.startAgentTurn(chatId, ws, text, {
-      replyToMessageId: msg.message_id || null
+      replyToMessageId: msg.message_id || null,
+      user: senderName
     });
   }
 
@@ -1794,6 +1803,7 @@ export class BotController {
           id: candidateId,
           queueNumber: queuePos,
           text: candidate.text,
+          user: candidate.user || 'User',
           photos: candidate.photos || [],
           chatId: candidate.chatId,
           userMessageId: candidate.userMessageId || null,
@@ -3282,7 +3292,7 @@ export class BotController {
     chatId,
     ws,
     promptText,
-    { extraNotice = '', isAddFix = false, replyToMessageId = null, queueInfo = null } = {}
+    { extraNotice = '', isAddFix = false, replyToMessageId = null, queueInfo = null, user = '' } = {}
   ) {
     const st = this.configStore.getWorkspaceState(ws.id);
     const allQueuedFiles = [...(st.pendingPhotos || [])];
@@ -3325,6 +3335,7 @@ export class BotController {
         createdAt: this.nowProvider().toISOString(),
         prompt: promptText || '(Photo prompt)',
         photoCount: attachedPhotos.length,
+        user: queueInfo?.user || user || 'User',
         agentResponse: '',
         commits: [],
         revertCommits: [],
@@ -3827,6 +3838,7 @@ export class BotController {
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
         outcome: 'NO_CHANGES'
       });
 
@@ -4047,6 +4059,7 @@ export class BotController {
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
         outcome: 'DISCARDED_BEFORE_COMMIT'
       });
     }
@@ -4525,6 +4538,7 @@ export class BotController {
             createdAt: st.activeTurn.createdAt,
             finishedAt: this.nowProvider().toISOString(),
             prompt: st.activeTurn.prompt,
+            user: st.activeTurn.user || 'User',
             commits: st.activeTurn.commits,
             revertCommits: st.activeTurn.revertCommits,
             outcome: 'REVERTED_NO_JENKINS'
@@ -4827,6 +4841,7 @@ export class BotController {
           createdAt: targetTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
           prompt: targetTurn.prompt,
+          user: targetTurn.user || 'User',
           commits: targetTurn.commits,
           revertCommits: targetTurn.revertCommits,
           builds: targetTurn.builds,
@@ -4868,6 +4883,7 @@ export class BotController {
           createdAt: targetTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
           prompt: targetTurn.prompt,
+          user: targetTurn.user || 'User',
           commits: targetTurn.commits,
           builds: results,
           outcome: 'DEPLOYED_IN_PARALLEL'
@@ -5022,6 +5038,7 @@ export class BotController {
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
         commits: st.activeTurn.commits,
         builds: st.activeTurn.builds,
         outcome: hasProd ? 'CONFIRMED_SKIPPED_PROD' : 'CONFIRMED'
@@ -5286,6 +5303,7 @@ export class BotController {
         createdAt: targetTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: targetTurn.prompt,
+        user: targetTurn.user || 'User',
         commits: targetTurn.commits,
         builds: targetTurn.builds,
         prodBuilds: results,
@@ -5314,6 +5332,7 @@ export class BotController {
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
         commits: st.activeTurn.commits,
         builds: st.activeTurn.builds,
         prodBuilds: results,
@@ -5385,6 +5404,7 @@ export class BotController {
           createdAt: st.activeTurn.createdAt,
           finishedAt: this.nowProvider().toISOString(),
           prompt: st.activeTurn.prompt,
+          user: st.activeTurn.user || 'User',
           commits: st.activeTurn.commits,
           revertCommits: reverted,
           outcome: 'REVERTED'
