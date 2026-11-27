@@ -927,7 +927,7 @@ export class BotController {
           chatId,
           text: `🌿 Type a valid git branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
-            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+            inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
         if (sent?.message_id) {
@@ -956,7 +956,7 @@ export class BotController {
           chatId,
           text: `➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
-            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+            inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
         if (sent?.message_id) {
@@ -1616,10 +1616,10 @@ export class BotController {
 
   async #stopAgentForWorkspace(chatId, wsId, messageId = null) {
     await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
+    this.#cancelInputBatch(wsId);
     const stopWs = this.getWorkspace(wsId);
     const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
     const stopSt = this.configStore.getWorkspaceState(wsId);
-    stopSt.userAborted = true;
 
     const cancelledCount = stopSt.messageQueue?.length || 0;
     if (stopSt.messageQueue && stopSt.messageQueue.length > 0) {
@@ -1664,7 +1664,6 @@ export class BotController {
       if (stopSt.messages?.length > 0 && stopSt.messages[stopSt.messages.length - 1].role === 'user') {
         stopSt.messages.pop();
       }
-      stopSt.userAborted = false;
       await this.configStore.saveState();
       await this.telegram.sendMessage({
         chatId,
@@ -2432,6 +2431,7 @@ export class BotController {
           }
         ]);
       }
+      rows.push([{ text: '« Back', callback_data: 'ide:menu' }]);
 
       const ideModelsSummary =
         allWorkspaces.length > 0
@@ -2771,7 +2771,7 @@ export class BotController {
           { text: '📜 Last Messages', callback_data: `chat:hist:${ws.id}` },
           { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
         ],
-        [{ text: '< BACK', callback_data: 'cfg:menu' }]
+        [{ text: '« Back', callback_data: 'cfg:menu' }]
       ]
     };
 
@@ -2874,7 +2874,7 @@ export class BotController {
           { text: '📜 Last Messages', callback_data: `chat:hist:${ws.id}` },
           { text: `💬 Open "${wsLabel}"`, callback_data: `ide:sel:${ws.id}` }
         ],
-        [{ text: '< BACK', callback_data: 'cfg:menu' }]
+        [{ text: '« Back', callback_data: 'cfg:menu' }]
       ]
     };
 
@@ -3211,7 +3211,7 @@ export class BotController {
       { text: '🧠 AI Model', callback_data: `ide:cfg:${ws.id}` }
     ]);
 
-    rows.push([{ text: '< BACK', callback_data: 'ide:menu' }]);
+    rows.push([{ text: '« Back', callback_data: 'ide:menu' }]);
 
     return rows;
   }
@@ -3812,7 +3812,6 @@ export class BotController {
 
       const abortWrapper = () => {
         isAbortedByUser = true;
-        st.userAborted = true;
         try {
           abort();
         } catch {}
@@ -3922,13 +3921,11 @@ export class BotController {
 
         const isUserStopped = Boolean(
           isAbortedByUser ||
-          st.userAborted ||
           agentErr?.message?.includes('stopped by user') ||
           agentErr?.name === 'AbortError'
         );
 
         if (isUserStopped) {
-          st.userAborted = false;
           for (const repo of ws.repos || []) {
             try {
               await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]);
@@ -4404,7 +4401,7 @@ export class BotController {
         `➕ <b>Add Fix in ${escapeHtml(wsLabel)}:</b>\n\n` +
         `Reply with what to fix or modify in the current process (your uncommitted changes are preserved):`,
       replyMarkup: {
-        inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+        inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
       }
     });
     if (sent?.message_id) {
@@ -4446,7 +4443,7 @@ export class BotController {
         `🌿 <b>Custom Branch for ${escapeHtml(wsLabel)}:</b>\n\n` +
         `Reply with the branch name to commit &amp; push to (e.g. <code>feat/mobile-fix</code>):`,
       replyMarkup: {
-        inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+        inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
       }
     });
     if (sent?.message_id) {
@@ -4462,7 +4459,7 @@ export class BotController {
         chatId,
         text: `❌ Invalid git branch name: <code>${escapeHtml(branchName)}</code>. Please reply with a valid branch name (no spaces or <code>..</code>):`,
         replyMarkup: {
-          inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+          inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
         }
       });
       if (sent?.message_id) {
@@ -6375,7 +6372,7 @@ export class BotController {
           chatId,
           text: `${prefix}🌿 Reply with the custom branch name for <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
-            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+            inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
         if (sent?.message_id) {
@@ -6388,7 +6385,7 @@ export class BotController {
           chatId,
           text: `${prefix}➕ Reply with what to fix or modify in <b>${escapeHtml(wsLabel)}</b>:`,
           replyMarkup: {
-            inline_keyboard: [[{ text: '↩️ Back to Commit Options', callback_data: `cmt:back:${ws.id}` }]]
+            inline_keyboard: [[{ text: '« Back', callback_data: `cmt:back:${ws.id}` }]]
           }
         });
         if (sent?.message_id) {

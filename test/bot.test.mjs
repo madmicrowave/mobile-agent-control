@@ -1038,6 +1038,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
   let controller;
   let currentNow;
   let nextAgentBehavior;
+  let nextAgentAbort = () => {};
   let lastAgentCallArgs;
 
   const CHAT_ID = 7001;
@@ -1162,7 +1163,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
         lastAgentCallArgs = opts;
         return {
           promise: Promise.resolve().then(() => nextAgentBehavior(opts)),
-          abort: () => {}
+          abort: () => nextAgentAbort(opts)
         };
       }
     });
@@ -1287,7 +1288,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       { text: '🧠 AI Model', callback_data: 'ide:cfg:payments' }
     ]);
     assert.deepEqual(selectRows[2], [
-      { text: '< BACK', callback_data: 'ide:menu' }
+      { text: '« Back', callback_data: 'ide:menu' }
     ]);
     const flatButtons = selectRows.flat();
     assert.ok(!flatButtons.some((b) => b.callback_data.startsWith('chat:intercept:')));
@@ -2116,7 +2117,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(actionRow[0].callback_data, 'chat:hist:payments');
     assert.match(actionRow[1].text, /Open "Payments Platform"/);
     const backRow = rows[rows.length - 1];
-    assert.deepEqual(backRow, [{ text: '< BACK', callback_data: 'cfg:menu' }]);
+    assert.deepEqual(backRow, [{ text: '« Back', callback_data: 'cfg:menu' }]);
 
     // Configure `payments` IDE -> Gemini 3.8 Flash (high)
     await controller.handleUpdate(makeCallback('mdl:f:payments:g38', step2Msg.message_id));
@@ -2167,14 +2168,16 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const backToStep1 = mockTg.lastSentOrEdited();
     assert.match(backToStep1.text, /Step 1/i);
 
-    // Verify '< BACK' replaces current message in place and does NOT add a new message
+    // Verify '« Back' replaces current message in place and does NOT add a new message
     mockTg.clearSent();
     mockTg.editedMessages.length = 0;
     await controller.handleUpdate(makeCallback('cfg:menu', backToStep1.message_id));
-    assert.equal(mockTg.sentMessages.length, 0, 'Must not send a new message on < BACK');
-    assert.equal(mockTg.editedMessages.length, 1, 'Must replace current message in place on < BACK');
+    assert.equal(mockTg.sentMessages.length, 0, 'Must not send a new message on « Back');
+    assert.equal(mockTg.editedMessages.length, 1, 'Must replace current message in place on « Back');
     const backSettingsMsg = mockTg.lastEdited();
     assert.match(backSettingsMsg.text, /AI Model Settings/);
+    const settingsRows = backSettingsMsg.reply_markup.inline_keyboard;
+    assert.deepEqual(settingsRows[settingsRows.length - 1], [{ text: '« Back', callback_data: 'ide:menu' }]);
 
     // Verify dynamic engine configuration & filtering: configure OpenAI API Key
     configStore.config.openaiApiKey = 'sk-test-key-123';
@@ -3836,34 +3839,29 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     mockTg.clearSent();
 
     const targetFile = path.join(coreRepo.cloneDir, 'stopped_turn_file.js');
-    let abortCalled = false;
     let turn1Reject;
     const turn1Promise = new Promise((resolve, reject) => {
       turn1Reject = reject;
     });
+    let turn1StartedResolve;
+    const turn1StartedPromise = new Promise((resolve) => {
+      turn1StartedResolve = resolve;
+    });
 
-    const origAgentRunner = controller.agentRunner;
-    controller.agentRunner = (opts) => {
-      if (!abortCalled) {
-        return {
-          promise: (async () => {
-            // Simulate agent creating a file before being stopped
-            await fsp.writeFile(targetFile, 'export const badCode = true;\n', 'utf8');
-            return await turn1Promise;
-          })(),
-          abort: () => {
-            abortCalled = true;
-            turn1Reject(new Error('Agent run stopped by user'));
-          }
-        };
-      }
-      return origAgentRunner(opts);
+    nextAgentBehavior = async () => {
+      // Simulate agent creating a file before being stopped
+      await fsp.writeFile(targetFile, 'export const badCode = true;\n', 'utf8');
+      turn1StartedResolve();
+      return await turn1Promise;
+    };
+    nextAgentAbort = () => {
+      turn1Reject(new Error('Agent run stopped by user'));
     };
 
     // 1) User sends message 1
     const userMsg1 = makeUserMsg('Message with a typo that user will stop');
-    const turn1ExecPromise = controller.handleUpdate(userMsg1);
-    await new Promise((r) => setTimeout(r, 60)); // let agent start and create file
+    await controller.handleUpdate(userMsg1);
+    await turn1StartedPromise;
 
     assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
     assert.ok(fs.existsSync(targetFile), 'Target file should exist while agent is running');
@@ -3871,7 +3869,6 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     // 2) User clicks Stop Agent
     mockTg.clearSent();
     await controller.handleUpdate(makeCallback('agent:stop:payments'));
-    await turn1ExecPromise;
     await controller.waitForBackgroundTasks();
 
     // Verify file was discarded and removed
@@ -3890,6 +3887,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // 3) User sends fixed message 2
     const cleanFile = path.join(coreRepo.cloneDir, 'clean_fixed_file.js');
+    nextAgentAbort = () => {};
     nextAgentBehavior = async () => {
       await fsp.writeFile(cleanFile, 'export const fixedCode = true;\n', 'utf8');
       return {
@@ -3919,6 +3917,6 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // Cleanup
     await fsp.rm(cleanFile, { force: true });
-    controller.agentRunner = origAgentRunner;
+    nextAgentAbort = () => {};
   });
 });
