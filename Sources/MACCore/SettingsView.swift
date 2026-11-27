@@ -700,7 +700,7 @@ private struct GeneralTabView: View {
                 // Section 4: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
 
-                // Section 5: Configuration Backup & Restore (Export / Import)
+                // Section 5: Backup & Restore (Export / Import)
                 configExportImportSectionCard
             }
             .padding(.trailing, 8)
@@ -1415,7 +1415,7 @@ private struct GeneralTabView: View {
     }
 
     private var configExportImportSectionCard: some View {
-        MACSectionCard(title: "Configuration Backup & Restore", systemImage: "arrow.triangle.2.circlepath.circle.fill") {
+        MACSectionCard(title: "Backup & Restore", systemImage: "arrow.triangle.2.circlepath.circle.fill") {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Export or import all General settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
                     .font(.system(size: 11.5))
@@ -1428,7 +1428,7 @@ private struct GeneralTabView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text("Export Configuration...")
+                            Text("Export...")
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }
@@ -1440,7 +1440,7 @@ private struct GeneralTabView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.down")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text("Import Configuration...")
+                            Text("Import...")
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }

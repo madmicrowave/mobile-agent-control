@@ -90,46 +90,72 @@ public enum MACConfigCrypto {
 }
 
 private final class MACExportAccessoryView: NSView {
+    let historyCheckbox: NSButton
     let encryptCheckbox: NSButton
     let passwordField: NSSecureTextField
     let confirmField: NSSecureTextField
 
     init() {
-        self.encryptCheckbox = NSButton(checkboxWithTitle: "Encrypt with password", target: nil, action: nil)
+        self.historyCheckbox = NSButton(checkboxWithTitle: "Export message history (workspaces → work history)", target: nil, action: nil)
+        self.historyCheckbox.state = .off
+
+        self.encryptCheckbox = NSButton(checkboxWithTitle: "Encrypt export with password", target: nil, action: nil)
+        self.encryptCheckbox.state = .off
+
         self.passwordField = NSSecureTextField(frame: .zero)
+        self.passwordField.placeholderString = "Password"
+        self.passwordField.isHidden = true
+
         self.confirmField = NSSecureTextField(frame: .zero)
-        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 96))
+        self.confirmField.placeholderString = "Confirm Password"
+        self.confirmField.isHidden = true
 
-        encryptCheckbox.frame = NSRect(x: 10, y: 68, width: 300, height: 20)
-        passwordField.frame = NSRect(x: 10, y: 38, width: 300, height: 22)
-        confirmField.frame = NSRect(x: 10, y: 10, width: 300, height: 22)
-
-        passwordField.placeholderString = "Encryption Password"
-        confirmField.placeholderString = "Confirm Password"
-
-        passwordField.isEnabled = false
-        confirmField.isEnabled = false
+        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 56))
 
         encryptCheckbox.target = self
         encryptCheckbox.action = #selector(handleCheckboxChanged)
 
+        addSubview(historyCheckbox)
         addSubview(encryptCheckbox)
         addSubview(passwordField)
         addSubview(confirmField)
+
+        updateLayout()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    private func updateLayout() {
+        let isEncrypt = encryptCheckbox.state == .on
+        let h: CGFloat = isEncrypt ? 118 : 56
+        self.frame = NSRect(x: 0, y: 0, width: 340, height: h)
+
+        if isEncrypt {
+            historyCheckbox.frame = NSRect(x: 10, y: 90, width: 320, height: 20)
+            encryptCheckbox.frame = NSRect(x: 10, y: 66, width: 320, height: 20)
+            passwordField.frame = NSRect(x: 10, y: 36, width: 320, height: 22)
+            confirmField.frame = NSRect(x: 10, y: 8, width: 320, height: 22)
+        } else {
+            historyCheckbox.frame = NSRect(x: 10, y: 28, width: 320, height: 20)
+            encryptCheckbox.frame = NSRect(x: 10, y: 4, width: 320, height: 20)
+        }
+    }
+
     @objc private func handleCheckboxChanged() {
         let isChecked = encryptCheckbox.state == .on
-        passwordField.isEnabled = isChecked
-        confirmField.isEnabled = isChecked
+        passwordField.isHidden = !isChecked
+        confirmField.isHidden = !isChecked
         if !isChecked {
             passwordField.stringValue = ""
             confirmField.stringValue = ""
         }
+        updateLayout()
+    }
+
+    var isHistoryChecked: Bool {
+        historyCheckbox.state == .on
     }
 
     var isEncryptChecked: Bool {
@@ -149,12 +175,13 @@ private final class MACExportAccessoryView: NSView {
 public enum MACConfigExportImportManager {
     public static func exportConfig(appState: MACAppState) {
         let savePanel = NSSavePanel()
-        savePanel.title = "Export AI MAC Configuration"
+        savePanel.title = "Export AI MAC"
         savePanel.prompt = "Export"
         savePanel.allowedContentTypes = [.json]
+        savePanel.showsTagField = false
 
         let dateStr = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        savePanel.nameFieldStringValue = "ai-mac-config-\(dateStr).json"
+        savePanel.nameFieldStringValue = "ai-mac-\(dateStr).json"
 
         if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             savePanel.directoryURL = docs
@@ -172,6 +199,22 @@ public enum MACConfigExportImportManager {
 
         do {
             let configData = try encoder.encode(appState.config)
+            var exportDict: [String: Any] = [
+                "format": "ai-mac-config",
+                "version": 1,
+                "exportedAt": ISO8601DateFormatter().string(from: Date()),
+                "config": try JSONSerialization.jsonObject(with: configData)
+            ]
+
+            if accessory.isHistoryChecked {
+                let stateURL = appState.configStore.dataDir.appendingPathComponent("state.json")
+                if let rawState = try? Data(contentsOf: stateURL),
+                   let stateObj = (try? JSONSerialization.jsonObject(with: rawState)) as? [String: Any] {
+                    exportDict["messageHistory"] = stateObj
+                }
+            }
+
+            let exportPayloadData = try JSONSerialization.data(withJSONObject: exportDict, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             let finalData: Data
 
             if accessory.isEncryptChecked {
@@ -179,7 +222,7 @@ public enum MACConfigExportImportManager {
                 let confirm = accessory.confirmPassword.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 guard !pass.isEmpty else {
-                    showAlert(title: "Export Failed", message: "Encryption password cannot be empty.", style: .critical)
+                    showAlert(title: "Export Failed", message: "Password cannot be empty.", style: .critical)
                     return
                 }
                 guard pass == confirm else {
@@ -187,29 +230,24 @@ public enum MACConfigExportImportManager {
                     return
                 }
 
-                finalData = try MACConfigCrypto.encrypt(data: configData, password: pass)
+                finalData = try MACConfigCrypto.encrypt(data: exportPayloadData, password: pass)
             } else {
-                let container: [String: Any] = [
-                    "format": "ai-mac-config",
-                    "version": 1,
-                    "exportedAt": ISO8601DateFormatter().string(from: Date()),
-                    "config": try JSONSerialization.jsonObject(with: configData)
-                ]
-                finalData = try JSONSerialization.data(withJSONObject: container, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+                finalData = exportPayloadData
             }
 
             try finalData.write(to: targetURL, options: .atomic)
             let encNote = accessory.isEncryptChecked ? " (encrypted with password)" : ""
-            appState.statusBannerMessage = "Exported configuration to \(targetURL.lastPathComponent)\(encNote)"
-            showAlert(title: "Configuration Exported", message: "Successfully exported configuration\(encNote) to:\n\(targetURL.path)", style: .informational)
+            let histNote = accessory.isHistoryChecked ? " with message history" : ""
+            appState.statusBannerMessage = "Exported to \(targetURL.lastPathComponent)\(encNote)"
+            showAlert(title: "Export Successful", message: "Successfully exported\(histNote)\(encNote) to:\n\(targetURL.path)", style: .informational)
         } catch {
-            showAlert(title: "Export Failed", message: "Error exporting configuration: \(error.localizedDescription)", style: .critical)
+            showAlert(title: "Export Failed", message: "Error exporting: \(error.localizedDescription)", style: .critical)
         }
     }
 
     public static func importConfig(appState: MACAppState) {
         let openPanel = NSOpenPanel()
-        openPanel.title = "Import AI MAC Configuration"
+        openPanel.title = "Import AI MAC"
         openPanel.prompt = "Import"
         openPanel.allowedContentTypes = [.json]
         openPanel.allowsMultipleSelection = false
@@ -257,17 +295,47 @@ public enum MACConfigExportImportManager {
                 return
             }
 
+            // Restore message history if present in the imported backup
+            var restoredHistoryNote = ""
+            if let dict = (try? JSONSerialization.jsonObject(with: decryptedData)) as? [String: Any],
+               let importedHistory = dict["messageHistory"] as? [String: Any] {
+                let stateURL = appState.configStore.dataDir.appendingPathComponent("state.json")
+                var currentState: [String: Any] = [:]
+                if let currentData = try? Data(contentsOf: stateURL),
+                   let parsed = (try? JSONSerialization.jsonObject(with: currentData)) as? [String: Any] {
+                    currentState = parsed
+                }
+                if let importedWorkspaces = importedHistory["workspaces"] as? [String: Any] {
+                    var currentWorkspaces = (currentState["workspaces"] as? [String: Any]) ?? [:]
+                    for (k, v) in importedWorkspaces {
+                        currentWorkspaces[k] = v
+                    }
+                    currentState["workspaces"] = currentWorkspaces
+                }
+                if let importedSessions = importedHistory["userSessions"] as? [String: Any] {
+                    var currentSessions = (currentState["userSessions"] as? [String: Any]) ?? [:]
+                    for (k, v) in importedSessions {
+                        currentSessions[k] = v
+                    }
+                    currentState["userSessions"] = currentSessions
+                }
+                if let mergedData = try? JSONSerialization.data(withJSONObject: currentState, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) {
+                    try? mergedData.write(to: stateURL, options: .atomic)
+                    restoredHistoryNote = " and restored message history"
+                }
+            }
+
             appState.config = importedConfig
             appState.saveConfigToDisk(importedConfig, banner: "Imported configuration successfully! (\(importedConfig.workspaces.count) workspace(s) loaded)")
             appState.reloadConfigFromDisk()
 
             showAlert(
-                title: "Configuration Imported",
-                message: "Successfully imported configuration with \(importedConfig.workspaces.count) workspace(s) and General settings from \(fileURL.lastPathComponent).",
+                title: "Import Successful",
+                message: "Successfully imported \(importedConfig.workspaces.count) workspace(s), General settings\(restoredHistoryNote) from \(fileURL.lastPathComponent).",
                 style: .informational
             )
         } catch {
-            showAlert(title: "Import Failed", message: "Error importing configuration: \(error.localizedDescription)", style: .critical)
+            showAlert(title: "Import Failed", message: "Error importing: \(error.localizedDescription)", style: .critical)
         }
     }
 

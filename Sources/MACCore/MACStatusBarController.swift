@@ -473,11 +473,11 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         appMenu.addItem(aboutItem)
         appMenu.addItem(.separator())
 
-        let exportItem = NSMenuItem(title: "Export Configuration...", action: #selector(handleExportConfigClicked), keyEquivalent: "e")
+        let exportItem = NSMenuItem(title: "Export...", action: #selector(handleExportConfigClicked), keyEquivalent: "e")
         exportItem.target = self
         appMenu.addItem(exportItem)
 
-        let importItem = NSMenuItem(title: "Import Configuration...", action: #selector(handleImportConfigClicked), keyEquivalent: "i")
+        let importItem = NSMenuItem(title: "Import...", action: #selector(handleImportConfigClicked), keyEquivalent: "i")
         importItem.target = self
         appMenu.addItem(importItem)
 

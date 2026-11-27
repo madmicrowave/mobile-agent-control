@@ -504,6 +504,28 @@ private func testConfigExportImportAndCrypto() throws {
     }
     expect(wrongPasswordThrew, "Decryption with wrong password must fail")
 
+    // Verify message history payload structure in export
+    let sampleExportDict: [String: Any] = [
+        "format": "ai-mac-config",
+        "version": 1,
+        "exportedAt": "2026-11-27T04:40:00Z",
+        "config": ["defaultModel": "gemini-3.8-flash"],
+        "messageHistory": [
+            "workspaces": [
+                "pb": [
+                    "history": [["id": "turn-1", "prompt": "Hello world"]]
+                ]
+            ]
+        ]
+    ]
+    let jsonExportData = try JSONSerialization.data(withJSONObject: sampleExportDict)
+    let encExport = try MACConfigCrypto.encrypt(data: jsonExportData, password: "pw")
+    let decExport = try MACConfigCrypto.decrypt(data: encExport, password: "pw")
+    let parsedDec = try JSONSerialization.jsonObject(with: decExport) as? [String: Any]
+    expect(parsedDec?["format"] as? String == "ai-mac-config", "Export format must be ai-mac-config")
+    let histObj = parsedDec?["messageHistory"] as? [String: Any]
+    expect(histObj != nil, "messageHistory must be present when included")
+
     print("✓ MACConfigCrypto AES-GCM encryption & decryption round trip passed")
 }
 
