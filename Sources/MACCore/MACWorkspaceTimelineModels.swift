@@ -334,13 +334,30 @@ public enum MACWorkspaceTimelineReader {
             }
         }
 
-        // Sort worked messages by date descending (most recent first)
+        // 1. Sort currently running items by date descending (most recent first)
+        workingItems.sort { (a, b) -> Bool in
+            guard let da = a.date, let db = b.date else { return false }
+            return da > db
+        }
+
+        // 2. Sort queued items by date descending (latest queued message on top)
+        queuedItems.sort { (a, b) -> Bool in
+            if let da = a.date, let db = b.date, da != db {
+                return da > db
+            }
+            if case .queued(let posA) = a.status, case .queued(let posB) = b.status {
+                return posA > posB
+            }
+            return false
+        }
+
+        // 3. Sort worked messages by date descending (most recent first)
         historyItems.sort { (a, b) -> Bool in
             guard let da = a.date, let db = b.date else { return false }
             return da > db
         }
 
-        // Return ordered timeline: Currently Working -> Queued (#1, #2) -> Worked Messages
+        // Return ordered timeline: Currently Working (on top) -> Queued (latest on top) -> Worked Messages (latest on top)
         return workingItems + queuedItems + historyItems
     }
 }

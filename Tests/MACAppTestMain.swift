@@ -600,6 +600,14 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
               "user": "@maksimsge",
               "queuedAt": "2026-11-26T22:05:00.000Z",
               "photos": []
+            },
+            {
+              "id": "q-2",
+              "queueNumber": 2,
+              "text": "Second later queued request",
+              "user": "@maksimsge",
+              "queuedAt": "2026-11-26T22:10:00.000Z",
+              "photos": []
             }
           ],
           "history": [
@@ -639,23 +647,28 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     let ws = MACWorkspace(id: "payment-book", label: "PAYMENT BOOK", path: "/tmp/payment-book")
     let items = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir)
 
-    expect(items.count == 4, "Expected 4 timeline items (1 working + 1 queued + 2 history), got \\(items.count)")
-    expect(items[0].status == .working, "First item is active working turn")
+    expect(items.count == 5, "Expected 5 timeline items (1 working + 2 queued + 2 history), got \(items.count)")
+    // Running message must always be first / before queued messages
+    expect(items[0].status == .working, "First item must be active working turn (running before queued messages)")
     expect(items[0].user == "@maksimsge", "User is @maksimsge")
     expect(items[0].message == "Fix payment expiration redirect bug", "Prompt matches")
     expect(items[0].files.contains("src/routes/payment.ts"), "Files extracted from commits")
     expect(items[0].resultLabel == "Working...", "Result label is Working...")
 
-    expect(items[1].status == .queued(1), "Second item is queued #1")
-    expect(items[1].message == "Update footer copyright year to 2026", "Queued prompt matches")
+    // Queued messages: latest on top (q-2 at 22:10 before q-1 at 22:05)
+    expect(items[1].status == .queued(2), "Second item is later queued message (#2)")
+    expect(items[1].message == "Second later queued request", "Queued #2 prompt matches")
 
-    expect(items[2].status == .success, "Third item is success")
-    expect(items[2].resultLabel == "Success", "Third item result is Success")
-    expect(items[2].elapsedTime == "2m 30s", "Elapsed time calculated accurately as 2m 30s, got \\(items[2].elapsedTime)")
-    expect(items[2].files.count == 2, "Files count is 2")
+    expect(items[2].status == .queued(1), "Third item is earlier queued message (#1)")
+    expect(items[2].message == "Update footer copyright year to 2026", "Queued #1 prompt matches")
 
-    expect(items[3].status == .failed, "Fourth item is failed/reverted")
-    expect(items[3].resultLabel == "Reverted", "Fourth item result is Reverted")
+    expect(items[3].status == .success, "Fourth item is success history")
+    expect(items[3].resultLabel == "Success", "Fourth item result is Success")
+    expect(items[3].elapsedTime == "2m 30s", "Elapsed time calculated accurately as 2m 30s, got \(items[3].elapsedTime)")
+    expect(items[3].files.count == 2, "Files count is 2")
+
+    expect(items[4].status == .failed, "Fifth item is failed/reverted")
+    expect(items[4].resultLabel == "Reverted", "Fifth item result is Reverted")
 
     print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline history loader passed")
 }
