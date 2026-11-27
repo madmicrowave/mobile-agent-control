@@ -688,7 +688,7 @@ private struct GeneralTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // Section 1: Settings (Autostart & Sleep Prevention)
+                // Section 1: Settings (Autostart, Sleep Prevention & Backup & Restore)
                 settingsSectionCard
 
                 // Section 2: AI Engines & Models
@@ -699,9 +699,6 @@ private struct GeneralTabView: View {
 
                 // Section 4: CI/CD Deployment (Jenkins, GitHub, Google Cloud)
                 ciCdSectionCard
-
-                // Section 5: Backup & Restore (Export / Import)
-                configExportImportSectionCard
             }
             .padding(.trailing, 8)
             .padding(.bottom, 12)
@@ -1208,25 +1205,73 @@ private struct GeneralTabView: View {
 
     private var settingsSectionCard: some View {
         MACSectionCard(title: "Settings", systemImage: "gearshape.fill") {
-            HStack(spacing: 16) {
-                Toggle(
-                    "Start application automatically at macOS startup (Autostart)",
-                    isOn: Binding(
-                        get: { appState.launchAtLogin },
-                        set: { appState.toggleLaunchAtLogin($0) }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 16) {
+                    Toggle(
+                        "Start application automatically at macOS startup (Autostart)",
+                        isOn: Binding(
+                            get: { appState.launchAtLogin },
+                            set: { appState.toggleLaunchAtLogin($0) }
+                        )
                     )
-                )
 
-                Spacer()
+                    Spacer()
 
-                HStack(spacing: 6) {
-                    Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
-                        .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
-                    Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: appState.isSleepPrevented ? "bolt.fill" : "powersleep")
+                            .foregroundColor(appState.isSleepPrevented ? .green : .secondary)
+                        Text(appState.isSleepPrevented ? "Mac Sleep Prevented (Active)" : "Sleep Prevention Standby")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(appState.isSleepPrevented ? .primary : .secondary)
+                    }
+                    .fixedSize()
                 }
-                .fixedSize()
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 13))
+                        Text("Backup & Restore")
+                            .font(.system(size: 12.5, weight: .semibold))
+                    }
+
+                    Text("Export or import all General settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            DispatchQueue.main.async {
+                                MACConfigExportImportManager.exportConfig(appState: appState)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Export...")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .controlSize(.regular)
+
+                        Button {
+                            DispatchQueue.main.async {
+                                MACConfigExportImportManager.importConfig(appState: appState)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text("Import...")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .controlSize(.regular)
+                    }
+                }
             }
         }
     }
@@ -1409,46 +1454,6 @@ private struct GeneralTabView: View {
                 await MainActor.run {
                     vm.isAutodetectingModels = false
                     appState.statusBannerMessage = "Using standard verified models for \(vm.selectedEngineTab)."
-                }
-            }
-        }
-    }
-
-    private var configExportImportSectionCard: some View {
-        MACSectionCard(title: "Backup & Restore", systemImage: "arrow.triangle.2.circlepath.circle.fill") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Export or import all General settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 12) {
-                    Button {
-                        DispatchQueue.main.async {
-                            MACConfigExportImportManager.exportConfig(appState: appState)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Export...")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                    }
-                    .controlSize(.regular)
-
-                    Button {
-                        DispatchQueue.main.async {
-                            MACConfigExportImportManager.importConfig(appState: appState)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Import...")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                    }
-                    .controlSize(.regular)
                 }
             }
         }
