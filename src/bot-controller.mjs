@@ -2,7 +2,11 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { execSync } from 'node:child_process';
+import { execSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { expandUserPath } from './config.mjs';
+
+const execFileAsync = promisify(execFile);
 import {
   snapshotWorkspaceRepos,
   detectRepoChangesSinceSnapshot,
@@ -366,6 +370,67 @@ export class BotController {
 
   hasWorkspaceProdJenkins(ws) {
     return this.getWorkspaceProdJenkinsJobs(ws).length > 0;
+  }
+
+  hasWorkspaceProdDeploy(ws) {
+    if (this.hasWorkspaceProdJenkins(ws)) return true;
+    if (Array.isArray(ws?.repos)) {
+      return ws.repos.some((r) => Boolean(r.prodCommand && String(r.prodCommand).trim()));
+    }
+    return false;
+  }
+
+  resolveDeployedRepos(ws, st, { isAfterRevert = false, mode = 'matched' } = {}) {
+    const repos = Array.isArray(ws?.repos) ? ws.repos : [];
+    if (repos.length === 0) return [];
+    if (mode === 'all') return repos;
+
+    const sourceCommits = isAfterRevert
+      ? st?.activeTurn?.revertCommits || []
+      : [...(st?.accumulatedCommits || []), ...(st?.activeTurn?.commits || [])];
+
+    if (sourceCommits.length === 0) {
+      return repos.length === 1 ? repos : repos;
+    }
+
+    const repoNames = new Set(sourceCommits.map((c) => c.repoName).filter(Boolean));
+    if (repoNames.size === 0) {
+      return repos.length === 1 ? repos : repos;
+    }
+
+    const matched = repos.filter((r) => repoNames.has(r.name));
+    return matched.length > 0 ? matched : (repos.length === 1 ? repos : []);
+  }
+
+  async executeRepoCliCommand(repo, command, { env = 'staging', wsLabel = '' } = {}) {
+    if (!command || !command.trim()) return { success: true, skipped: true, repoName: repo?.name };
+    const trimmedCmd = command.trim();
+    const repoPath = repo?.path ? expandUserPath(repo.path) : process.cwd();
+    this.log('stage', `Executing ${env} CLI command in ${repo.name}: ${trimmedCmd}`);
+    this.log('cli', `[${repo.name}] (${env}) $ ${trimmedCmd}`, wsLabel);
+    try {
+      const { stdout, stderr } = await execFileAsync('/bin/bash', ['-c', trimmedCmd], {
+        cwd: repoPath,
+        timeout: 300_000,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      const output = (stdout + (stderr ? `\n${stderr}` : '')).trim();
+      if (output) {
+        this.log('cli', `[${repo.name}] output:\n${output.slice(0, 1000)}`, wsLabel);
+      }
+      return { success: true, output, repoName: repo.name, command: trimmedCmd };
+    } catch (err) {
+      const errOutput = ((err.stdout || '') + '\n' + (err.stderr || '') + '\n' + (err.message || '')).trim();
+      this.log('cli', `[${repo.name}] command failed: ${err.message}`, wsLabel);
+      this.log('stage', `CLI command failed in ${repo.name}: ${err.message}`);
+      return {
+        success: false,
+        error: err.message,
+        output: errOutput,
+        repoName: repo.name,
+        command: trimmedCmd
+      };
+    }
   }
 
   buildAllWorkspaceProdTargets(ws, sourceCommits = []) {
@@ -3915,13 +3980,16 @@ export class BotController {
 
         const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
         const allWsTargets = this.buildAllWorkspaceTargets(ws, allBatchCommits);
+        const stagingCmdRepos = this.resolveDeployedRepos(ws, st).filter((r) =>
+          Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+        );
 
         await this.telegram.sendMessage({
           chatId,
           text: `ℹ️ <b>No files were changed in ${escapeHtml(wsLabel)} for this message.</b>\n\nProceeding to Jenkins deploy for previous message(s)…`
         });
 
-        if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+        if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingCmdRepos.length === 0) {
           st.phase = 'AWAITING_OK_OR_REVERT';
           await this.configStore.saveState();
           await this.sendIsItOkayPrompt(
@@ -4013,8 +4081,11 @@ export class BotController {
 
       const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
       const allWsTargets = this.buildAllWorkspaceTargets(ws, commits);
+      const stagingCmdRepos = this.resolveDeployedRepos(ws, st).filter((r) =>
+        Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+      );
 
-      if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+      if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingCmdRepos.length === 0) {
         st.phase = 'AWAITING_OK_OR_REVERT';
         await this.configStore.saveState();
         await this.sendIsItOkayPrompt(
@@ -4154,7 +4225,11 @@ export class BotController {
           `Proceeding to Jenkins deploy for committed previous message(s)…`
       });
 
-      if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+      const stagingCmdRepos = this.resolveDeployedRepos(ws, st).filter((r) =>
+        Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+      );
+
+      if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingCmdRepos.length === 0) {
         st.phase = 'AWAITING_OK_OR_REVERT';
         await this.configStore.saveState();
         await this.sendIsItOkayPrompt(
@@ -4382,8 +4457,11 @@ export class BotController {
     }
     const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
     const allWsTargets = this.buildAllWorkspaceTargets(ws, allBatchCommits);
+    const stagingReposWithCmd = this.resolveDeployedRepos(ws, st).filter((r) =>
+      Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+    );
 
-    if (matchedTargets.length === 0 && allWsTargets.length === 0) {
+    if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingReposWithCmd.length === 0) {
       st.phase = 'AWAITING_OK_OR_REVERT';
       await this.configStore.saveState();
       await this.sendIsItOkayPrompt(
@@ -4438,8 +4516,11 @@ export class BotController {
 
       const matchedTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert: false });
       const allWsTargets = this.buildAllWorkspaceTargets(ws, commits);
+      const stagingReposWithCmd = this.resolveDeployedRepos(ws, st).filter((r) =>
+        Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+      );
 
-      if (matchedTargets.length > 0 || allWsTargets.length > 0) {
+      if (matchedTargets.length > 0 || allWsTargets.length > 0 || stagingReposWithCmd.length > 0) {
         st.phase = 'AWAITING_JENKINS_CHOICE';
         await this.configStore.saveState();
         await this.sendRunJenkinsPrompt(chatId, ws, matchedTargets, { isAfterRevert: false });
@@ -4504,11 +4585,16 @@ export class BotController {
       ? st.activeTurn?.revertCommits || []
       : [...(st.accumulatedCommits || []), ...(st.activeTurn?.commits || [])];
     const allWsTargets = this.buildAllWorkspaceTargets(ws, sourceCommits);
-    const hasProd = this.hasWorkspaceProdJenkins(ws);
+    const hasProd = this.hasWorkspaceProdDeploy(ws);
     const envLabel = hasProd ? 'Staging Jenkins' : 'Jenkins';
     const prefix = isAfterRevert ? 'rjnk' : 'jnk';
     const keyboard = [];
     let bodyText = '';
+
+    const deployedRepos = this.resolveDeployedRepos(ws, st, { isAfterRevert });
+    const stagingCmdRepos = deployedRepos.filter((r) =>
+      Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+    );
 
     if (targets.length > 0) {
       const jobsDesc = targets
@@ -4535,7 +4621,7 @@ export class BotController {
           }
         ]);
       }
-    } else {
+    } else if (allWsTargets.length > 0) {
       const allDesc = allWsTargets
         .map(
           (t) =>
@@ -4565,6 +4651,17 @@ export class BotController {
         }
         keyboard.push(row);
       }
+    } else if (stagingCmdRepos.length > 0) {
+      const cmdsDesc = stagingCmdRepos
+        .map((r) => `• <b>${escapeHtml(r.name)}</b>: <code>${escapeHtml(r.stagingCommand.trim())}</code>`)
+        .join('\n');
+      bodyText = isAfterRevert
+        ? `🚀 <b>Run staging deploy command to redeploy after revert?</b>\n\n${cmdsDesc}`
+        : `🚀 <b>Run staging deploy command?</b>\n\n${cmdsDesc}`;
+      keyboard.push([
+        { text: '🚀 Yes, Run Command', callback_data: `${prefix}:yes:${ws.id}` },
+        { text: '⏭ No', callback_data: `${prefix}:no:${ws.id}` }
+      ]);
     }
 
     const sent = await this.telegram.sendMessage({
@@ -4649,6 +4746,64 @@ export class BotController {
       deployTargets = this.resolveMatchedJenkinsTargets(ws, st, { isAfterRevert });
       if (deployTargets.length === 0) {
         deployTargets = allWsTargets;
+      }
+    }
+
+    if (deployTargets.length === 0) {
+      const stagingCmdRepos = this.resolveDeployedRepos(ws, st, { isAfterRevert }).filter((r) =>
+        Boolean(r.stagingCommand && String(r.stagingCommand).trim())
+      );
+      if (stagingCmdRepos.length > 0) {
+        st.phase = isAfterRevert ? 'RUNNING_REVERT_JENKINS' : 'RUNNING_JENKINS';
+        st.runningJenkins = {
+          type: isAfterRevert ? 'revert' : 'staging',
+          phase: st.phase,
+          deployTargets: [],
+          isAfterRevert,
+          progressMsgId: null,
+          chatId,
+          startedAt: this.nowProvider().toISOString()
+        };
+        st.lastError = null;
+        await this.configStore.saveState();
+
+        const cmdNames = stagingCmdRepos
+          .map((r) => `${r.name}: ${r.stagingCommand.trim()}`)
+          .join(', ');
+        const progressMsg = await this.telegram.sendMessage({
+          chatId,
+          text:
+            `🚀 <b>Triggered Staging command(s)…</b>\n\n` +
+            `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+            `<code>${escapeHtml(cmdNames)}</code>`
+        });
+
+        if (st.runningJenkins) {
+          st.runningJenkins.progressMsgId = progressMsg?.message_id || null;
+        }
+
+        this.#trackAsync(
+          this.#executeStagingCliOnly(
+            chatId,
+            ws,
+            st,
+            stagingCmdRepos,
+            isAfterRevert,
+            progressMsg?.message_id
+          ).catch(async (err) => {
+            st.runningJenkins = null;
+            if (st.phase !== 'RUNNING_AGENT' && st.phase !== 'AWAITING_COMMIT_CHOICE') {
+              st.phase = isAfterRevert ? 'AWAITING_REVERT_JENKINS_CHOICE' : 'AWAITING_OK_OR_REVERT';
+            }
+            st.lastError = err.message;
+            await this.configStore.saveState();
+            await this.telegram.sendMessage({
+              chatId,
+              text: `❌ Staging Command unexpected error: ${escapeHtml(err.message)}`
+            });
+          })
+        );
+        return;
       }
     }
 
@@ -4880,14 +5035,88 @@ export class BotController {
       return;
     }
 
+    // Execute staging CLI commands if configured on deployed repo(s)
+    const deployedRepos = this.resolveDeployedRepos(ws, st, { isAfterRevert, mode: 'matched' });
+    const executedCmds = [];
+    let failedCmd = null;
+
+    for (const r of deployedRepos) {
+      const cmd = r.stagingCommand?.trim();
+      if (cmd) {
+        const cmdRes = await this.executeRepoCliCommand(r, cmd, { env: 'staging', wsLabel });
+        executedCmds.push(cmdRes);
+        if (!cmdRes.success && !failedCmd) {
+          failedCmd = cmdRes;
+          break;
+        }
+      }
+    }
+
+    if (failedCmd) {
+      st.runningJenkins = null;
+      st.lastError = failedCmd.output || failedCmd.error;
+      await this.configStore.saveState();
+
+      const logSnippet = truncateText(failedCmd.output || failedCmd.error || 'Command failed.', 2600);
+      const isParallelAgentActive =
+        st.phase === 'RUNNING_AGENT' ||
+        st.phase === 'AWAITING_COMMIT_CHOICE' ||
+        this.runtime.get(ws.id)?.abortAgent;
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Staging CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+            `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
+
+      st.phase = isAfterRevert ? 'AWAITING_REVERT_JENKINS_CHOICE' : 'AWAITING_OK_OR_REVERT';
+      await this.configStore.saveState();
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `❌ <b>Staging CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+          `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+          `<b>Is it okay or revert?</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Yes (Ignore failure)', callback_data: `ok:yes:${ws.id}` },
+              { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
+      return;
+    }
+
     // ── Jenkins SUCCEEDED! ───────────────────────────────────────────────────
     st.runningJenkins = null;
-    const buildSummary = results
+    let buildSummary = results
       .map(
         (r) =>
           `• <code>${escapeHtml(r.jobName)}${r.buildNumber ? ` #${r.buildNumber}` : ''}</code>: <b>${escapeHtml(r.result)}</b>`
       )
       .join('\n');
+
+    if (executedCmds.length > 0) {
+      const cmdSummary = executedCmds
+        .map((c) => `• <b>${escapeHtml(c.repoName)}</b>: <code>${escapeHtml(c.command)}</code> ✅`)
+        .join('\n');
+      buildSummary = buildSummary
+        ? `${buildSummary}\n\n⚙️ <b>CLI Commands:</b>\n${cmdSummary}`
+        : `⚙️ <b>CLI Commands:</b>\n${cmdSummary}`;
+    }
 
     const isParallelAgentActive =
       st.phase === 'RUNNING_AGENT' ||
@@ -4952,7 +5181,7 @@ export class BotController {
       }
       await this.configStore.saveState();
 
-      const hasProd = this.hasWorkspaceProdJenkins(ws);
+      const hasProd = this.hasWorkspaceProdDeploy(ws);
       const deployHeading = hasProd
         ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
         : '✅ <b>Jenkins Deploy Succeeded!</b>';
@@ -4972,7 +5201,7 @@ export class BotController {
     st.lastError = null;
     await this.configStore.saveState();
 
-    const hasProd = this.hasWorkspaceProdJenkins(ws);
+    const hasProd = this.hasWorkspaceProdDeploy(ws);
     const deployHeading = hasProd
       ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
       : '✅ <b>Jenkins Deploy Succeeded!</b>';
@@ -4982,6 +5211,133 @@ export class BotController {
       chatId,
       ws,
       `${deployHeading}\n\n${buildSummary}${liveLinkLine}`
+    );
+  }
+
+  async #executeStagingCliOnly(chatId, ws, st, stagingCmdRepos, isAfterRevert, progressMsgId) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const executedCmds = [];
+    let failedCmd = null;
+
+    for (const r of stagingCmdRepos) {
+      const cmd = r.stagingCommand?.trim();
+      if (cmd) {
+        const cmdRes = await this.executeRepoCliCommand(r, cmd, { env: 'staging', wsLabel });
+        executedCmds.push(cmdRes);
+        if (!cmdRes.success && !failedCmd) {
+          failedCmd = cmdRes;
+          break;
+        }
+      }
+    }
+
+    st.runningJenkins = null;
+
+    if (failedCmd) {
+      st.lastError = failedCmd.output || failedCmd.error;
+      await this.configStore.saveState();
+
+      const logSnippet = truncateText(failedCmd.output || failedCmd.error || 'Command failed.', 2600);
+      const isParallelAgentActive =
+        st.phase === 'RUNNING_AGENT' ||
+        st.phase === 'AWAITING_COMMIT_CHOICE' ||
+        this.runtime.get(ws.id)?.abortAgent;
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Staging CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+            `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
+
+      st.phase = isAfterRevert ? 'AWAITING_REVERT_JENKINS_CHOICE' : 'AWAITING_OK_OR_REVERT';
+      await this.configStore.saveState();
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `❌ <b>Staging CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+          `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '🔄 Retry Command', callback_data: `jnk:yes:${ws.id}` },
+              { text: '⏹ Finish Without Deploy', callback_data: `jnk:no:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
+      return;
+    }
+
+    const targetTurn = st.deployingTurn || st.activeTurn;
+    const cmdSummary =
+      `⚙️ <b>CLI Commands:</b>\n` +
+      executedCmds
+        .map((c) => `• <b>${escapeHtml(c.repoName)}</b>: <code>${escapeHtml(c.command)}</code> ✅`)
+        .join('\n');
+
+    const isParallelAgentActive =
+      st.phase === 'RUNNING_AGENT' ||
+      st.phase === 'AWAITING_COMMIT_CHOICE' ||
+      this.runtime.get(ws.id)?.abortAgent;
+
+    if (isAfterRevert) {
+      if (targetTurn) {
+        this.#recordHistory(st, {
+          id: targetTurn.id,
+          createdAt: targetTurn.createdAt,
+          finishedAt: this.nowProvider().toISOString(),
+          prompt: targetTurn.prompt,
+          user: targetTurn.user || 'User',
+          commits: targetTurn.commits,
+          revertCommits: targetTurn.revertCommits,
+          outcome: 'REVERTED_AND_REDEPLOYED'
+        });
+      }
+      st.deployingTurn = null;
+      if (!isParallelAgentActive) {
+        st.phase = 'IDLE';
+        st.activeTurn = null;
+        st.accumulatedCommits = [];
+        st.baselineSnapshots = null;
+        st.pendingDeltas = [];
+        st.lastError = null;
+      }
+      await this.configStore.saveState();
+
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `✅ <b>Rollback Staging Command Succeeded!</b>\n\n${cmdSummary}\n\n` +
+          (isParallelAgentActive
+            ? `🤖 <i>Antigravity agent is still running in parallel with your next request…</i>`
+            : `<b>${escapeHtml(wsLabel)}</b> is restored and ready for your next message!`),
+        replyMarkup: isParallelAgentActive ? undefined : MAIN_REPLY_KEYBOARD
+      });
+      return;
+    }
+
+    st.phase = 'AWAITING_OK_OR_REVERT';
+    st.lastError = null;
+    await this.configStore.saveState();
+
+    const hasProd = this.hasWorkspaceProdDeploy(ws);
+    const liveLinkTitle = hasProd ? '🌐 Staging Live' : '🌐 Live';
+    const liveLinkLine = ws.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(ws.liveUrl)}` : '';
+    await this.sendIsItOkayPrompt(
+      chatId,
+      ws,
+      `✅ <b>Staging Command Succeeded!</b>\n\n${cmdSummary}${liveLinkLine}`
     );
   }
 
@@ -5015,19 +5371,31 @@ export class BotController {
   // ── STEP 4: Is It Okay? -> Yes (Prod / Skip Prod) / Revert ─────────────────
   async sendIsItOkayPrompt(chatId, ws, prefixHtml = '') {
     const st = this.configStore.getWorkspaceState(ws.id);
-    const hasProd = this.hasWorkspaceProdJenkins(ws);
+    const hasProd = this.hasWorkspaceProdDeploy(ws);
     const cleanPrefix = String(prefixHtml || '').trim();
 
     if (hasProd) {
       const prodTargets = this.resolveProdJenkinsTargets(ws, st);
-      const prodSummary = prodTargets
-        .map((t) => `${shortJenkinsJobLabel(t.jenkinsJob)} (${t.branch})`)
-        .join(', ');
+      const prodCmdRepos = this.resolveDeployedRepos(ws, st).filter((r) =>
+        Boolean(r.prodCommand && String(r.prodCommand).trim())
+      );
+      const prodSummaryParts = [];
+      if (prodTargets.length > 0) {
+        prodSummaryParts.push(
+          prodTargets.map((t) => `${shortJenkinsJobLabel(t.jenkinsJob)} (${t.branch})`).join(', ')
+        );
+      }
+      if (prodCmdRepos.length > 0) {
+        prodSummaryParts.push(
+          prodCmdRepos.map((r) => `${r.name}: ${r.prodCommand.trim()}`).join(', ')
+        );
+      }
+      const prodSummary = prodSummaryParts.join(' | ');
       const sections = [];
       if (cleanPrefix) sections.push(cleanPrefix);
       if (prodSummary) {
         sections.push(
-          `🏁 Prod job${prodTargets.length === 1 ? '' : 's'}: <code>${escapeHtml(prodSummary)}</code>`
+          `🏁 Prod deploy: <code>${escapeHtml(prodSummary)}</code>`
         );
       }
       sections.push('<b>Is it okay?</b>');
@@ -5139,8 +5507,56 @@ export class BotController {
     }
 
     const prodTargets = this.resolveProdJenkinsTargets(ws, st);
-    if (prodTargets.length === 0) {
+    const prodCmdRepos = this.resolveDeployedRepos(ws, st).filter((r) =>
+      Boolean(r.prodCommand && String(r.prodCommand).trim())
+    );
+
+    if (prodTargets.length === 0 && prodCmdRepos.length === 0) {
       await this.handleOkConfirm(chatId, wsId);
+      return;
+    }
+
+    if (prodTargets.length === 0 && prodCmdRepos.length > 0) {
+      st.phase = 'RUNNING_PROD_JENKINS';
+      st.runningJenkins = {
+        type: 'prod',
+        phase: 'RUNNING_PROD_JENKINS',
+        deployTargets: [],
+        isAfterRevert: false,
+        progressMsgId: null,
+        chatId,
+        startedAt: this.nowProvider().toISOString()
+      };
+      st.lastError = null;
+      await this.configStore.saveState();
+
+      const cmdNames = prodCmdRepos.map((r) => `${r.name}: ${r.prodCommand.trim()}`).join(', ');
+      const progressMsg = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🚀 <b>Triggered Production Command(s)…</b>\n\n` +
+          `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+          `<code>${escapeHtml(cmdNames)}</code>`
+      });
+
+      if (st.runningJenkins) {
+        st.runningJenkins.progressMsgId = progressMsg?.message_id || null;
+      }
+
+      this.#trackAsync(
+        this.#executeProdCliOnly(chatId, ws, st, prodCmdRepos, progressMsg?.message_id).catch(async (err) => {
+          st.runningJenkins = null;
+          if (st.phase !== 'RUNNING_AGENT' && st.phase !== 'AWAITING_COMMIT_CHOICE') {
+            st.phase = 'AWAITING_OK_OR_REVERT';
+          }
+          st.lastError = err.message;
+          await this.configStore.saveState();
+          await this.telegram.sendMessage({
+            chatId,
+            text: `❌ Production Command unexpected error: ${escapeHtml(err.message)}`
+          });
+        })
+      );
       return;
     }
 
@@ -5350,12 +5766,77 @@ export class BotController {
       return;
     }
 
-    const buildSummary = results
+    const deployedRepos = this.resolveDeployedRepos(ws, st);
+    const executedCmds = [];
+    let failedCmd = null;
+
+    for (const r of deployedRepos) {
+      const cmd = r.prodCommand?.trim();
+      if (cmd) {
+        const cmdRes = await this.executeRepoCliCommand(r, cmd, { env: 'prod', wsLabel });
+        executedCmds.push(cmdRes);
+        if (!cmdRes.success && !failedCmd) {
+          failedCmd = cmdRes;
+          break;
+        }
+      }
+    }
+
+    if (failedCmd) {
+      const logSnippet = truncateText(failedCmd.output || failedCmd.error || 'Command failed.', 2600);
+      st.lastError = failedCmd.output || failedCmd.error;
+      await this.configStore.saveState();
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Production CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+            `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `❌ <b>Production CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+          `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+          `<b>Retry production deploy, skip prod, or revert commit?</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '🔄 Retry Prod Deploy', callback_data: `ok:prod:${ws.id}` }],
+            [
+              { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
+              { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
+      return;
+    }
+
+    let buildSummary = results
       .map(
         (r) =>
           `• <code>${escapeHtml(r.jobName)}${r.buildNumber ? ` #${r.buildNumber}` : ''}</code>: <b>${escapeHtml(r.result)}</b>`
       )
       .join('\n');
+
+    if (executedCmds.length > 0) {
+      const cmdSummary = executedCmds
+        .map((c) => `• <b>${escapeHtml(c.repoName)}</b>: <code>${escapeHtml(c.command)}</code> ✅`)
+        .join('\n');
+      buildSummary = buildSummary
+        ? `${buildSummary}\n\n⚙️ <b>CLI Commands:</b>\n${cmdSummary}`
+        : `⚙️ <b>CLI Commands:</b>\n${cmdSummary}`;
+    }
 
     if (targetTurn && targetTurn !== st.activeTurn) {
       this.#recordHistory(st, {
@@ -5413,6 +5894,141 @@ export class BotController {
       text:
         `✅ <b>Production Jenkins Deploy Succeeded!</b>\n\n${buildSummary}${prodLiveLinkLine}\n\n` +
         `Confirmed &amp; deployed to production in <b>${escapeHtml(wsLabel)}</b>.\n\nReady for your next message!`,
+      replyMarkup: MAIN_REPLY_KEYBOARD
+    });
+
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+    }
+  }
+
+  async #executeProdCliOnly(chatId, ws, st, prodCmdRepos, progressMsgId) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const executedCmds = [];
+    let failedCmd = null;
+
+    for (const r of prodCmdRepos) {
+      const cmd = r.prodCommand?.trim();
+      if (cmd) {
+        const cmdRes = await this.executeRepoCliCommand(r, cmd, { env: 'prod', wsLabel });
+        executedCmds.push(cmdRes);
+        if (!cmdRes.success && !failedCmd) {
+          failedCmd = cmdRes;
+          break;
+        }
+      }
+    }
+
+    st.runningJenkins = null;
+
+    const isParallelAgentActive =
+      st.phase === 'RUNNING_AGENT' ||
+      st.phase === 'AWAITING_COMMIT_CHOICE' ||
+      this.runtime.get(ws.id)?.abortAgent;
+
+    if (failedCmd) {
+      const logSnippet = truncateText(failedCmd.output || failedCmd.error || 'Command failed.', 2600);
+      st.lastError = failedCmd.output || failedCmd.error;
+      await this.configStore.saveState();
+
+      if (isParallelAgentActive) {
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `❌ <b>Production CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+            `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+            `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+            `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+        });
+        return;
+      }
+
+      const sent = await this.telegram.sendMessage({
+        chatId,
+        text:
+          `❌ <b>Production CLI Command Failed in ${escapeHtml(failedCmd.repoName)}:</b>\n` +
+          `<code>${escapeHtml(failedCmd.command)}</code>\n\n` +
+          `<b>Error Log:</b>\n<pre>${escapeHtml(logSnippet)}</pre>\n\n` +
+          `<b>Retry production deploy, skip prod, or revert commit?</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '🔄 Retry Prod Deploy', callback_data: `ok:prod:${ws.id}` }],
+            [
+              { text: '✅ Yes (skip prod deploy)', callback_data: `ok:yes:${ws.id}` },
+              { text: '↩️ Revert', callback_data: `ok:rev:${ws.id}` }
+            ]
+          ]
+        }
+      });
+      if (sent?.message_id) {
+        this.registerWorkspacePromptMessage(ws.id, chatId, sent.message_id);
+      }
+      return;
+    }
+
+    const targetTurn = st.deployingTurn || st.activeTurn;
+    const cmdSummary =
+      `⚙️ <b>CLI Commands:</b>\n` +
+      executedCmds
+        .map((c) => `• <b>${escapeHtml(c.repoName)}</b>: <code>${escapeHtml(c.command)}</code> ✅`)
+        .join('\n');
+
+    if (targetTurn && targetTurn !== st.activeTurn) {
+      this.#recordHistory(st, {
+        id: targetTurn.id,
+        createdAt: targetTurn.createdAt,
+        finishedAt: this.nowProvider().toISOString(),
+        prompt: targetTurn.prompt,
+        user: targetTurn.user || 'User',
+        commits: targetTurn.commits,
+        builds: targetTurn.builds,
+        outcome: 'CONFIRMED_PROD_DEPLOYED'
+      });
+      st.deployingTurn = null;
+    }
+
+    const prodUrl = this.resolveWorkspaceProductionLiveUrl(ws);
+    const prodLiveLinkLine = prodUrl ? `\n\n🌐 Production Live: ${escapeHtml(prodUrl)}` : '';
+
+    if (isParallelAgentActive) {
+      await this.configStore.saveState();
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `✅ <b>Production Deploy Succeeded!</b>\n\n${cmdSummary}${prodLiveLinkLine}\n\n` +
+          `🤖 <i>Antigravity agent is working in parallel on your next request…</i>`
+      });
+      return;
+    }
+
+    if (st.activeTurn) {
+      this.#recordHistory(st, {
+        id: st.activeTurn.id,
+        createdAt: st.activeTurn.createdAt,
+        finishedAt: this.nowProvider().toISOString(),
+        prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
+        commits: st.activeTurn.commits,
+        builds: st.activeTurn.builds,
+        outcome: 'CONFIRMED_PROD_DEPLOYED'
+      });
+    }
+
+    st.phase = 'IDLE';
+    st.activeTurn = null;
+    st.accumulatedCommits = [];
+    st.baselineSnapshots = null;
+    st.pendingDeltas = [];
+    st.lastError = null;
+    await this.configStore.saveState();
+
+    await this.telegram.sendMessage({
+      chatId,
+      text:
+        `✅ <b>Production Deploy Succeeded!</b>\n\n` +
+        `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+        `${cmdSummary}${prodLiveLinkLine}\n\n` +
+        `Ready for your next message!`,
       replyMarkup: MAIN_REPLY_KEYBOARD
     });
 

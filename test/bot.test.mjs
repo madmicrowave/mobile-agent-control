@@ -3759,4 +3759,74 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(mockTg.sentMessages.some((m) => /Triggered 2 Jenkins deploys in parallel/.test(m.text)));
     assert.ok(mockTg.sentMessages.some((m) => /Jenkins Deploy Succeeded!/.test(m.text)));
   });
+
+  it('executes repository staging and production CLI commands inside repository folder', async () => {
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'IDLE';
+    st.messageQueue = [];
+    st.activeTurn = null;
+    st.accumulatedCommits = [];
+    st.runningJenkins = null;
+    await configStore.saveState();
+
+    const ws = configStore.config.workspaces.find((w) => w.id === 'payments');
+    assert.ok(ws);
+    const gateRepo = ws.repos.find((r) => r.name === 'payments_gate');
+    assert.ok(gateRepo);
+
+    const stagingMarker = path.join(gateRepo.path, 'staging_cli_ran.marker');
+    const prodMarker = path.join(gateRepo.path, 'prod_cli_ran.marker');
+
+    await fsp.rm(stagingMarker, { force: true });
+    await fsp.rm(prodMarker, { force: true });
+
+    gateRepo.stagingCommand = `echo "staging: $(pwd)" > "${stagingMarker}"`;
+    gateRepo.prodCommand = `echo "prod: $(pwd)" > "${prodMarker}"`;
+
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(path.join(gateRepo.path, 'code_cli_test.txt'), 'cli command test\n');
+      return {
+        conversationId: 'conv-cli-commands',
+        response: 'Added CLI test change'
+      };
+    };
+
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Change for repo CLI commands test'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_JENKINS_CHOICE');
+
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('jnk:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // Staging command should have executed inside repo folder
+    const stagingContent = await fsp.readFile(stagingMarker, 'utf8');
+    assert.ok(stagingContent.includes(gateRepo.path));
+    assert.ok(mockTg.sentMessages.some((m) => /CLI Commands:/.test(m.text)));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+
+    // Trigger Production deploy
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('ok:prod:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // Production command should have executed inside repo folder
+    const prodContent = await fsp.readFile(prodMarker, 'utf8');
+    assert.ok(prodContent.includes(gateRepo.path));
+    assert.ok(mockTg.sentMessages.some((m) => /Production.*Deploy Succeeded!/i.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /CLI Commands:/.test(m.text)));
+
+    // Cleanup markers and commands
+    await fsp.rm(stagingMarker, { force: true });
+    await fsp.rm(prodMarker, { force: true });
+    gateRepo.stagingCommand = '';
+    gateRepo.prodCommand = '';
+  });
 });

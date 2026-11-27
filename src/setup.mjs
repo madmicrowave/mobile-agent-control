@@ -1213,7 +1213,9 @@ export async function runWorkspacesWizard({
         jenkinsJob: finalJenkinsJob,
         prodJenkinsJob: wsEnvironmentMode === 'multi' ? finalProdJenkinsJob : '',
         branch: finalBranch,
-        deployEnabled: finalDeployEnabled
+        deployEnabled: finalDeployEnabled,
+        stagingCommand: prev?.stagingCommand || '',
+        prodCommand: prev?.prodCommand || ''
       });
     }
 

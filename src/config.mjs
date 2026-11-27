@@ -140,6 +140,8 @@ export async function discoverWorkspaceRepos(
       jenkinsJobs: resolvedStagingJobs,
       prodJenkinsJobs: resolvedProdJobs,
       branch: prev.branch || '',
+      stagingCommand: prev.stagingCommand || '',
+      prodCommand: prev.prodCommand || '',
       deployEnabled
     });
   }
@@ -490,6 +492,8 @@ export class ConfigStore {
         r.prodGithubWorkflow = String(r.prodGithubWorkflow || '').trim();
         r.gcpTrigger = String(r.gcpTrigger || '').trim();
         r.prodGcpTrigger = String(r.prodGcpTrigger || '').trim();
+        r.stagingCommand = String(r.stagingCommand || '').trim();
+        r.prodCommand = String(r.prodCommand || '').trim();
       }
 
       ws.liveUrl = String(ws.liveUrl || '').trim();

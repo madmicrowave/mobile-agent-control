@@ -2588,6 +2588,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
     @Published var showDeleteConfirm: Bool = false
     @Published var lastSelectedCiProvider: String = "jenkins"
     @Published var isDeleting: Bool = false
+    @Published var transientExpandedRepoCommands: Set<String> = []
 }
 
 private struct WorkspaceEditorFormView: View {
@@ -3466,6 +3467,95 @@ private struct WorkspaceEditorFormView: View {
                                             }
                                         }
                                     }
+
+                                    Divider()
+                                        .padding(.vertical, 2)
+
+                                    // Collapsible CLI Execution Commands
+                                    let hasCommands = !repo.stagingCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                                      !repo.prodCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    let isExpanded = isRepoCommandExpanded(for: repo)
+
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Button {
+                                            withAnimation(.easeInOut(duration: 0.18)) {
+                                                toggleRepoCommandExpansion(for: repo)
+                                            }
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundColor(.secondary)
+                                                Image(systemName: "terminal")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(hasCommands ? .primary : .secondary)
+                                                Text("Execute Commands (CLI)")
+                                                    .font(.system(size: 11.5, weight: .medium))
+                                                    .foregroundColor(.primary)
+
+                                                if hasCommands {
+                                                    Text("Configured")
+                                                        .font(.system(size: 9.5, weight: .semibold))
+                                                        .foregroundColor(.green)
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 1.5)
+                                                        .background(Color.green.opacity(0.12))
+                                                        .cornerRadius(4)
+                                                }
+                                                Spacer()
+                                            }
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        if isExpanded {
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                VStack(alignment: .leading, spacing: 3) {
+                                                    HStack(spacing: 4) {
+                                                        Text("Staging Command")
+                                                            .font(.system(size: 11, weight: .medium))
+                                                            .foregroundColor(.secondary)
+                                                        if !repo.stagingCommand.isEmpty {
+                                                            Circle()
+                                                                .fill(Color.blue)
+                                                                .frame(width: 5, height: 5)
+                                                        }
+                                                    }
+                                                    TextField("bash some_script.sh --arg=ooo", text: $repo.stagingCommand)
+                                                        .textFieldStyle(.roundedBorder)
+                                                        .font(.system(size: 11, design: .monospaced))
+                                                        .onChange(of: repo.stagingCommand) { _, _ in
+                                                            syncRepoCommandExpansionState(for: repo)
+                                                        }
+                                                }
+
+                                                VStack(alignment: .leading, spacing: 3) {
+                                                    HStack(spacing: 4) {
+                                                        Text("Production Command")
+                                                            .font(.system(size: 11, weight: .medium))
+                                                            .foregroundColor(.secondary)
+                                                        if !repo.prodCommand.isEmpty {
+                                                            Circle()
+                                                                .fill(Color.purple)
+                                                                .frame(width: 5, height: 5)
+                                                        }
+                                                    }
+                                                    TextField("bash deploy_prod.sh --arg=ooo", text: $repo.prodCommand)
+                                                        .textFieldStyle(.roundedBorder)
+                                                        .font(.system(size: 11, design: .monospaced))
+                                                        .onChange(of: repo.prodCommand) { _, _ in
+                                                            syncRepoCommandExpansionState(for: repo)
+                                                        }
+                                                }
+
+                                                Text("Executed inside repository folder after CI deploy or directly when no CI is mapped.")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.top, 2)
+                                            .padding(.leading, 16)
+                                        }
+                                    }
                                 }
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -3729,6 +3819,61 @@ private struct WorkspaceEditorFormView: View {
             panel.directoryURL = URL(fileURLWithPath: expanded)
         }
         return panel.runModal() == .OK ? panel.url?.path : nil
+    }
+
+    private func isRepoCommandExpanded(for repo: MACRepo) -> Bool {
+        let hasCommands = !repo.stagingCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          !repo.prodCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !hasCommands {
+            return vm.transientExpandedRepoCommands.contains(repo.id)
+        }
+        let remembered = UserDefaults.standard.dictionary(forKey: "MACRepoCommandsExpansionState") as? [String: Bool] ?? [:]
+        if let saved = remembered[repo.id] {
+            return saved
+        }
+        return !vm.transientExpandedRepoCommands.contains("collapsed::\(repo.id)")
+    }
+
+    private func toggleRepoCommandExpansion(for repo: MACRepo) {
+        let hasCommands = !repo.stagingCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          !repo.prodCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let currentlyExpanded = isRepoCommandExpanded(for: repo)
+        let nextExpanded = !currentlyExpanded
+
+        if !hasCommands {
+            if nextExpanded {
+                vm.transientExpandedRepoCommands.insert(repo.id)
+            } else {
+                vm.transientExpandedRepoCommands.remove(repo.id)
+            }
+        } else {
+            var remembered = UserDefaults.standard.dictionary(forKey: "MACRepoCommandsExpansionState") as? [String: Bool] ?? [:]
+            remembered[repo.id] = nextExpanded
+            UserDefaults.standard.set(remembered, forKey: "MACRepoCommandsExpansionState")
+            if nextExpanded {
+                vm.transientExpandedRepoCommands.insert(repo.id)
+                vm.transientExpandedRepoCommands.remove("collapsed::\(repo.id)")
+            } else {
+                vm.transientExpandedRepoCommands.remove(repo.id)
+                vm.transientExpandedRepoCommands.insert("collapsed::\(repo.id)")
+            }
+        }
+    }
+
+    private func syncRepoCommandExpansionState(for repo: MACRepo) {
+        let hasCommands = !repo.stagingCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          !repo.prodCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        var remembered = UserDefaults.standard.dictionary(forKey: "MACRepoCommandsExpansionState") as? [String: Bool] ?? [:]
+        if hasCommands {
+            let isExpanded = isRepoCommandExpanded(for: repo)
+            remembered[repo.id] = isExpanded
+            UserDefaults.standard.set(remembered, forKey: "MACRepoCommandsExpansionState")
+        } else {
+            if remembered.removeValue(forKey: repo.id) != nil {
+                UserDefaults.standard.set(remembered, forKey: "MACRepoCommandsExpansionState")
+            }
+        }
+        onAutoSave()
     }
 }
 
