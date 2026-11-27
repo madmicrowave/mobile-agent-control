@@ -670,7 +670,27 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     expect(items[4].status == .failed, "Fifth item is failed/reverted")
     expect(items[4].resultLabel == "Reverted", "Fifth item result is Reverted")
 
-    print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline history loader passed")
+    // 3. Test WorkspaceTimelineVM auto-refresh countdown, tick, and reset behavior
+    let timelineVM = WorkspaceTimelineVM()
+    expect(timelineVM.autoRefreshSecondsRemaining == 60, "Initial countdown is 60s")
+
+    var refreshTriggered = false
+    timelineVM.tick { refreshTriggered = true }
+    expect(timelineVM.autoRefreshSecondsRemaining == 59, "First tick decrements to 59s")
+    expect(!refreshTriggered, "Refresh not triggered yet at 59s")
+
+    timelineVM.resetCountdown()
+    expect(timelineVM.autoRefreshSecondsRemaining == 60, "resetCountdown resets back to 60s")
+
+    timelineVM.autoRefreshSecondsRemaining = 1
+    timelineVM.tick { refreshTriggered = true }
+    expect(timelineVM.autoRefreshSecondsRemaining == 60, "Tick from 1 resets countdown to 60s")
+    expect(refreshTriggered, "Automatic refresh triggered when counter reaches 0")
+
+    timelineVM.startAutoRefresh {}
+    timelineVM.stopAutoRefresh()
+
+    print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline 60s auto-refresh passed")
 }
 
 private func testGitRemoteWebURLAndMultiJobMapping() throws {

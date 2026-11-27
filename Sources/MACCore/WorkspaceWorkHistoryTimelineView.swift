@@ -26,6 +26,41 @@ public final class WorkspaceTimelineVM: ObservableObject {
             expandedFileItemIds.insert(id)
         }
     }
+
+    @Published public var autoRefreshSecondsRemaining: Int = 60
+    private var timer: Timer?
+
+    public func resetCountdown() {
+        autoRefreshSecondsRemaining = 60
+    }
+
+    public func tick(onRefresh: () -> Void) {
+        if autoRefreshSecondsRemaining > 1 {
+            autoRefreshSecondsRemaining -= 1
+        } else {
+            autoRefreshSecondsRemaining = 60
+            onRefresh()
+        }
+    }
+
+    public func startAutoRefresh(onRefresh: @escaping () -> Void) {
+        stopAutoRefresh()
+        autoRefreshSecondsRemaining = 60
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.tick(onRefresh: onRefresh)
+            }
+        }
+    }
+
+    public func stopAutoRefresh() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    deinit {
+        timer?.invalidate()
+    }
 }
 
 public struct WorkspaceWorkHistoryTimelineView: View {
@@ -128,8 +163,15 @@ public struct WorkspaceWorkHistoryTimelineView: View {
         }
         .onAppear {
             reloadTimeline()
+            vm.startAutoRefresh {
+                reloadTimeline()
+            }
+        }
+        .onDisappear {
+            vm.stopAutoRefresh()
         }
         .onChange(of: workspace.id) { _, _ in
+            vm.resetCountdown()
             reloadTimeline()
         }
     }
@@ -151,7 +193,28 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
             Spacer()
 
-            // Search field
+            // Refresh button (placed before filter, with 60s countdown counter)
+            Button {
+                vm.resetCountdown()
+                reloadTimeline()
+            } label: {
+                HStack(spacing: 4) {
+                    if vm.isReloading {
+                        ProgressView().controlSize(.mini)
+                        Text("Refreshing...")
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh (\(vm.autoRefreshSecondsRemaining)s)")
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(vm.isReloading)
+            .help("Refresh work history now (auto-refreshes in \(vm.autoRefreshSecondsRemaining)s)")
+
+            // Search filter field
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
@@ -181,24 +244,6 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(Color.primary.opacity(0.12), lineWidth: 1)
             )
-
-            // Refresh button
-            Button {
-                reloadTimeline()
-            } label: {
-                HStack(spacing: 4) {
-                    if vm.isReloading {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    Text("Refresh")
-                }
-                .font(.system(size: 11, weight: .medium))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(vm.isReloading)
         }
         .padding(.horizontal, 14)
         .padding(.top, 4)
