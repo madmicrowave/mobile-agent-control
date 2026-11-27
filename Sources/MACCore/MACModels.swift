@@ -4,33 +4,35 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
     public let id: String
     public let label: String
     public let tiered: Bool
+    public let tieredLevels: [String]
 
-    public init(id: String, label: String, tiered: Bool = true) {
+    public init(id: String, label: String, tiered: Bool = true, tieredLevels: [String] = ["low", "medium", "high"]) {
         self.id = id
         self.label = label
         self.tiered = tiered
+        self.tieredLevels = tieredLevels
     }
 
     public static let allOptions: [MACModelOption] = [
-        MACModelOption(id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tiered: true),
-        MACModelOption(id: "gemini-4-argon", label: "Gemini 4 Argon", tiered: true),
-        MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true),
-        MACModelOption(id: "gemini-4-neon", label: "Gemini 4 Neon", tiered: true),
-        MACModelOption(id: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen", tiered: true),
-        MACModelOption(id: "google-cloud-code", label: "Google Cloud Code", tiered: true),
-        MACModelOption(id: "openai-codex", label: "OpenAI Codex", tiered: false),
-        MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true),
-        MACModelOption(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", tiered: true),
-        MACModelOption(id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet", tiered: false),
-        MACModelOption(id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", tiered: false),
-        MACModelOption(id: "deepseek-chat", label: "DeepSeek V3", tiered: false),
-        MACModelOption(id: "deepseek-reasoner", label: "DeepSeek R1", tiered: false),
-        MACModelOption(id: "gpt-4o", label: "OpenAI GPT-4o", tiered: false),
-        MACModelOption(id: "o3-mini", label: "OpenAI o3-mini", tiered: false),
-        MACModelOption(id: "o1", label: "OpenAI o1", tiered: false),
-        MACModelOption(id: "qwen-2.5-coder-32b", label: "Qwen 2.5 Coder 32B", tiered: false),
-        MACModelOption(id: "qwen-2.5-72b", label: "Qwen 2.5 72B", tiered: false),
-        MACModelOption(id: "gpt-oss-120b-medium", label: "GPT-OSS 120B", tiered: false)
+        MACModelOption(id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "gemini-4-argon", label: "Gemini 4 Argon", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "gemini-4-carbon", label: "Gemini 4 Carbon", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "gemini-4-neon", label: "Gemini 4 Neon", tiered: true, tieredLevels: ["low", "medium", "high", "xhigh"]),
+        MACModelOption(id: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen", tiered: true, tieredLevels: ["low", "medium", "high", "xhigh"]),
+        MACModelOption(id: "google-cloud-code", label: "Google Cloud Code", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "openai-codex", label: "OpenAI Codex", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "claude-opus-5-5", label: "Claude Opus 5.5", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", tiered: true, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "claude-3-7-sonnet", label: "Claude 3.7 Sonnet", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "deepseek-chat", label: "DeepSeek V3", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "deepseek-reasoner", label: "DeepSeek R1", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "gpt-4o", label: "OpenAI GPT-4o", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "o3-mini", label: "OpenAI o3-mini", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "o1", label: "OpenAI o1", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "qwen-2.5-coder-32b", label: "Qwen 2.5 Coder 32B", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "qwen-2.5-72b", label: "Qwen 2.5 72B", tiered: false, tieredLevels: ["low", "medium", "high"]),
+        MACModelOption(id: "gpt-oss-120b-medium", label: "GPT-OSS 120B", tiered: false, tieredLevels: ["low", "medium", "high"])
     ]
 
     public static func options(forEngine engine: String) -> [MACModelOption] {
@@ -63,6 +65,26 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
 
     public static let validLevels: [String] = ["low", "medium", "high", "xhigh"]
 
+    public static func supportedLevels(forModel rawModel: String, customOptions: [MACModelOption] = []) -> [String] {
+        let norm = rawModel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var baseFamily = norm
+        for suffix in ["-low", "-medium", "-high", "-xhigh"] where norm.hasSuffix(suffix) {
+            baseFamily = String(norm.dropLast(suffix.count))
+            break
+        }
+        let hyphenated = baseFamily.replacingOccurrences(of: " ", with: "-")
+        if let match = customOptions.first(where: { $0.id == baseFamily || $0.id == norm || $0.id == hyphenated }) {
+            return match.tieredLevels
+        }
+        if let match = allOptions.first(where: { $0.id == baseFamily || $0.id == norm || $0.id == hyphenated }) {
+            return match.tieredLevels
+        }
+        if baseFamily.contains("neon") || baseFamily.contains("hydrogen") {
+            return ["low", "medium", "high", "xhigh"]
+        }
+        return ["low", "medium", "high"]
+    }
+
     public static func normalizeFamilyAndLevel(rawModel: String, rawLevel: String) -> (family: String, level: String, modelId: String, displayLabel: String) {
         let cleanLevelRaw = rawLevel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let mappedLevel: String
@@ -85,7 +107,10 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
 
         let hyphenated = baseFamily.replacingOccurrences(of: " ", with: "-")
         if let opt = allOptions.first(where: { $0.id == baseFamily || $0.id == trimmedModel || $0.id == hyphenated }) {
-            let effLevel = level.isEmpty ? "high" : level
+            var effLevel = level.isEmpty ? "high" : level
+            if !opt.tieredLevels.contains(effLevel) {
+                effLevel = opt.tieredLevels.contains("high") ? "high" : (opt.tieredLevels.last ?? "high")
+            }
             if opt.tiered {
                 let fullId = "\(opt.id)-\(effLevel)"
                 return (opt.id, effLevel, fullId, "\(opt.label) (\(effLevel))")
@@ -95,7 +120,10 @@ public struct MACModelOption: Identifiable, Equatable, Hashable {
         }
 
         let fallbackOpt = allOptions[0]
-        let effLevel = level.isEmpty ? "high" : level
+        var effLevel = level.isEmpty ? "high" : level
+        if !fallbackOpt.tieredLevels.contains(effLevel) {
+            effLevel = "high"
+        }
         if trimmedModel.isEmpty {
             return (fallbackOpt.id, effLevel, "\(fallbackOpt.id)-\(effLevel)", "\(fallbackOpt.label) (\(effLevel))")
         }

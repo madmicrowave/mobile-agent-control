@@ -584,7 +584,14 @@ private final class GeneralTabVM: ObservableObject {
         }
     }
     @Published var selectedDirectApiSubtab: String = "deepseek" // "deepseek", "openai", "anthropic", "qwen", "custom"
-    @Published var defaultModelFamily: String = "gemini-3.8-flash"
+    @Published var defaultModelFamily: String = "gemini-3.8-flash" {
+        didSet {
+            let supported = MACModelOption.supportedLevels(forModel: defaultModelFamily, customOptions: autodetectedAgyModels)
+            if !supported.contains(defaultModelLevel) {
+                defaultModelLevel = supported.contains("high") ? "high" : (supported.last ?? "high")
+            }
+        }
+    }
     @Published var defaultModelLevel: String = "high"
     @Published var autodetectedAgyModels: [MACModelOption] = []
     @Published var isAutodetectingModels: Bool = false
@@ -672,7 +679,8 @@ private struct GeneralTabView: View {
     @StateObject private var vm = GeneralTabVM()
 
     private var levelOptions: [MACSegmentedOption<String>] {
-        MACModelOption.validLevels.map {
+        let supported = MACModelOption.supportedLevels(forModel: vm.defaultModelFamily, customOptions: vm.autodetectedAgyModels)
+        return supported.map {
             MACSegmentedOption(id: $0, title: $0 == "xhigh" ? "extra high" : $0, value: $0)
         }
     }
@@ -1284,7 +1292,7 @@ private struct GeneralTabView: View {
                 }
             }
 
-            // 2. Default Model and Default Effort
+            // 2. Default Model and Effort
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -1353,7 +1361,7 @@ private struct GeneralTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Default Effort")
+                    Text("Effort")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     MACSegmentedPicker(options: levelOptions, selection: $vm.defaultModelLevel)
@@ -2599,7 +2607,8 @@ private struct WorkspaceEditorFormView: View {
     }
 
     private var levelOptions: [MACSegmentedOption<String>] {
-        MACModelOption.validLevels.map {
+        let supported = MACModelOption.supportedLevels(forModel: vm.selectedModelFamily)
+        return supported.map {
             MACSegmentedOption(id: $0, title: $0 == "xhigh" ? "extra high" : $0, value: $0)
         }
     }
@@ -2932,7 +2941,7 @@ private struct WorkspaceEditorFormView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Effort Level")
+                                Text("Effort")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
 
@@ -3575,7 +3584,8 @@ private struct WorkspaceEditorFormView: View {
         } else {
             vm.selectedModelFamily = available.first?.id ?? "gemini-3.8-flash"
         }
-        vm.selectedModelLevel = norm.level
+        let supported = MACModelOption.supportedLevels(forModel: vm.selectedModelFamily)
+        vm.selectedModelLevel = supported.contains(norm.level) ? norm.level : "high"
         syncModelFields()
         if draft.ciProvider != "none" && !draft.ciProvider.isEmpty {
             vm.lastSelectedCiProvider = draft.ciProvider
@@ -3583,6 +3593,10 @@ private struct WorkspaceEditorFormView: View {
     }
 
     private func syncModelFields() {
+        let supported = MACModelOption.supportedLevels(forModel: vm.selectedModelFamily)
+        if !supported.contains(vm.selectedModelLevel) {
+            vm.selectedModelLevel = supported.contains("high") ? "high" : (supported.last ?? "high")
+        }
         let norm = MACModelOption.normalizeFamilyAndLevel(rawModel: vm.selectedModelFamily, rawLevel: vm.selectedModelLevel)
         draft.model = norm.modelId
         draft.modelLevel = norm.level

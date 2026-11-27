@@ -275,6 +275,7 @@ public final class MACAppState: ObservableObject {
 
             var discovered: [MACModelOption] = []
             var seen = Set<String>()
+            var familyLevels: [String: [String]] = [:]
 
             for line in text.components(separatedBy: .newlines) {
                 let clean = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -284,17 +285,42 @@ public final class MACAppState: ObservableObject {
                 let fullId = String(first)
 
                 var family = fullId
+                var tierLevel: String? = nil
                 for sfx in ["-low", "-medium", "-high", "-xhigh"] where fullId.hasSuffix(sfx) {
                     family = String(fullId.dropLast(sfx.count))
+                    tierLevel = String(sfx.dropFirst())
                     break
+                }
+
+                if let lvl = tierLevel {
+                    if familyLevels[family] == nil {
+                        familyLevels[family] = []
+                    }
+                    if !familyLevels[family]!.contains(lvl) {
+                        familyLevels[family]!.append(lvl)
+                    }
                 }
 
                 if seen.insert(family).inserted {
                     let label = MACModelOption.allOptions.first(where: { $0.id == family })?.label
                         ?? family.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
-                    discovered.append(MACModelOption(id: family, label: label, tiered: true))
+                    let defaultLevels = MACModelOption.supportedLevels(forModel: family)
+                    discovered.append(MACModelOption(id: family, label: label, tiered: true, tieredLevels: defaultLevels))
                 }
             }
+
+            for idx in discovered.indices {
+                if let levels = familyLevels[discovered[idx].id], !levels.isEmpty {
+                    let ordered = ["low", "medium", "high", "xhigh"].filter { levels.contains($0) }
+                    discovered[idx] = MACModelOption(
+                        id: discovered[idx].id,
+                        label: discovered[idx].label,
+                        tiered: true,
+                        tieredLevels: ordered.isEmpty ? levels : ordered
+                    )
+                }
+            }
+
             return discovered
         } catch {
             return []

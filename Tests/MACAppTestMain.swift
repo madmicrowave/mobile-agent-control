@@ -171,6 +171,15 @@ private func testEngineModelFilteringAndEngineConfiguration() throws {
     let (normFam, normLvl, _, _) = MACModelOption.normalizeFamilyAndLevel(rawModel: "gemini-4-hydrogen-xhigh", rawLevel: "")
     expect(normFam == "gemini-4-hydrogen" && normLvl == "xhigh", "hydrogen-xhigh suffix resolves to xhigh")
 
+    let neonLevels = MACModelOption.supportedLevels(forModel: "gemini-4-neon")
+    expect(neonLevels == ["low", "medium", "high", "xhigh"], "gemini-4-neon supports extra high (xhigh)")
+
+    let flashLevels = MACModelOption.supportedLevels(forModel: "gemini-3.8-flash")
+    expect(flashLevels == ["low", "medium", "high"], "gemini-3.8-flash must NOT have xhigh")
+
+    let (flashFam, flashLvl, _, _) = MACModelOption.normalizeFamilyAndLevel(rawModel: "gemini-3.8-flash", rawLevel: "extra high")
+    expect(flashFam == "gemini-3.8-flash" && flashLvl == "high", "extra high automatically falls back to high for models without xhigh")
+
     let codexModels = MACModelOption.options(forEngine: "codex").map(\.id)
     expect(codexModels.contains("openai-codex"), "Codex supports openai-codex")
     expect(codexModels.contains("o3-mini"), "Codex supports o3-mini")
