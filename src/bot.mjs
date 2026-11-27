@@ -35,6 +35,7 @@ export const BOT_COMMANDS = [
   { command: 'workspaces', description: 'Switch active Workspace' },
   { command: 'model', description: 'Change AI model & level for active Workspace' },
   { command: 'history', description: 'Show latest X messages (setup count)' },
+  { command: 'stop', description: 'Stop running agent and discard uncommitted edits' },
   { command: 'newchat', description: 'Start a fresh chat in active Workspace' },
   { command: 'settings', description: 'Change AI model & level per Workspace' },
   { command: 'lock', description: 'Lock session immediately' }

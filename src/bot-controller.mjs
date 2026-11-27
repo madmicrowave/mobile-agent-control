@@ -618,6 +618,7 @@ export class BotController {
       'menu',
       'help',
       'start',
+      'stop',
       'latest messages',
       'new chat'
     ]);
@@ -892,6 +893,15 @@ export class BotController {
       sess.lastSettingsMenuMessageId = null;
       this.lastSettingsMenuByChat.delete(chatId);
       await this.activateNewChat(chatId, sess.selectedWorkspaceId);
+      return;
+    }
+
+    if (text === '/stop') {
+      if (!sess.selectedWorkspaceId || !this.getWorkspace(sess.selectedWorkspaceId)) {
+        await this.sendIdeSelectorMenu(chatId, userId, '🗂 <b>Select a Workspace first:</b>');
+        return;
+      }
+      await this.#stopAgentForWorkspace(chatId, sess.selectedWorkspaceId, msg.message_id);
       return;
     }
 
@@ -1604,6 +1614,70 @@ export class BotController {
     }
   }
 
+  async #stopAgentForWorkspace(chatId, wsId, messageId = null) {
+    await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
+    const stopWs = this.getWorkspace(wsId);
+    const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
+    const stopSt = this.configStore.getWorkspaceState(wsId);
+    stopSt.userAborted = true;
+
+    const cancelledCount = stopSt.messageQueue?.length || 0;
+    if (stopSt.messageQueue && stopSt.messageQueue.length > 0) {
+      for (const item of stopSt.messageQueue) {
+        if (item.queueMessageId) {
+          await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+        }
+      }
+    }
+    stopSt.messageQueue = [];
+    stopSt.accumulatedCommits = [];
+
+    const rt = this.runtime.get(wsId);
+    if (rt?.abortAgent) {
+      rt.isUserAborted = true;
+      rt.abortAgent();
+      await this.configStore.saveState();
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...` +
+          (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '')
+      });
+    } else {
+      for (const repo of stopWs?.repos || []) {
+        try {
+          await discardUncommittedTurnChanges(repo, stopSt.baselineSnapshots?.[repo.name]);
+          if (stopSt.baselineSnapshots?.[repo.name]?.headSha) {
+            await runGit(repo.path, ['reset', '--hard', stopSt.baselineSnapshots[repo.name].headSha]).catch(() => {});
+          }
+        } catch {}
+      }
+      stopSt.activeTurn = null;
+      if (!stopSt.runningJenkins) {
+        stopSt.deployingTurn = null;
+      }
+      stopSt.baselineSnapshots = null;
+      stopSt.pendingDeltas = [];
+      stopSt.pendingPhotos = [];
+      stopSt.lastError = null;
+      stopSt.phase = stopSt.runningJenkins ? stopSt.runningJenkins.phase : 'IDLE';
+      if (stopSt.messages?.length > 0 && stopSt.messages[stopSt.messages.length - 1].role === 'user') {
+        stopSt.messages.pop();
+      }
+      stopSt.userAborted = false;
+      await this.configStore.saveState();
+      await this.telegram.sendMessage({
+        chatId,
+        text:
+          `🛑 <b>Agent stopped in ${escapeHtml(stopLabel)}.</b>\n\n` +
+          `Changes from the stopped request were discarded.` +
+          (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '') +
+          `\n\nReady for your new message.`,
+        replyMarkup: MAIN_REPLY_KEYBOARD
+      });
+    }
+  }
+
   // ── Callback Query Dispatcher ──────────────────────────────────────────────
   async handleCallbackQuery(cb) {
     const cbId = cb.id;
@@ -2056,31 +2130,7 @@ export class BotController {
 
       if (data.startsWith('agent:stop:')) {
         const wsId = data.slice('agent:stop:'.length);
-        await this.clearWorkspacePromptButtons(wsId, chatId, messageId);
-        const rt = this.runtime.get(wsId);
-        if (rt?.abortAgent) {
-          rt.abortAgent();
-          const stopWs = this.getWorkspace(wsId);
-          const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
-          const stopSt = this.configStore.getWorkspaceState(wsId);
-          const cancelledCount = stopSt.messageQueue?.length || 0;
-          if (stopSt.messageQueue && stopSt.messageQueue.length > 0) {
-            for (const item of stopSt.messageQueue) {
-              if (item.queueMessageId) {
-                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
-              }
-            }
-          }
-          stopSt.messageQueue = [];
-          stopSt.accumulatedCommits = [];
-          await this.configStore.saveState();
-          await this.telegram.sendMessage({
-            chatId,
-            text:
-              `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...` +
-              (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '')
-          });
-        }
+        await this.#stopAgentForWorkspace(chatId, wsId, messageId);
         return;
       }
 
@@ -3443,6 +3493,7 @@ export class BotController {
     st.phase = 'RUNNING_AGENT';
     st.lastError = null;
     st.pendingDeltas = [];
+    let isAbortedByUser = false;
 
     if (isAddFix && st.activeTurn) {
       st.activeTurn.fixPrompt = promptText;
@@ -3759,7 +3810,24 @@ export class BotController {
         }
       });
 
-      this.runtime.set(ws.id, { abortAgent: abort });
+      const abortWrapper = () => {
+        isAbortedByUser = true;
+        st.userAborted = true;
+        try {
+          abort();
+        } catch {}
+      };
+
+      const rtEntry = {
+        abortAgent: abortWrapper,
+        get isUserAborted() {
+          return isAbortedByUser;
+        },
+        set isUserAborted(val) {
+          isAbortedByUser = Boolean(val);
+        }
+      };
+      this.runtime.set(ws.id, rtEntry);
       try {
         return await promise;
       } finally {
@@ -3850,6 +3918,66 @@ export class BotController {
         this.runtime.delete(ws.id);
         if (statusMessageId) {
           await this.telegram.clearInlineButtons(chatId, statusMessageId);
+        }
+
+        const isUserStopped = Boolean(
+          isAbortedByUser ||
+          st.userAborted ||
+          agentErr?.message?.includes('stopped by user') ||
+          agentErr?.name === 'AbortError'
+        );
+
+        if (isUserStopped) {
+          st.userAborted = false;
+          for (const repo of ws.repos || []) {
+            try {
+              await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]);
+              if (st.baselineSnapshots?.[repo.name]?.headSha) {
+                await runGit(repo.path, ['reset', '--hard', st.baselineSnapshots[repo.name].headSha]).catch(() => {});
+              }
+            } catch (discardErr) {
+              this.log('agent', `Failed to discard changes for ${repo.name}: ${discardErr.message}`, wsLabel);
+            }
+          }
+
+          st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
+          st.activeTurn = null;
+          if (!st.runningJenkins) {
+            st.deployingTurn = null;
+          }
+          st.baselineSnapshots = null;
+          st.pendingDeltas = [];
+          st.accumulatedCommits = [];
+          st.pendingPhotos = [];
+          st.lastError = null;
+
+          if (st.messages && st.messages.length > 0 && st.messages[st.messages.length - 1].role === 'user') {
+            st.messages.pop();
+          }
+
+          const droppedQueueCount = st.messageQueue?.length || 0;
+          if (st.messageQueue && st.messageQueue.length > 0) {
+            for (const item of st.messageQueue) {
+              if (item.queueMessageId) {
+                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
+              }
+            }
+          }
+          st.messageQueue = [];
+
+          await this.clearWorkspacePromptButtons(ws.id, chatId, statusMessageId);
+          await this.configStore.saveState();
+
+          await this.telegram.sendMessage({
+            chatId,
+            text:
+              `🛑 <b>Agent stopped in ${escapeHtml(wsLabel)}.</b>\n\n` +
+              `Changes from the stopped request were discarded.` +
+              (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
+              `\n\nReady for your new message.`,
+            replyMarkup: MAIN_REPLY_KEYBOARD
+          });
+          return;
         }
 
         // Check if changes were made to repository files despite the failure/stop

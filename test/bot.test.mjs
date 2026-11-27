@@ -3829,4 +3829,96 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     gateRepo.stagingCommand = '';
     gateRepo.prodCommand = '';
   });
+
+  it('stops agent, discards uncommitted changes, and runs new message from clean state without finalizing stopped turn', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    const targetFile = path.join(coreRepo.cloneDir, 'stopped_turn_file.js');
+    let abortCalled = false;
+    let turn1Reject;
+    const turn1Promise = new Promise((resolve, reject) => {
+      turn1Reject = reject;
+    });
+
+    const origAgentRunner = controller.agentRunner;
+    controller.agentRunner = (opts) => {
+      if (!abortCalled) {
+        return {
+          promise: (async () => {
+            // Simulate agent creating a file before being stopped
+            await fsp.writeFile(targetFile, 'export const badCode = true;\n', 'utf8');
+            return await turn1Promise;
+          })(),
+          abort: () => {
+            abortCalled = true;
+            turn1Reject(new Error('Agent run stopped by user'));
+          }
+        };
+      }
+      return origAgentRunner(opts);
+    };
+
+    // 1) User sends message 1
+    const userMsg1 = makeUserMsg('Message with a typo that user will stop');
+    const turn1ExecPromise = controller.handleUpdate(userMsg1);
+    await new Promise((r) => setTimeout(r, 60)); // let agent start and create file
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
+    assert.ok(fs.existsSync(targetFile), 'Target file should exist while agent is running');
+
+    // 2) User clicks Stop Agent
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('agent:stop:payments'));
+    await turn1ExecPromise;
+    await controller.waitForBackgroundTasks();
+
+    // Verify file was discarded and removed
+    assert.ok(!fs.existsSync(targetFile), 'Uncommitted file from stopped turn must be discarded');
+
+    // Verify workspace phase returned to IDLE
+    const stAfterStop = configStore.getWorkspaceState('payments');
+    assert.equal(stAfterStop.phase, 'IDLE');
+    assert.equal(stAfterStop.activeTurn, null);
+    assert.equal(stAfterStop.deployingTurn, null);
+    assert.deepEqual(stAfterStop.pendingDeltas, []);
+
+    // Verify stop message was sent and NO commit prompt was sent
+    assert.ok(mockTg.sentMessages.some((m) => /Agent stopped.*Changes from the stopped request were discarded/i.test(m.text)));
+    assert.ok(!mockTg.sentMessages.some((m) => /Awaiting commit choice|Commit changes|Changes made in Payments/i.test(m.text)));
+
+    // 3) User sends fixed message 2
+    const cleanFile = path.join(coreRepo.cloneDir, 'clean_fixed_file.js');
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(cleanFile, 'export const fixedCode = true;\n', 'utf8');
+      return {
+        conversationId: 'conv-new-clean',
+        response: 'Fixed message completed.'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Corrected new message'));
+    await controller.waitForBackgroundTasks();
+
+    // Verify Turn 2 prompts for commit choice
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    assert.ok(mockTg.sentMessages.some((m) => /Changes made in Payments Platform/i.test(m.text)));
+
+    // 4) User commits Turn 2
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // 5) Verify work history only contains Turn 2, NOT Turn 1
+    const finalSt = configStore.getWorkspaceState('payments');
+    const historyEntries = finalSt.history || [];
+    assert.ok(historyEntries.every((h) => !h.prompt?.includes('typo that user will stop')));
+    assert.ok(historyEntries.some((h) => h.prompt?.includes('Corrected new message')));
+
+    // Cleanup
+    await fsp.rm(cleanFile, { force: true });
+    controller.agentRunner = origAgentRunner;
+  });
 });

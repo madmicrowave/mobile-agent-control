@@ -222,6 +222,7 @@ export function runDirectApiTurn({
       history = [];
       DIRECT_API_CONVERSATIONS.set(activeConvId, history);
     }
+    const historySnapshotLen = history.length;
 
     const systemPrompt =
       'You are a senior software engineer assistant operating headlessly on a local repository. ' +
@@ -443,7 +444,14 @@ export function runDirectApiTurn({
       durationSeconds,
       usage: null
     };
-  })();
+  })().catch((err) => {
+    if (controller.signal.aborted) {
+      if (typeof historySnapshotLen === 'number') {
+        history.length = historySnapshotLen;
+      }
+    }
+    throw err;
+  });
 
   function abort() {
     controller.abort();
