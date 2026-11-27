@@ -174,11 +174,11 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.gcpTrigger = gcpTrigger
         self.prodGcpTrigger = prodGcpTrigger
 
-        let resolvedStaging = !jenkinsJobs.isEmpty ? jenkinsJobs : (!jenkinsJob.isEmpty ? MACPathUtils.parseJobList(jenkinsJob) : [])
+        let resolvedStaging = !jenkinsJobs.isEmpty ? MACPathUtils.sanitizeJobList(jenkinsJobs) : (!jenkinsJob.isEmpty ? MACPathUtils.parseJobList(jenkinsJob) : [])
         self.jenkinsJobs = resolvedStaging
         self.jenkinsJob = !jenkinsJob.isEmpty ? jenkinsJob : resolvedStaging.joined(separator: ", ")
 
-        let resolvedProd = !prodJenkinsJobs.isEmpty ? prodJenkinsJobs : (!prodJenkinsJob.isEmpty ? MACPathUtils.parseJobList(prodJenkinsJob) : [])
+        let resolvedProd = !prodJenkinsJobs.isEmpty ? MACPathUtils.sanitizeJobList(prodJenkinsJobs) : (!prodJenkinsJob.isEmpty ? MACPathUtils.parseJobList(prodJenkinsJob) : [])
         self.prodJenkinsJobs = resolvedProd
         self.prodJenkinsJob = !prodJenkinsJob.isEmpty ? prodJenkinsJob : resolvedProd.joined(separator: ", ")
 
@@ -207,11 +207,11 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.gcpTrigger = try c.decodeIfPresent(String.self, forKey: .gcpTrigger) ?? ""
         self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
 
-        let resolvedStaging = !decodedStagingList.isEmpty ? decodedStagingList : (!decodedStaging.isEmpty ? MACPathUtils.parseJobList(decodedStaging) : [])
+        let resolvedStaging = !decodedStagingList.isEmpty ? MACPathUtils.sanitizeJobList(decodedStagingList) : (!decodedStaging.isEmpty ? MACPathUtils.parseJobList(decodedStaging) : [])
         self.jenkinsJobs = resolvedStaging
         self.jenkinsJob = !decodedStaging.isEmpty ? decodedStaging : resolvedStaging.joined(separator: ", ")
 
-        let resolvedProd = !decodedProdList.isEmpty ? decodedProdList : (!decodedProd.isEmpty ? MACPathUtils.parseJobList(decodedProd) : [])
+        let resolvedProd = !decodedProdList.isEmpty ? MACPathUtils.sanitizeJobList(decodedProdList) : (!decodedProd.isEmpty ? MACPathUtils.parseJobList(decodedProd) : [])
         self.prodJenkinsJobs = resolvedProd
         self.prodJenkinsJob = !decodedProd.isEmpty ? decodedProd : resolvedProd.joined(separator: ", ")
 
@@ -307,8 +307,8 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.prodGithubWorkflow = prodGithubWorkflow
         self.gcpTrigger = gcpTrigger
         self.prodGcpTrigger = prodGcpTrigger
-        self.jenkinsJobs = jenkinsJobs
-        self.prodJenkinsJobs = prodJenkinsJobs
+        self.jenkinsJobs = MACPathUtils.sanitizeJobList(jenkinsJobs)
+        self.prodJenkinsJobs = MACPathUtils.sanitizeJobList(prodJenkinsJobs)
         self.repos = repos
     }
 
@@ -351,8 +351,10 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.prodGithubWorkflow = try c.decodeIfPresent(String.self, forKey: .prodGithubWorkflow) ?? ""
         self.gcpTrigger = try c.decodeIfPresent(String.self, forKey: .gcpTrigger) ?? ""
         self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
-        self.jenkinsJobs = try c.decodeIfPresent([String].self, forKey: .jenkinsJobs) ?? []
-        self.prodJenkinsJobs = try c.decodeIfPresent([String].self, forKey: .prodJenkinsJobs) ?? []
+        let decodedStaging = try c.decodeIfPresent([String].self, forKey: .jenkinsJobs) ?? []
+        self.jenkinsJobs = MACPathUtils.sanitizeJobList(decodedStaging)
+        let decodedProd = try c.decodeIfPresent([String].self, forKey: .prodJenkinsJobs) ?? []
+        self.prodJenkinsJobs = MACPathUtils.sanitizeJobList(decodedProd)
         self.repos = try c.decodeIfPresent([MACRepo].self, forKey: .repos) ?? []
 
         let rawCi = (try c.decodeIfPresent(String.self, forKey: .ciProvider) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -889,6 +891,18 @@ public enum MACPathUtils {
             item = normalizeJenkinsJobInput(item)
             if !item.isEmpty && !result.contains(item) {
                 result.append(item)
+            }
+        }
+        return result
+    }
+
+    /// Sanitizes an array of job strings, expanding any comma/newline delimited entries and deduplicating
+    public static func sanitizeJobList(_ rawList: [String]) -> [String] {
+        var result: [String] = []
+        for entry in rawList {
+            let parsed = parseJobList(entry)
+            for j in parsed where !result.contains(j) {
+                result.append(j)
             }
         }
         return result

@@ -2109,15 +2109,21 @@ private final class WorkspacesTabVM: ObservableObject {
     func syncFromConfig(_ config: MACConfig, preferredWorkspaceId: String?) {
         let unsavedEntries = entries.filter { $0.isNewUnsaved }
         var rebuilt: [WorkspaceSidebarEntry] = config.workspaces.map { ws in
+            var sanitizedWs = ws
+            sanitizedWs.jenkinsJobs = MACPathUtils.sanitizeJobList(sanitizedWs.jenkinsJobs)
+            sanitizedWs.prodJenkinsJobs = MACPathUtils.sanitizeJobList(sanitizedWs.prodJenkinsJobs)
             if let existing = entries.first(where: { !$0.isNewUnsaved && $0.originalSavedId == ws.id }) {
+                var d = didBootstrap ? existing.draft : sanitizedWs
+                d.jenkinsJobs = MACPathUtils.sanitizeJobList(d.jenkinsJobs)
+                d.prodJenkinsJobs = MACPathUtils.sanitizeJobList(d.prodJenkinsJobs)
                 return WorkspaceSidebarEntry(
                     uid: existing.uid,
                     isNewUnsaved: false,
                     originalSavedId: ws.id,
-                    draft: didBootstrap ? existing.draft : ws
+                    draft: d
                 )
             }
-            return WorkspaceSidebarEntry(uid: UUID(), isNewUnsaved: false, originalSavedId: ws.id, draft: ws)
+            return WorkspaceSidebarEntry(uid: UUID(), isNewUnsaved: false, originalSavedId: ws.id, draft: sanitizedWs)
         }
         rebuilt.append(contentsOf: unsavedEntries)
         entries = rebuilt
@@ -2485,19 +2491,12 @@ private struct WorkspacesTabView: View {
                 normalized.ciProvider = "none"
             }
         }
+        // Repositories must strictly use defined workspace jobs; never auto-add repo jobs to workspace job list.
+        normalized.jenkinsJobs = MACPathUtils.sanitizeJobList(normalized.jenkinsJobs)
+        normalized.prodJenkinsJobs = MACPathUtils.sanitizeJobList(normalized.prodJenkinsJobs)
+
         for repo in normalized.repos where repo.deployEnabled {
-            if normalized.ciProvider == "jenkins" {
-                let j = repo.jenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !j.isEmpty && !normalized.jenkinsJobs.contains(j) {
-                    normalized.jenkinsJobs.append(j)
-                }
-                if normalized.environmentMode == "multi" {
-                    let pj = repo.prodJenkinsJob.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !pj.isEmpty && !normalized.prodJenkinsJobs.contains(pj) {
-                        normalized.prodJenkinsJobs.append(pj)
-                    }
-                }
-            } else if normalized.ciProvider == "github" {
+            if normalized.ciProvider == "github" {
                 if normalized.githubWorkflow.isEmpty && !repo.githubWorkflow.isEmpty {
                     normalized.githubWorkflow = repo.githubWorkflow
                 }
@@ -3204,13 +3203,13 @@ private struct WorkspaceEditorFormView: View {
                                             .font(.system(size: 12.5, weight: .semibold))
                                             .lineLimit(1)
 
-                                        Spacer(minLength: 8)
-
                                         Text(repo.path)
                                             .font(.system(size: 11, design: .monospaced))
                                             .foregroundColor(.secondary)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
+
+                                        Spacer(minLength: 8)
                                     }
 
                                     // Default Branch Row + Open Repository Button
@@ -3262,7 +3261,7 @@ private struct WorkspaceEditorFormView: View {
                                                 }
 
                                                 Menu {
-                                                    let allStaging = combinedStagingJobs(draft: draft, repo: repo)
+                                                    let allStaging = definedStagingJobs()
                                                     if allStaging.isEmpty {
                                                         Text("No staging jobs defined above")
                                                     } else {
@@ -3351,7 +3350,7 @@ private struct WorkspaceEditorFormView: View {
                                                     }
 
                                                     Menu {
-                                                        let allProd = combinedProdJobs(draft: draft, repo: repo)
+                                                        let allProd = definedProdJobs()
                                                         if allProd.isEmpty {
                                                             Text("No production jobs defined above")
                                                         } else {
@@ -3568,6 +3567,8 @@ private struct WorkspaceEditorFormView: View {
     }
 
     private func loadFromDraft() {
+        draft.jenkinsJobs = MACPathUtils.sanitizeJobList(draft.jenkinsJobs)
+        draft.prodJenkinsJobs = MACPathUtils.sanitizeJobList(draft.prodJenkinsJobs)
         let eng = draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         var resolvedEngine = (eng.isEmpty || eng == "auto") ? "agy" : eng
         if draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -3607,6 +3608,7 @@ private struct WorkspaceEditorFormView: View {
         for j in parsed where !draft.jenkinsJobs.contains(j) {
             draft.jenkinsJobs.append(j)
         }
+        draft.jenkinsJobs = MACPathUtils.sanitizeJobList(draft.jenkinsJobs)
         vm.stagingJobInput = ""
         autoMatchJobsToRepos()
     }
@@ -3616,6 +3618,7 @@ private struct WorkspaceEditorFormView: View {
         for j in parsed where !draft.prodJenkinsJobs.contains(j) {
             draft.prodJenkinsJobs.append(j)
         }
+        draft.prodJenkinsJobs = MACPathUtils.sanitizeJobList(draft.prodJenkinsJobs)
         vm.prodJobInput = ""
         autoMatchJobsToRepos()
     }
@@ -3641,30 +3644,12 @@ private struct WorkspaceEditorFormView: View {
         )
     }
 
-    private func combinedStagingJobs(draft: MACWorkspace, repo: MACRepo) -> [String] {
-        var list = draft.jenkinsJobs
-        for j in repo.jenkinsJobs where !list.contains(j) {
-            list.append(j)
-        }
-        if !repo.jenkinsJob.isEmpty {
-            for j in MACPathUtils.parseJobList(repo.jenkinsJob) where !list.contains(j) {
-                list.append(j)
-            }
-        }
-        return list
+    private func definedStagingJobs() -> [String] {
+        return MACPathUtils.sanitizeJobList(draft.jenkinsJobs)
     }
 
-    private func combinedProdJobs(draft: MACWorkspace, repo: MACRepo) -> [String] {
-        var list = draft.prodJenkinsJobs
-        for j in repo.prodJenkinsJobs where !list.contains(j) {
-            list.append(j)
-        }
-        if !repo.prodJenkinsJob.isEmpty {
-            for j in MACPathUtils.parseJobList(repo.prodJenkinsJob) where !list.contains(j) {
-                list.append(j)
-            }
-        }
-        return list
+    private func definedProdJobs() -> [String] {
+        return MACPathUtils.sanitizeJobList(draft.prodJenkinsJobs)
     }
 
     private func toggleRepoStagingJob(repo: inout MACRepo, job: String) {
@@ -3679,6 +3664,7 @@ private struct WorkspaceEditorFormView: View {
                 repo.deployEnabled = true
             }
         }
+        repo.jenkinsJobs = MACPathUtils.sanitizeJobList(repo.jenkinsJobs)
         repo.jenkinsJob = repo.jenkinsJobs.joined(separator: ", ")
     }
 
@@ -3691,6 +3677,7 @@ private struct WorkspaceEditorFormView: View {
                 repo.deployEnabled = true
             }
         }
+        repo.prodJenkinsJobs = MACPathUtils.sanitizeJobList(repo.prodJenkinsJobs)
         repo.prodJenkinsJob = repo.prodJenkinsJobs.joined(separator: ", ")
     }
 

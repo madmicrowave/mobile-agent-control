@@ -661,6 +661,24 @@ private func testGitRemoteWebURLAndMultiJobMapping() throws {
     expect(decoded.jenkinsJobs == ["Job/Staging/api", "Job/Staging/worker"], "Decoded jenkinsJobs match")
     expect(decoded.prodJenkinsJobs == ["Job/Prod/api", "Job/Prod/worker"], "Decoded prodJenkinsJobs match")
 
+    // Test sanitizeJobList
+    let rawDirtyJobs = ["Job/Staging/api, Job/Staging/worker", "Job/Staging/extra", "Job/Staging/api"]
+    let sanitized = MACPathUtils.sanitizeJobList(rawDirtyJobs)
+    expect(sanitized == ["Job/Staging/api", "Job/Staging/worker", "Job/Staging/extra"], "sanitizeJobList flattens comma separated entries and removes duplicates")
+
+    // Test workspace decoding sanitization
+    let wsJson = """
+    {
+        "id": "test-ws",
+        "path": "/Users/test/code/test-ws",
+        "jenkinsJobs": ["Job/A, Job/B", "Job/C"],
+        "prodJenkinsJobs": ["Job/ProdA, Job/ProdB"]
+    }
+    """.data(using: .utf8)!
+    let decodedWs = try decoder.decode(MACWorkspace.self, from: wsJson)
+    expect(decodedWs.jenkinsJobs == ["Job/A", "Job/B", "Job/C"], "Workspace jenkinsJobs properly sanitized on decode")
+    expect(decodedWs.prodJenkinsJobs == ["Job/ProdA", "Job/ProdB"], "Workspace prodJenkinsJobs properly sanitized on decode")
+
     print("✓ Git remote web URL conversion & multi-job repo mapping passed")
 }
 
