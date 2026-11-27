@@ -3171,6 +3171,122 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(configStore.getWorkspaceState('payments').phase, 'IDLE');
   });
 
+  it('shows waiting count in skipping notice and queued request header when multiple messages are queued (e.g. #1/2 waiting)', async () => {
+    // 1) Select payments workspace and set IDLE
+    const ws = controller.getWorkspace('payments');
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'IDLE';
+    st.runningJenkins = null;
+    st.messageQueue = [];
+
+    let turn1Resolver;
+    const turn1Promise = new Promise((resolve) => {
+      turn1Resolver = resolve;
+    });
+    let turn1Started = false;
+    let turn2Started = false;
+
+    nextAgentBehavior = async ({ prompt }) => {
+      if (!turn1Started) {
+        turn1Started = true;
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src', 'turn1_multi.js'),
+          'export const m1 = 1;\n',
+          'utf8'
+        );
+        await turn1Promise;
+        return {
+          conversationId: 'conv-multi-1',
+          response: 'Turn 1 done'
+        };
+      } else {
+        turn2Started = true;
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, 'src', 'turn2_multi.js'),
+          'export const m2 = 2;\n',
+          'utf8'
+        );
+        return {
+          conversationId: 'conv-multi-2',
+          response: 'Turn 2 done'
+        };
+      }
+    };
+
+    // Start Turn 1
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Start turn 1 multi'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
+
+    // Queue Message #1
+    mockTg.clearSent();
+    const q1Msg = makeUserMsg('Queued request A');
+    await controller.handleUpdate(q1Msg);
+    const runningNotice1 = mockTg.lastSent();
+    const kb1 = runningNotice1.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(kb1[0].text, '📥 Queue Message');
+    await controller.handleUpdate(makeCallback(kb1[0].callback_data, runningNotice1.message_id));
+
+    // Queue Message #2
+    mockTg.clearSent();
+    const q2Msg = makeUserMsg('Queued request B');
+    await controller.handleUpdate(q2Msg);
+    const runningNotice2 = mockTg.lastSent();
+    const kb2 = runningNotice2.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(kb2[0].text, '📥 Queue Message');
+    await controller.handleUpdate(makeCallback(kb2[0].callback_data, runningNotice2.message_id));
+
+    // Queue Message #3
+    mockTg.clearSent();
+    const q3Msg = makeUserMsg('Queued request C');
+    await controller.handleUpdate(q3Msg);
+    const runningNotice3 = mockTg.lastSent();
+    const kb3 = runningNotice3.reply_markup?.inline_keyboard?.[0] || [];
+    assert.equal(kb3[0].text, '📥 Queue Message');
+    await controller.handleUpdate(makeCallback(kb3[0].callback_data, runningNotice3.message_id));
+
+    assert.equal(st.messageQueue.length, 3);
+    assert.equal(st.messageQueue[0].queueNumber, 1);
+    assert.equal(st.messageQueue[1].queueNumber, 2);
+    assert.equal(st.messageQueue[2].queueNumber, 3);
+
+    // Finish Turn 1
+    mockTg.clearSent();
+    turn1Resolver();
+    await controller.waitForBackgroundTasks();
+
+    // Verify commit prompt appeared
+    assert.equal(st.phase, 'AWAITING_COMMIT_CHOICE');
+    const commitPromptMsg = mockTg.lastSent();
+    assert.match(commitPromptMsg.text, /Changes made in Payments Platform/);
+
+    // Click Yes to commit -> skips Jenkins deploy and executes queued message #1 while 2 remain waiting!
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments', commitPromptMsg.message_id));
+    await controller.waitForBackgroundTasks();
+
+    const combinedWorkingMsg = mockTg.sentMessages.find((m) =>
+      /Skipping Jenkins deploy for previous message/i.test(m.text)
+    );
+    assert.ok(combinedWorkingMsg, 'Expected single combined message with Skipping Jenkins deploy header');
+
+    // Verify reason header contains (#1/2 waiting)
+    assert.match(combinedWorkingMsg.text, /executing queued message \(#1\/2 waiting\) next…/i);
+    // Verify Queued Request header contains (#1/2 waiting)
+    assert.match(combinedWorkingMsg.text, /Queued Request \(#1\/2 waiting\):/i);
+    assert.match(combinedWorkingMsg.text, /Queued request A/);
+
+    // Remaining in queue: 2 messages (#2 and #3)
+    assert.equal(st.messageQueue.length, 2);
+
+    // Clean up payments workspace state for subsequent tests
+    st.phase = 'IDLE';
+    st.messageQueue = [];
+    st.activeTurn = null;
+    st.runningJenkins = null;
+    await configStore.saveState();
+  });
+
   it('clears inline buttons on both original prompt message and subsequent gate notice messages when user confirms', async () => {
     // 1) Select payments workspace
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
