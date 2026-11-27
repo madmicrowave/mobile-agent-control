@@ -307,6 +307,12 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(controller.effectiveActivationPolicy == .accessory, "Expected initial effectiveActivationPolicy == .accessory (no Dock icon)")
     expect(NSApp.activationPolicy() == .accessory, "Expected test runner NSApp.activationPolicy() == .accessory")
 
+    // Verify initial stopped status icon in menu bar
+    let initialStoppedImg = controller.statusBarIconImage(for: .stopped)
+    expect(initialStoppedImg != nil, "Expected stopped menu bar image present")
+    expect(initialStoppedImg?.size.width == 42.0, "Expected stopped icon width 42 pt (pill badge)")
+    expect(initialStoppedImg?.isTemplate == true, "Expected stopped icon to be monochrome template")
+
     // Verify Settings tracks .regular for mac.app while NEVER promoting the bare MACAppTests binary into the macOS Dock!
     controller.handleOpenAppClicked()
     expect(controller.settingsWindow != nil, "Main app window created")
@@ -347,6 +353,13 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     expect(appState.isSleepPrevented, "Expected Mac sleep prevention active while running")
     expect(!controller.startMenuItem.isEnabled && controller.restartMenuItem.isEnabled && controller.stopMenuItem.isEnabled, "Running menu item states")
     expect(promptedPasswords.count == 1 && promptedPasswords[0].0 == false, "Start prompted for password")
+
+    // Verify menu bar button has green dot when running (started)
+    let runningImg = controller.statusBarIconImage(for: appState.status)
+    expect(runningImg != nil, "Expected running status image present")
+    expect(runningImg?.size.width == 53.0, "Expected running icon width 53 pt with green dot in front")
+    expect(runningImg?.isTemplate == false, "Expected running icon to NOT be template so green color is preserved")
+    expect(controller.statusItem.button?.image?.size.width == 53.0, "Status bar button image updated to 53 pt with green dot")
 
     // Verify opening and closing ('x') the app window while running keeps the bot turned on in menu bar with no Dock icon
     controller.openApp(tab: .liveActivity)

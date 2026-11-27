@@ -116,14 +116,104 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     }
 
     private func configureStatusBarButton() {
-        guard let button = statusItem.button else { return }
-        if let iconImage = loadMenuBarIcon() {
-            iconImage.isTemplate = true
-            button.image = iconImage
-            button.imagePosition = .imageOnly
-        } else {
-            button.title = "AI MAC"
+        refreshStatusButton()
+    }
+
+    /// Generates a status bar icon.
+    /// When started (running), renders a vibrant green dot directly in front of the "AI MAC" pill badge.
+    /// When starting, renders a yellow dot in front of the badge.
+    /// When error, renders a red dot in front of the badge.
+    /// When stopped, renders the clean template badge with no dot.
+    public func statusBarIconImage(for status: MACBotRunStatus) -> NSImage? {
+        let dotColor: NSColor?
+        switch status {
+        case .running:
+            dotColor = NSColor(calibratedRed: 0.20, green: 0.82, blue: 0.38, alpha: 1.0)
+        case .starting:
+            dotColor = NSColor(calibratedRed: 1.00, green: 0.80, blue: 0.00, alpha: 1.0)
+        case .error:
+            dotColor = NSColor(calibratedRed: 1.00, green: 0.27, blue: 0.23, alpha: 1.0)
+        case .stopped:
+            dotColor = nil
         }
+
+        let dotDiameter: CGFloat = 6.0
+        let spacing: CGFloat = 5.0
+        let pillWidth: CGFloat = 42.0
+        let pillHeight: CGFloat = 16.0
+        let hasDot = (dotColor != nil)
+        let totalWidth: CGFloat = hasDot ? (dotDiameter + spacing + pillWidth) : pillWidth
+
+        let img = NSImage(size: NSSize(width: totalWidth, height: pillHeight), flipped: false) { rect in
+            let pillX: CGFloat
+            if let dot = dotColor {
+                let dotY = (pillHeight - dotDiameter) / 2.0
+                let dotRect = NSRect(x: 0.5, y: dotY, width: dotDiameter, height: dotDiameter)
+                let dotPath = NSBezierPath(ovalIn: dotRect)
+                dot.setFill()
+                dotPath.fill()
+                pillX = dotDiameter + spacing
+            } else {
+                pillX = 0.0
+            }
+
+            let isDark: Bool
+            if hasDot {
+                if let match = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) {
+                    isDark = (match == .darkAqua)
+                } else {
+                    isDark = (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+                }
+            } else {
+                isDark = false
+            }
+
+            let pillRect = NSRect(x: pillX + 0.75, y: 1.0, width: pillWidth - 1.5, height: pillHeight - 2.0)
+            let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: 4.2, yRadius: 4.2)
+
+            let pillBgColor = (hasDot && isDark) ? NSColor(white: 0.90, alpha: 1.0) : (hasDot ? NSColor(white: 0.12, alpha: 1.0) : NSColor.black)
+            let textColor = (hasDot && isDark) ? NSColor(white: 0.10, alpha: 1.0) : (hasDot ? NSColor.white : NSColor.clear)
+
+            pillBgColor.setFill()
+            pillPath.fill()
+
+            let aiFont = NSFont.systemFont(ofSize: 5.8, weight: .black)
+            let macFont = NSFont.systemFont(ofSize: 9.0, weight: .black)
+            let aiVerticalOffset = (macFont.capHeight - aiFont.capHeight) / 2.0
+
+            let aiAttrs: [NSAttributedString.Key: Any] = [
+                .font: aiFont,
+                .foregroundColor: textColor,
+                .baselineOffset: aiVerticalOffset,
+                .kern: 0.1
+            ]
+            let macAttrs: [NSAttributedString.Key: Any] = [
+                .font: macFont,
+                .foregroundColor: textColor,
+                .kern: -0.3
+            ]
+
+            let attrStr = NSMutableAttributedString(string: "AI ", attributes: aiAttrs)
+            attrStr.append(NSAttributedString(string: "MAC", attributes: macAttrs))
+            let textSize = attrStr.size()
+
+            let textRect = NSRect(
+                x: pillX + (pillWidth - textSize.width) / 2.0,
+                y: (pillHeight - textSize.height) / 2.0 + 0.2,
+                width: textSize.width,
+                height: textSize.height
+            )
+
+            if !hasDot {
+                NSGraphicsContext.current?.compositingOperation = .clear
+            }
+            attrStr.draw(in: textRect)
+
+            return true
+        }
+
+        img.isTemplate = !hasDot
+        return img
     }
 
     private func loadMenuBarIcon() -> NSImage? {
@@ -249,11 +339,13 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     /// Updates the status bar button icon, title, and tooltip.
     public func refreshStatusButton() {
         guard let button = statusItem.button else { return }
-        if button.image != nil {
-            button.title = ""
+        if let icon = statusBarIconImage(for: appState.status) {
+            button.image = icon
             button.imagePosition = .imageOnly
+            button.title = ""
         } else {
-            button.title = "MAC"
+            button.image = nil
+            button.title = "AI MAC"
         }
         switch appState.status {
         case .running(let username):
