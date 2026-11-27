@@ -631,8 +631,31 @@ export class ConfigStore {
     }
 
     for (const ws of this.config.workspaces) {
-      if (ws.repos.length === 0 && (ws.path || (ws.extraDirs && ws.extraDirs.length > 0))) {
-        ws.repos = await discoverWorkspaceRepos(ws.path, {}, null, ws.extraDirs || []);
+      if (ws.path || (ws.extraDirs && ws.extraDirs.length > 0)) {
+        if (!Array.isArray(ws.repos) || ws.repos.length === 0) {
+          ws.repos = await discoverWorkspaceRepos(ws.path, {}, null, ws.extraDirs || []);
+        } else {
+          const existingPaths = new Set(ws.repos.map((r) => path.resolve(r.path)));
+          const existingNames = new Set(ws.repos.map((r) => r.name));
+          const existingOverrides = {};
+          for (const r of ws.repos) {
+            existingOverrides[r.name] = r;
+          }
+          const discovered = await discoverWorkspaceRepos(
+            ws.path,
+            existingOverrides,
+            null,
+            ws.extraDirs || []
+          );
+          for (const d of discovered) {
+            const norm = path.resolve(d.path);
+            if (!existingPaths.has(norm) && !existingNames.has(d.name)) {
+              ws.repos.push(d);
+              existingPaths.add(norm);
+              existingNames.add(d.name);
+            }
+          }
+        }
       }
     }
     await this.saveConfig();

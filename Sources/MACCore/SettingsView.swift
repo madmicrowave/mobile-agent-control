@@ -3267,7 +3267,7 @@ private struct WorkspaceEditorFormView: View {
     // 4. Per-Repository Mapping
     @ViewBuilder
     private var repositoriesSection: some View {
-        MACSectionCard(title: "Repositories (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
+        MACSectionCard(title: "Repositories", systemImage: "point.3.connected.trianglepath.dotted") {
                     HStack(spacing: 8) {
                         Button {
                             if let chosen = chooseDirectory(initialPath: draft.path.isEmpty ? "~" : draft.path) {
@@ -3775,6 +3775,18 @@ private struct WorkspaceEditorFormView: View {
         syncModelFields()
         if draft.ciProvider != "none" && !draft.ciProvider.isEmpty {
             vm.lastSelectedCiProvider = draft.ciProvider
+        }
+        if !draft.extraDirs.isEmpty || !draft.path.isEmpty {
+            let discovered = MACPathUtils.discoverGitRepos(
+                at: draft.path,
+                extraDirs: draft.extraDirs,
+                existingRepos: draft.repos,
+                stagingJobs: draft.jenkinsJobs,
+                prodJobs: draft.prodJenkinsJobs
+            )
+            if discovered.count > draft.repos.count || draft.repos.isEmpty {
+                draft.repos = discovered
+            }
         }
     }
 
