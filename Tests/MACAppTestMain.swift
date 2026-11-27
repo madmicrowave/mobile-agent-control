@@ -633,7 +633,7 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
               "createdAt": "2026-11-26T20:00:00.000Z",
               "finishedAt": "2026-11-26T20:01:00.000Z",
               "prompt": "Revert bad commit",
-              "user": "@maksimsge",
+              "user": "User",
               "outcome": "REVERTED"
             }
           ]
@@ -669,6 +669,7 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
 
     expect(items[4].status == .failed, "Fifth item is failed/reverted")
     expect(items[4].resultLabel == "Reverted", "Fifth item result is Reverted")
+    expect(items[4].user == "@maksimsge", "Generic 'User' must be resolved to real username '@maksimsge'")
 
     // 3. Test WorkspaceTimelineVM auto-refresh countdown, tick, and reset behavior
     let timelineVM = WorkspaceTimelineVM()

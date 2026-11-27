@@ -621,6 +621,13 @@ export class BotController {
         : [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || String(userId)
       : 'User';
 
+    if (this.configStore.getUserSession) {
+      const sess = this.configStore.getUserSession(userId);
+      if (sess && senderName && senderName !== 'User') {
+        sess.username = senderName;
+      }
+    }
+
     if (this.isUserSuspended(userId)) {
       // After user is suspended, bot must not answer until unblocked in app
       return;
@@ -882,7 +889,7 @@ export class BotController {
         }
         return;
       }
-      await this.handleFixPromptSubmitted(chatId, ws, text);
+      await this.handleFixPromptSubmitted(chatId, ws, text, senderName);
       return;
     }
 
@@ -1056,7 +1063,7 @@ export class BotController {
     const shouldCoalesce = Boolean(existingBatch || hasMediaGroup || isBigSplitChunk);
 
     if (shouldCoalesce) {
-      await this.#enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, msg.message_id);
+      await this.#enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, msg.message_id, senderName);
       return;
     }
 
@@ -1297,6 +1304,7 @@ export class BotController {
     this.log('agent', `Executing queued message in workspace "${wsLabel}" (#${notice.queueNum}): ${nextItem.text || ''}`, wsLabel);
     await this.startAgentTurn(chatId, ws, nextItem.text || '', {
       replyToMessageId: notice.anchorMsgId || null,
+      user: nextItem.user || '',
       queueInfo: {
         queueNumber: notice.queueNum,
         promptText: notice.previewText,
@@ -1350,7 +1358,7 @@ export class BotController {
     }
   }
 
-  async #enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, messageId = null) {
+  async #enqueueInputBatchPart(chatId, ws, st, incomingAttachment, text, messageId = null, user = '') {
     let batch = this.pendingInputBatches.get(ws.id);
     if (!batch) {
       let resolveDone;
@@ -1360,6 +1368,7 @@ export class BotController {
       batch = {
         wsId: ws.id,
         chatId,
+        user: user || '',
         files: [],
         texts: [],
         lastMessageId: messageId || null,
@@ -1373,6 +1382,9 @@ export class BotController {
       this.#trackAsync(donePromise);
     } else {
       batch.chatId = chatId;
+      if (user && !batch.user) {
+        batch.user = user;
+      }
       if (messageId) {
         batch.lastMessageId = messageId;
       }
@@ -1468,7 +1480,8 @@ export class BotController {
       if (combinedPrompt) {
         await this.startAgentTurn(batch.chatId, ws, combinedPrompt, {
           extraNotice,
-          replyToMessageId: batch.lastMessageId || null
+          replyToMessageId: batch.lastMessageId || null,
+          user: batch.user || ''
         });
         return;
       }
@@ -1766,11 +1779,17 @@ export class BotController {
         const wsId = data.slice('photo:run:'.length);
         const ws = this.getWorkspace(wsId);
         if (ws) {
+          const senderName = query.from
+            ? query.from.username
+              ? `@${query.from.username}`
+              : [query.from.first_name, query.from.last_name].filter(Boolean).join(' ') || String(query.from.id)
+            : '';
           await this.#flushInputBatch(wsId);
           await this.telegram.clearInlineButtons(chatId, messageId);
           if (this.configStore.getWorkspaceState(wsId).phase === 'IDLE') {
             await this.startAgentTurn(chatId, ws, '', {
-              replyToMessageId: messageId || null
+              replyToMessageId: messageId || null,
+              user: senderName
             });
           }
         }
@@ -1855,6 +1874,7 @@ export class BotController {
           st.pendingPhotos = candidate.photos || [];
           await this.startAgentTurn(chatId, ws, candidate.text || '', {
             replyToMessageId: candidate.userMessageId || null,
+            user: candidate.user || '',
             queueInfo: { queueNumber: queuePos, promptText: preview }
           });
           return;
@@ -4157,7 +4177,7 @@ export class BotController {
     }
   }
 
-  async handleFixPromptSubmitted(chatId, ws, promptText) {
+  async handleFixPromptSubmitted(chatId, ws, promptText, user = '') {
     await this.clearWorkspacePromptButtons(ws.id);
     const wsLabel = this.getWorkspaceLabel(ws);
     const st = this.configStore.getWorkspaceState(ws.id);
@@ -4167,7 +4187,7 @@ export class BotController {
       return;
     }
 
-    await this.startAgentTurn(chatId, ws, promptText, { isAddFix: true });
+    await this.startAgentTurn(chatId, ws, promptText, { isAddFix: true, user });
   }
 
   async promptForCustomBranch(chatId, wsId) {

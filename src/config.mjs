@@ -827,10 +827,13 @@ export class ConfigStore {
     return sess.unlockedRunId === this.runSessionId;
   }
 
-  unlockUser(telegramUserId, now = new Date()) {
+  unlockUser(telegramUserId, now = new Date(), username = '') {
     const sess = this.getUserSession(telegramUserId);
     sess.unlockedRunId = this.runSessionId;
     sess.unlockedAt = now.toISOString();
+    if (username) {
+      sess.username = username;
+    }
   }
 
   lockUser(telegramUserId) {

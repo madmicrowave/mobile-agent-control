@@ -179,6 +179,105 @@ public enum MACWorkspaceTimelineReader {
             matchedWorkspaceDicts.append(exact)
         }
 
+        // Helper to check if a user string is a real username (not nil, empty, or generic "User" / "User (...)")
+        func isRealUsername(_ u: String?) -> Bool {
+            guard let trimmed = u?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+                return false
+            }
+            if trimmed == "User" || trimmed.hasPrefix("User (") {
+                return false
+            }
+            return true
+        }
+
+        // 1. Detect real username across matched workspaces, all workspaces, and userSessions
+        var detectedUsername: String?
+
+        // Check matched workspaces first
+        for wsObj in matchedWorkspaceDicts {
+            if let act = wsObj["activeTurn"] as? [String: Any],
+               let u = act["user"] as? String ?? act["userName"] as? String,
+               isRealUsername(u) {
+                detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                break
+            }
+            if let queue = wsObj["messageQueue"] as? [[String: Any]] {
+                for q in queue {
+                    if let u = q["user"] as? String ?? q["userName"] as? String, isRealUsername(u) {
+                        detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                        break
+                    }
+                }
+                if detectedUsername != nil { break }
+            }
+            if let hist = wsObj["history"] as? [[String: Any]] {
+                for h in hist {
+                    if let u = h["user"] as? String ?? h["userName"] as? String, isRealUsername(u) {
+                        detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                        break
+                    }
+                }
+                if detectedUsername != nil { break }
+            }
+        }
+
+        // Check all other workspaces in state.json if still nil
+        if detectedUsername == nil {
+            for (_, val) in workspacesDict {
+                guard let wsObj = val as? [String: Any] else { continue }
+                if let act = wsObj["activeTurn"] as? [String: Any],
+                   let u = act["user"] as? String ?? act["userName"] as? String,
+                   isRealUsername(u) {
+                    detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                    break
+                }
+                if let queue = wsObj["messageQueue"] as? [[String: Any]] {
+                    for q in queue {
+                        if let u = q["user"] as? String ?? q["userName"] as? String, isRealUsername(u) {
+                            detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                            break
+                        }
+                    }
+                    if detectedUsername != nil { break }
+                }
+                if let hist = wsObj["history"] as? [[String: Any]] {
+                    for h in hist {
+                        if let u = h["user"] as? String ?? h["userName"] as? String, isRealUsername(u) {
+                            detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                            break
+                        }
+                    }
+                    if detectedUsername != nil { break }
+                }
+            }
+        }
+
+        // Check userSessions in state.json if still nil
+        if detectedUsername == nil, let sessions = json["userSessions"] as? [String: Any] {
+            for (_, sVal) in sessions {
+                guard let sObj = sVal as? [String: Any] else { continue }
+                if let u = sObj["username"] as? String ?? sObj["userName"] as? String ?? sObj["user"] as? String,
+                   isRealUsername(u) {
+                    detectedUsername = u.trimmingCharacters(in: .whitespacesAndNewlines)
+                    break
+                }
+            }
+        }
+
+        // Helper to resolve user for an item
+        func resolveUser(_ raw: String?) -> String {
+            if isRealUsername(raw), let u = raw?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                return u
+            }
+            if let detected = detectedUsername {
+                return detected
+            }
+            if let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+                return trimmed
+            }
+            return fallbackUser
+        }
+
         var workingItems: [MACTimelineItem] = []
         var queuedItems: [MACTimelineItem] = []
         var historyItems: [MACTimelineItem] = []
@@ -190,7 +289,7 @@ public enum MACWorkspaceTimelineReader {
                 let turnId = activeTurn["id"] as? String ?? "active-\(UUID().uuidString)"
                 if seenTurnIds.insert(turnId).inserted {
                     let prompt = (activeTurn["prompt"] as? String ?? activeTurn["promptText"] as? String ?? "(Running Agent Task)").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let user = activeTurn["user"] as? String ?? activeTurn["userName"] as? String ?? fallbackUser
+                    let user = resolveUser(activeTurn["user"] as? String ?? activeTurn["userName"] as? String)
                     let createdDate = parseDate(activeTurn["createdAt"] as? String)
                     let elapsed = formatDuration(from: createdDate, to: Date()) + " (running)"
 
@@ -232,7 +331,7 @@ public enum MACWorkspaceTimelineReader {
                     if seenTurnIds.insert(qId).inserted {
                         let qPos = entry["queueNumber"] as? Int ?? (queuedItems.count + 1)
                         let text = (entry["text"] as? String ?? "(Queued Message)").trimmingCharacters(in: .whitespacesAndNewlines)
-                        let user = entry["user"] as? String ?? fallbackUser
+                        let user = resolveUser(entry["user"] as? String ?? entry["userName"] as? String)
                         let queuedDate = parseDate(entry["queuedAt"] as? String)
                         let elapsed = "waiting " + formatDuration(from: queuedDate, to: Date())
                         let photos = entry["photos"] as? [String] ?? []
@@ -261,7 +360,7 @@ public enum MACWorkspaceTimelineReader {
                     let hId = item["id"] as? String ?? UUID().uuidString
                     if seenTurnIds.insert(hId).inserted {
                         let prompt = (item["prompt"] as? String ?? "(Task prompt)").trimmingCharacters(in: .whitespacesAndNewlines)
-                        let user = item["user"] as? String ?? item["userName"] as? String ?? fallbackUser
+                        let user = resolveUser(item["user"] as? String ?? item["userName"] as? String)
                         let outcome = item["outcome"] as? String ?? "CONFIRMED"
                         let createdDate = parseDate(item["createdAt"] as? String)
                         let finishedDate = parseDate(item["finishedAt"] as? String)
