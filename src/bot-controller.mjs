@@ -431,12 +431,15 @@ export class BotController {
       const mappedFromStaging = [];
       for (const stgTarget of stagingDeployed) {
         const repoForStaging = (ws?.repos || []).find(
-          (r) => r.jenkinsJob === stgTarget.jenkinsJob
+          (r) => (Array.isArray(r.jenkinsJobs) && r.jenkinsJobs.includes(stgTarget.jenkinsJob)) || r.jenkinsJob === stgTarget.jenkinsJob
         );
-        if (repoForStaging?.prodJenkinsJob) {
+        const prodJobs = (Array.isArray(repoForStaging?.prodJenkinsJobs) && repoForStaging.prodJenkinsJobs.length > 0)
+          ? repoForStaging.prodJenkinsJobs
+          : (repoForStaging?.prodJenkinsJob ? [repoForStaging.prodJenkinsJob] : []);
+        for (const pj of prodJobs) {
           mappedFromStaging.push({
-            jenkinsJob: repoForStaging.prodJenkinsJob,
-            branch: stgTarget.branch || repoForStaging.branch || 'master'
+            jenkinsJob: pj,
+            branch: stgTarget.branch || repoForStaging?.branch || 'master'
           });
         }
       }
@@ -449,11 +452,16 @@ export class BotController {
     const mappedFromCommits = [];
     for (const c of commits) {
       const liveRepo = (ws?.repos || []).find((r) => r.name === c.repoName);
-      if (liveRepo?.deployEnabled && liveRepo.prodJenkinsJob) {
-        mappedFromCommits.push({
-          jenkinsJob: liveRepo.prodJenkinsJob,
-          branch: c.branch || liveRepo.branch || 'master'
-        });
+      if (liveRepo?.deployEnabled) {
+        const prodJobs = (Array.isArray(liveRepo.prodJenkinsJobs) && liveRepo.prodJenkinsJobs.length > 0)
+          ? liveRepo.prodJenkinsJobs
+          : (liveRepo.prodJenkinsJob ? [liveRepo.prodJenkinsJob] : []);
+        for (const pj of prodJobs) {
+          mappedFromCommits.push({
+            jenkinsJob: pj,
+            branch: c.branch || liveRepo.branch || 'master'
+          });
+        }
       }
     }
     if (mappedFromCommits.length > 0) {
@@ -4410,17 +4418,17 @@ export class BotController {
   resolveMatchedJenkinsTargets(ws, st, { isAfterRevert = false } = {}) {
     const mapCommitsWithLiveConfig = (records = []) =>
       records
-        .map((c) => {
+        .flatMap((c) => {
           const liveRepo = (ws?.repos || []).find((r) => r.name === c.repoName);
           const deployEnabled = liveRepo ? Boolean(liveRepo.deployEnabled) : Boolean(c.deployEnabled);
-          const jenkinsJob = liveRepo ? liveRepo.jenkinsJob : c.jenkinsJob;
-          if (!deployEnabled || !jenkinsJob) return null;
-          return {
-            jenkinsJob,
-            branch: c.branch || liveRepo?.branch || 'master'
-          };
+          if (!deployEnabled) return [];
+          const jobs = (Array.isArray(liveRepo?.jenkinsJobs) && liveRepo.jenkinsJobs.length > 0)
+            ? liveRepo.jenkinsJobs
+            : (liveRepo?.jenkinsJob ? [liveRepo.jenkinsJob] : (c.jenkinsJob ? [c.jenkinsJob] : []));
+          const branch = c.branch || liveRepo?.branch || 'master';
+          return jobs.map((jenkinsJob) => ({ jenkinsJob, branch }));
         })
-        .filter(Boolean);
+        .filter((t) => Boolean(t?.jenkinsJob));
 
     if (!isAfterRevert) {
       const records = [

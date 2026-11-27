@@ -48,6 +48,16 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         buildMenuItems()
         refreshUI()
 
+        // Ensure Cmd+V, Cmd+C, Cmd+A work reliably across all text fields
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "v" {
+                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
+                    return nil
+                }
+            }
+            return event
+        }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleScreenParametersChanged),
@@ -477,7 +487,30 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
 
-        // Edit menu removed per user instruction (edit at top must be removed not needed)
+        // 2. Hidden standard Edit menu for system-wide shortcuts (Cmd+C, Cmd+V, Cmd+X, Cmd+A, Cmd+Z)
+        // Kept hidden so "Edit" does not appear in the top menu bar, but AppKit routes paste/copy/cut/select-all.
+        let editMenuItem = NSMenuItem()
+        editMenuItem.title = "Edit"
+        editMenuItem.isHidden = true
+        let editMenu = NSMenu(title: "Edit")
+
+        let undoItem = NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let cutItem = NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        let copyItem = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        editMenu.addItem(undoItem)
+        editMenu.addItem(redoItem)
+        editMenu.addItem(.separator())
+        editMenu.addItem(cutItem)
+        editMenu.addItem(copyItem)
+        editMenu.addItem(pasteItem)
+        editMenu.addItem(selectAllItem)
+
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
 
         NSApp.mainMenu = mainMenu
     }

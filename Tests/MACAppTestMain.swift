@@ -596,6 +596,43 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline history loader passed")
 }
 
+private func testGitRemoteWebURLAndMultiJobMapping() throws {
+    // 1. Test Git remote URL conversions
+    let githubSSH = "git@github.com:madmicrowave/mobile-agent-control.git"
+    let githubHTTPS = "https://github.com/madmicrowave/mobile-agent-control.git"
+    let gitlabSSH = "git@gitlab.com:org/subgroup/repo.git"
+    let bitbucketSSH = "git@bitbucket.org:org/repo.git"
+    let plainWeb = "https://github.com/madmicrowave/mobile-agent-control"
+
+    expect(MACPathUtils.convertGitRemoteToWebURL(githubSSH)?.absoluteString == "https://github.com/madmicrowave/mobile-agent-control", "GitHub SSH conversion failed")
+    expect(MACPathUtils.convertGitRemoteToWebURL(githubHTTPS)?.absoluteString == "https://github.com/madmicrowave/mobile-agent-control", "GitHub HTTPS conversion failed")
+    expect(MACPathUtils.convertGitRemoteToWebURL(gitlabSSH)?.absoluteString == "https://gitlab.com/org/subgroup/repo", "GitLab SSH conversion failed")
+    expect(MACPathUtils.convertGitRemoteToWebURL(bitbucketSSH)?.absoluteString == "https://bitbucket.org/org/repo", "Bitbucket SSH conversion failed")
+    expect(MACPathUtils.convertGitRemoteToWebURL(plainWeb)?.absoluteString == "https://github.com/madmicrowave/mobile-agent-control", "Plain web URL conversion failed")
+
+    // 2. Test Multi-Job mapping on MACRepo
+    let repo = MACRepo(
+        name: "test-repo",
+        path: "/Users/test/code/test-repo",
+        jenkinsJobs: ["Job/Staging/api", "Job/Staging/worker"],
+        prodJenkinsJobs: ["Job/Prod/api", "Job/Prod/worker"]
+    )
+    expect(repo.jenkinsJobs.count == 2, "Expected 2 staging jobs")
+    expect(repo.prodJenkinsJobs.count == 2, "Expected 2 prod jobs")
+    expect(repo.jenkinsJob.contains("Job/Staging/api"), "jenkinsJob legacy string contains first job")
+    expect(repo.deployEnabled == true, "Deploy enabled automatically when jobs present")
+
+    // Test JSON roundtrip
+    let encoder = JSONEncoder()
+    let data = try encoder.encode(repo)
+    let decoder = JSONDecoder()
+    let decoded = try decoder.decode(MACRepo.self, from: data)
+    expect(decoded.jenkinsJobs == ["Job/Staging/api", "Job/Staging/worker"], "Decoded jenkinsJobs match")
+    expect(decoded.prodJenkinsJobs == ["Job/Prod/api", "Job/Prod/worker"], "Decoded prodJenkinsJobs match")
+
+    print("✓ Git remote web URL conversion & multi-job repo mapping passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -606,6 +643,7 @@ struct MACAppTests {
 
         do {
             try testJobParsingAndRepoDiscovery()
+            try testGitRemoteWebURLAndMultiJobMapping()
             try testConfigStoreRoundTrip()
             try testEngineModelFilteringAndEngineConfiguration()
             try testConfigExportImportAndCrypto()

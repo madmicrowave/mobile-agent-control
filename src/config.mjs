@@ -125,11 +125,20 @@ export async function discoverWorkspaceRepos(
           : Boolean(detectedJob || prev.jenkinsJob);
     }
 
+    const resolvedStagingJobs = Array.isArray(prev.jenkinsJobs) && prev.jenkinsJobs.length > 0
+      ? prev.jenkinsJobs
+      : (jenkinsJob ? [jenkinsJob] : []);
+    const resolvedProdJobs = Array.isArray(prev.prodJenkinsJobs) && prev.prodJenkinsJobs.length > 0
+      ? prev.prodJenkinsJobs
+      : (prev.prodJenkinsJob ? [prev.prodJenkinsJob] : []);
+
     repos.push({
       name: relName,
       path: prev.path ? expandUserPath(prev.path) : repoDir,
       jenkinsJob,
       prodJenkinsJob: prev.prodJenkinsJob || '',
+      jenkinsJobs: resolvedStagingJobs,
+      prodJenkinsJobs: resolvedProdJobs,
       branch: prev.branch || '',
       deployEnabled
     });
@@ -453,6 +462,18 @@ export class ConfigStore {
         ws.repos = [];
       }
       for (const r of ws.repos) {
+        if (!Array.isArray(r.jenkinsJobs)) {
+          r.jenkinsJobs = r.jenkinsJob ? [r.jenkinsJob] : [];
+        }
+        if (!Array.isArray(r.prodJenkinsJobs)) {
+          r.prodJenkinsJobs = r.prodJenkinsJob ? [r.prodJenkinsJob] : [];
+        }
+        if (!r.jenkinsJob && r.jenkinsJobs.length > 0) {
+          r.jenkinsJob = r.jenkinsJobs[0];
+        }
+        if (!r.prodJenkinsJob && r.prodJenkinsJobs.length > 0) {
+          r.prodJenkinsJob = r.prodJenkinsJobs[0];
+        }
         if (typeof r.prodJenkinsJob !== 'string') {
           r.prodJenkinsJob = '';
         } else {

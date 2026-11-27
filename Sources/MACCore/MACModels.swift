@@ -117,6 +117,8 @@ public struct MACRepo: Identifiable, Codable, Equatable {
     public var prodGithubWorkflow: String
     public var gcpTrigger: String
     public var prodGcpTrigger: String
+    public var jenkinsJobs: [String]
+    public var prodJenkinsJobs: [String]
 
     public init(
         name: String,
@@ -130,41 +132,80 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         githubWorkflow: String = "",
         prodGithubWorkflow: String = "",
         gcpTrigger: String = "",
-        prodGcpTrigger: String = ""
+        prodGcpTrigger: String = "",
+        jenkinsJobs: [String] = [],
+        prodJenkinsJobs: [String] = []
     ) {
         self.name = name
         self.path = path
-        self.jenkinsJob = jenkinsJob
-        self.prodJenkinsJob = prodJenkinsJob
         self.branch = branch
-        self.deployEnabled = deployEnabled
         self.ciProvider = ciProvider
         self.githubRepo = githubRepo
         self.githubWorkflow = githubWorkflow
         self.prodGithubWorkflow = prodGithubWorkflow
         self.gcpTrigger = gcpTrigger
         self.prodGcpTrigger = prodGcpTrigger
+
+        let resolvedStaging = !jenkinsJobs.isEmpty ? jenkinsJobs : (!jenkinsJob.isEmpty ? MACPathUtils.parseJobList(jenkinsJob) : [])
+        self.jenkinsJobs = resolvedStaging
+        self.jenkinsJob = !jenkinsJob.isEmpty ? jenkinsJob : resolvedStaging.joined(separator: ", ")
+
+        let resolvedProd = !prodJenkinsJobs.isEmpty ? prodJenkinsJobs : (!prodJenkinsJob.isEmpty ? MACPathUtils.parseJobList(prodJenkinsJob) : [])
+        self.prodJenkinsJobs = resolvedProd
+        self.prodJenkinsJob = !prodJenkinsJob.isEmpty ? prodJenkinsJob : resolvedProd.joined(separator: ", ")
+
+        self.deployEnabled = deployEnabled || !resolvedStaging.isEmpty
     }
 
     enum CodingKeys: String, CodingKey {
         case name, path, jenkinsJob, prodJenkinsJob, branch, deployEnabled
         case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
+        case jenkinsJobs, prodJenkinsJobs
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         self.path = try c.decodeIfPresent(String.self, forKey: .path) ?? ""
-        self.jenkinsJob = try c.decodeIfPresent(String.self, forKey: .jenkinsJob) ?? ""
-        self.prodJenkinsJob = try c.decodeIfPresent(String.self, forKey: .prodJenkinsJob) ?? ""
+        let decodedStaging = try c.decodeIfPresent(String.self, forKey: .jenkinsJob) ?? ""
+        let decodedStagingList = try c.decodeIfPresent([String].self, forKey: .jenkinsJobs) ?? []
+        let decodedProd = try c.decodeIfPresent(String.self, forKey: .prodJenkinsJob) ?? ""
+        let decodedProdList = try c.decodeIfPresent([String].self, forKey: .prodJenkinsJobs) ?? []
         self.branch = try c.decodeIfPresent(String.self, forKey: .branch) ?? ""
-        self.deployEnabled = try c.decodeIfPresent(Bool.self, forKey: .deployEnabled) ?? !self.jenkinsJob.isEmpty
         self.ciProvider = try c.decodeIfPresent(String.self, forKey: .ciProvider) ?? ""
         self.githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? ""
         self.githubWorkflow = try c.decodeIfPresent(String.self, forKey: .githubWorkflow) ?? ""
         self.prodGithubWorkflow = try c.decodeIfPresent(String.self, forKey: .prodGithubWorkflow) ?? ""
         self.gcpTrigger = try c.decodeIfPresent(String.self, forKey: .gcpTrigger) ?? ""
         self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
+
+        let resolvedStaging = !decodedStagingList.isEmpty ? decodedStagingList : (!decodedStaging.isEmpty ? MACPathUtils.parseJobList(decodedStaging) : [])
+        self.jenkinsJobs = resolvedStaging
+        self.jenkinsJob = !decodedStaging.isEmpty ? decodedStaging : resolvedStaging.joined(separator: ", ")
+
+        let resolvedProd = !decodedProdList.isEmpty ? decodedProdList : (!decodedProd.isEmpty ? MACPathUtils.parseJobList(decodedProd) : [])
+        self.prodJenkinsJobs = resolvedProd
+        self.prodJenkinsJob = !decodedProd.isEmpty ? decodedProd : resolvedProd.joined(separator: ", ")
+
+        self.deployEnabled = try c.decodeIfPresent(Bool.self, forKey: .deployEnabled) ?? (!self.jenkinsJob.isEmpty || !self.jenkinsJobs.isEmpty)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(path, forKey: .path)
+        try c.encode(jenkinsJob, forKey: .jenkinsJob)
+        try c.encode(prodJenkinsJob, forKey: .prodJenkinsJob)
+        try c.encode(branch, forKey: .branch)
+        try c.encode(deployEnabled, forKey: .deployEnabled)
+        try c.encode(ciProvider, forKey: .ciProvider)
+        try c.encode(githubRepo, forKey: .githubRepo)
+        try c.encode(githubWorkflow, forKey: .githubWorkflow)
+        try c.encode(prodGithubWorkflow, forKey: .prodGithubWorkflow)
+        try c.encode(gcpTrigger, forKey: .gcpTrigger)
+        try c.encode(prodGcpTrigger, forKey: .prodGcpTrigger)
+        try c.encode(jenkinsJobs, forKey: .jenkinsJobs)
+        try c.encode(prodJenkinsJobs, forKey: .prodJenkinsJobs)
     }
 }
 
@@ -884,12 +925,18 @@ public enum MACPathUtils {
             if let prev = existingByName[repoName] {
                 var updated = prev
                 updated.path = dirPath
-                if updated.jenkinsJob.isEmpty, let matched = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: stagingJobs) {
+                if updated.jenkinsJobs.isEmpty && updated.jenkinsJob.isEmpty, let matched = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: stagingJobs) {
+                    updated.jenkinsJobs = [matched]
                     updated.jenkinsJob = matched
                     updated.deployEnabled = true
+                } else if updated.jenkinsJobs.isEmpty && !updated.jenkinsJob.isEmpty {
+                    updated.jenkinsJobs = parseJobList(updated.jenkinsJob)
                 }
-                if updated.prodJenkinsJob.isEmpty, let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: prodJobs) {
+                if updated.prodJenkinsJobs.isEmpty && updated.prodJenkinsJob.isEmpty, let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: prodJobs) {
+                    updated.prodJenkinsJobs = [matchedProd]
                     updated.prodJenkinsJob = matchedProd
+                } else if updated.prodJenkinsJobs.isEmpty && !updated.prodJenkinsJob.isEmpty {
+                    updated.prodJenkinsJobs = parseJobList(updated.prodJenkinsJob)
                 }
                 discovered.append(updated)
                 return
@@ -897,6 +944,8 @@ public enum MACPathUtils {
 
             let matchedStaging = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: stagingJobs) ?? detectedJob
             let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: prodJobs) ?? ""
+            let stagingList = !matchedStaging.isEmpty ? [matchedStaging] : []
+            let prodList = !matchedProd.isEmpty ? [matchedProd] : []
             discovered.append(
                 MACRepo(
                     name: repoName,
@@ -904,7 +953,9 @@ public enum MACPathUtils {
                     jenkinsJob: matchedStaging,
                     prodJenkinsJob: matchedProd,
                     branch: "",
-                    deployEnabled: !matchedStaging.isEmpty
+                    deployEnabled: !matchedStaging.isEmpty,
+                    jenkinsJobs: stagingList,
+                    prodJenkinsJobs: prodList
                 )
             )
         }
@@ -950,6 +1001,82 @@ public enum MACPathUtils {
                 return job
             }
         }
+        return nil
+    }
+
+    /// Converts a Git remote string (SSH or HTTPS or git://) into an HTTP/HTTPS browser web URL.
+    /// E.g. `git@github.com:madmicrowave/mobile-agent-control.git` -> `https://github.com/madmicrowave/mobile-agent-control`
+    public static func convertGitRemoteToWebURL(_ raw: String) -> URL? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+
+        // Strip trailing .git
+        if s.hasSuffix(".git") {
+            s = String(s.dropLast(4))
+        }
+
+        if s.hasPrefix("http://") || s.hasPrefix("https://") {
+            return URL(string: s)
+        }
+
+        // Handle ssh:// or git://
+        if s.hasPrefix("ssh://") || s.hasPrefix("git://") {
+            let replaced = s.replacingOccurrences(of: "^(ssh|git)://", with: "", options: .regularExpression)
+            var clean = replaced
+            if let atIdx = clean.firstIndex(of: "@") {
+                clean = String(clean[clean.index(after: atIdx)...])
+            }
+            clean = clean.replacingOccurrences(of: ":[0-9]+/", with: "/", options: .regularExpression)
+            return URL(string: "https://\(clean)")
+        }
+
+        // Handle SCP-style: [user@]host.xz:path/to/repo
+        if let colonIdx = s.firstIndex(of: ":"), !s.hasPrefix("/") {
+            let hostPart = String(s[..<colonIdx])
+            let pathPart = String(s[s.index(after: colonIdx)...]).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            var host = hostPart
+            if let atIdx = host.firstIndex(of: "@") {
+                host = String(host[host.index(after: atIdx)...])
+            }
+            return URL(string: "https://\(host)/\(pathPart)")
+        }
+
+        return nil
+    }
+
+    /// Queries the Git remote web URL for a local repository on disk.
+    public static func getGitRemoteWebURL(repoPath: String) -> URL? {
+        let root = expandPath(repoPath)
+        guard !root.isEmpty else { return nil }
+
+        let pipe = Pipe()
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", root, "config", "--get", "remote.origin.url"]
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        if (try? proc.run()) != nil {
+            proc.waitUntilExit()
+            if proc.terminationStatus == 0 {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !str.isEmpty {
+                    return convertGitRemoteToWebURL(str)
+                }
+            }
+        }
+
+        // Fallback: inspect .git/config directly
+        let gitConfigPath = (root as NSString).appendingPathComponent(".git/config")
+        if let content = try? String(contentsOfFile: gitConfigPath, encoding: .utf8) {
+            let pattern = #"(?m)^\s*url\s*=\s*(.+)$"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..<content.endIndex, in: content)),
+               let capRange = Range(match.range(at: 1), in: content) {
+                let rawUrl = String(content[capRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return convertGitRemoteToWebURL(rawUrl)
+            }
+        }
+
         return nil
     }
 }

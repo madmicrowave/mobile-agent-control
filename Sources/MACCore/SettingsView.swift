@@ -3021,7 +3021,17 @@ private struct WorkspaceEditorFormView: View {
                                 TextField("Job path, URL, or comma list e.g. 'HS-1/app/api', 'HS-1/app/web'", text: $vm.stagingJobInput)
                                     .textFieldStyle(.roundedBorder)
                                     .onSubmit { addStagingJobsFromInput() }
-                                Button("Add Staging Job(s)") {
+                                Button {
+                                    if let str = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !str.isEmpty {
+                                        vm.stagingJobInput = str
+                                    }
+                                } label: {
+                                    Image(systemName: "doc.on.clipboard")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .help("Paste from clipboard")
+                                Button("Add Job") {
                                     addStagingJobsFromInput()
                                 }
                                 .disabled(vm.stagingJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -3067,7 +3077,17 @@ private struct WorkspaceEditorFormView: View {
                                     TextField("Prod job path, URL, or comma list e.g. 'PROD/app/api', 'PROD/app/web'", text: $vm.prodJobInput)
                                         .textFieldStyle(.roundedBorder)
                                         .onSubmit { addProdJobsFromInput() }
-                                    Button("Add Prod Job(s)") {
+                                    Button {
+                                        if let str = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !str.isEmpty {
+                                            vm.prodJobInput = str
+                                        }
+                                    } label: {
+                                        Image(systemName: "doc.on.clipboard")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .help("Paste from clipboard")
+                                    Button("Add Job") {
                                         addProdJobsFromInput()
                                     }
                                     .disabled(vm.prodJobInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -3184,27 +3204,218 @@ private struct WorkspaceEditorFormView: View {
                                             .truncationMode(.middle)
                                     }
 
-                                    HStack(spacing: 8) {
-                                        TextField("master (default)", text: $repo.branch)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 155)
-
-                                        if draft.ciProvider == "jenkins" {
-                                            TextField("Staging Jenkins Job (e.g. HS-1/project/service)", text: $repo.jenkinsJob)
+                                    // Default Branch Row + Open Repository Button
+                                    HStack(spacing: 10) {
+                                        HStack(spacing: 6) {
+                                            Text("Default Branch:")
+                                                .font(.system(size: 11.5))
+                                                .foregroundColor(.secondary)
+                                            TextField("master (default)", text: $repo.branch)
                                                 .textFieldStyle(.roundedBorder)
-                                                .frame(maxWidth: .infinity)
-                                                .onChange(of: repo.jenkinsJob) { _, val in
-                                                    if !val.trimmingCharacters(in: .whitespaces).isEmpty && !repo.deployEnabled {
-                                                        repo.deployEnabled = true
+                                                .frame(width: 140)
+                                        }
+
+                                        Button {
+                                            if let url = MACPathUtils.getGitRemoteWebURL(repoPath: repo.path) {
+                                                NSWorkspace.shared.open(url)
+                                            } else {
+                                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path)
+                                            }
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "arrow.up.right.square")
+                                                    .font(.system(size: 11))
+                                                Text("Open Repository")
+                                                    .font(.system(size: 11.5, weight: .medium))
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                        .help("Open remote Git repository in browser (GitHub, GitLab, Bitbucket)")
+
+                                        Spacer()
+                                    }
+
+                                    // Line under Default Branch: Job Dropdowns
+                                    if draft.ciProvider == "jenkins" {
+                                        HStack(alignment: .top, spacing: 14) {
+                                            // Staging Jobs Column
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                HStack(spacing: 4) {
+                                                    Text("Staging Jobs")
+                                                        .font(.system(size: 11, weight: .medium))
+                                                        .foregroundColor(.secondary)
+                                                    if !repo.jenkinsJobs.isEmpty {
+                                                        Text("(\(repo.jenkinsJobs.count))")
+                                                            .font(.system(size: 10.5, weight: .semibold))
+                                                            .foregroundColor(.blue)
                                                     }
                                                 }
 
-                                            if draft.environmentMode == "multi" {
-                                                TextField("Production Jenkins Job", text: $repo.prodJenkinsJob)
-                                                    .textFieldStyle(.roundedBorder)
-                                                    .frame(maxWidth: .infinity)
+                                                Menu {
+                                                    let allStaging = combinedStagingJobs(draft: draft, repo: repo)
+                                                    if allStaging.isEmpty {
+                                                        Text("No staging jobs defined above")
+                                                    } else {
+                                                        ForEach(allStaging, id: \.self) { job in
+                                                            Button {
+                                                                toggleRepoStagingJob(repo: &repo, job: job)
+                                                            } label: {
+                                                                HStack {
+                                                                    if repo.jenkinsJobs.contains(job) {
+                                                                        Image(systemName: "checkmark")
+                                                                    }
+                                                                    Text(job)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: 6) {
+                                                        Image(systemName: "hammer")
+                                                            .font(.system(size: 10.5))
+                                                        Text(repo.jenkinsJobs.isEmpty ? "Select Staging Job..." : "\(repo.jenkinsJobs.count) Staging Job(s)")
+                                                            .font(.system(size: 11.5))
+                                                            .lineLimit(1)
+                                                        Spacer()
+                                                        Image(systemName: "chevron.up.chevron.down")
+                                                            .font(.system(size: 9))
+                                                    }
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 5)
+                                                    .background(Color.primary.opacity(0.04))
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 5)
+                                                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                                    )
+                                                    .cornerRadius(5)
+                                                }
+                                                .menuStyle(.borderlessButton)
+
+                                                if !repo.jenkinsJobs.isEmpty {
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        ForEach(repo.jenkinsJobs, id: \.self) { job in
+                                                            HStack(spacing: 6) {
+                                                                Image(systemName: "hammer.fill")
+                                                                    .font(.system(size: 9))
+                                                                    .foregroundColor(.blue)
+                                                                Text(job)
+                                                                    .font(.system(size: 11, design: .monospaced))
+                                                                    .lineLimit(1)
+                                                                    .truncationMode(.middle)
+                                                                Spacer(minLength: 4)
+                                                                Button {
+                                                                    repo.jenkinsJobs.removeAll(where: { $0 == job })
+                                                                    repo.jenkinsJob = repo.jenkinsJobs.joined(separator: ", ")
+                                                                    if repo.jenkinsJobs.isEmpty && repo.prodJenkinsJobs.isEmpty {
+                                                                        repo.deployEnabled = false
+                                                                    }
+                                                                } label: {
+                                                                    Image(systemName: "xmark.circle.fill")
+                                                                        .font(.system(size: 11))
+                                                                        .foregroundColor(.secondary)
+                                                                }
+                                                                .buttonStyle(.plain)
+                                                            }
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 3)
+                                                            .background(Color.blue.opacity(0.08))
+                                                            .cornerRadius(4)
+                                                        }
+                                                    }
+                                                }
                                             }
-                                        } else if draft.ciProvider == "github" {
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                                            // Production Jobs Column
+                                            if draft.environmentMode == "multi" || !draft.prodJenkinsJobs.isEmpty || !repo.prodJenkinsJobs.isEmpty {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    HStack(spacing: 4) {
+                                                        Text("Production Jobs")
+                                                            .font(.system(size: 11, weight: .medium))
+                                                            .foregroundColor(.secondary)
+                                                        if !repo.prodJenkinsJobs.isEmpty {
+                                                            Text("(\(repo.prodJenkinsJobs.count))")
+                                                                .font(.system(size: 10.5, weight: .semibold))
+                                                                .foregroundColor(.purple)
+                                                        }
+                                                    }
+
+                                                    Menu {
+                                                        let allProd = combinedProdJobs(draft: draft, repo: repo)
+                                                        if allProd.isEmpty {
+                                                            Text("No production jobs defined above")
+                                                        } else {
+                                                            ForEach(allProd, id: \.self) { job in
+                                                                Button {
+                                                                    toggleRepoProdJob(repo: &repo, job: job)
+                                                                } label: {
+                                                                    HStack {
+                                                                        if repo.prodJenkinsJobs.contains(job) {
+                                                                            Image(systemName: "checkmark")
+                                                                        }
+                                                                        Text(job)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } label: {
+                                                        HStack(spacing: 6) {
+                                                            Image(systemName: "bolt.horizontal.circle")
+                                                                .font(.system(size: 10.5))
+                                                            Text(repo.prodJenkinsJobs.isEmpty ? "Select Production Job..." : "\(repo.prodJenkinsJobs.count) Prod Job(s)")
+                                                                .font(.system(size: 11.5))
+                                                                .lineLimit(1)
+                                                            Spacer()
+                                                            Image(systemName: "chevron.up.chevron.down")
+                                                                .font(.system(size: 9))
+                                                        }
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 5)
+                                                        .background(Color.primary.opacity(0.04))
+                                                        .overlay(
+                                                            RoundedRectangle(cornerRadius: 5)
+                                                                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                                        )
+                                                        .cornerRadius(5)
+                                                    }
+                                                    .menuStyle(.borderlessButton)
+
+                                                    if !repo.prodJenkinsJobs.isEmpty {
+                                                        VStack(alignment: .leading, spacing: 3) {
+                                                            ForEach(repo.prodJenkinsJobs, id: \.self) { job in
+                                                                HStack(spacing: 6) {
+                                                                    Image(systemName: "bolt.horizontal.circle.fill")
+                                                                        .font(.system(size: 9))
+                                                                        .foregroundColor(.purple)
+                                                                    Text(job)
+                                                                        .font(.system(size: 11, design: .monospaced))
+                                                                        .lineLimit(1)
+                                                                        .truncationMode(.middle)
+                                                                    Spacer(minLength: 4)
+                                                                    Button {
+                                                                        repo.prodJenkinsJobs.removeAll(where: { $0 == job })
+                                                                        repo.prodJenkinsJob = repo.prodJenkinsJobs.joined(separator: ", ")
+                                                                    } label: {
+                                                                        Image(systemName: "xmark.circle.fill")
+                                                                            .font(.system(size: 11))
+                                                                            .foregroundColor(.secondary)
+                                                                    }
+                                                                    .buttonStyle(.plain)
+                                                                }
+                                                                .padding(.horizontal, 6)
+                                                                .padding(.vertical, 3)
+                                                                .background(Color.purple.opacity(0.08))
+                                                                .cornerRadius(4)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                        }
+                                    } else if draft.ciProvider == "github" {
+                                        HStack(spacing: 8) {
                                             TextField("Workflow (e.g. deploy.yml)", text: $repo.githubWorkflow)
                                                 .textFieldStyle(.roundedBorder)
                                                 .frame(maxWidth: .infinity)
@@ -3219,7 +3430,9 @@ private struct WorkspaceEditorFormView: View {
                                                     .textFieldStyle(.roundedBorder)
                                                     .frame(maxWidth: .infinity)
                                             }
-                                        } else if draft.ciProvider == "google" {
+                                        }
+                                    } else if draft.ciProvider == "google" {
+                                        HStack(spacing: 8) {
                                             TextField("GCP Trigger ID", text: $repo.gcpTrigger)
                                                 .textFieldStyle(.roundedBorder)
                                                 .frame(maxWidth: .infinity)
@@ -3414,6 +3627,59 @@ private struct WorkspaceEditorFormView: View {
         )
     }
 
+    private func combinedStagingJobs(draft: MACWorkspace, repo: MACRepo) -> [String] {
+        var list = draft.jenkinsJobs
+        for j in repo.jenkinsJobs where !list.contains(j) {
+            list.append(j)
+        }
+        if !repo.jenkinsJob.isEmpty {
+            for j in MACPathUtils.parseJobList(repo.jenkinsJob) where !list.contains(j) {
+                list.append(j)
+            }
+        }
+        return list
+    }
+
+    private func combinedProdJobs(draft: MACWorkspace, repo: MACRepo) -> [String] {
+        var list = draft.prodJenkinsJobs
+        for j in repo.prodJenkinsJobs where !list.contains(j) {
+            list.append(j)
+        }
+        if !repo.prodJenkinsJob.isEmpty {
+            for j in MACPathUtils.parseJobList(repo.prodJenkinsJob) where !list.contains(j) {
+                list.append(j)
+            }
+        }
+        return list
+    }
+
+    private func toggleRepoStagingJob(repo: inout MACRepo, job: String) {
+        if let idx = repo.jenkinsJobs.firstIndex(of: job) {
+            repo.jenkinsJobs.remove(at: idx)
+            if repo.jenkinsJobs.isEmpty && repo.prodJenkinsJobs.isEmpty {
+                repo.deployEnabled = false
+            }
+        } else {
+            repo.jenkinsJobs.append(job)
+            if !repo.deployEnabled {
+                repo.deployEnabled = true
+            }
+        }
+        repo.jenkinsJob = repo.jenkinsJobs.joined(separator: ", ")
+    }
+
+    private func toggleRepoProdJob(repo: inout MACRepo, job: String) {
+        if let idx = repo.prodJenkinsJobs.firstIndex(of: job) {
+            repo.prodJenkinsJobs.remove(at: idx)
+        } else {
+            repo.prodJenkinsJobs.append(job)
+            if !repo.deployEnabled {
+                repo.deployEnabled = true
+            }
+        }
+        repo.prodJenkinsJob = repo.prodJenkinsJobs.joined(separator: ", ")
+    }
+
     private func autoMatchJobsToRepos() {
         guard !draft.path.isEmpty else { return }
         if draft.repos.isEmpty {
@@ -3421,15 +3687,21 @@ private struct WorkspaceEditorFormView: View {
             return
         }
         for idx in draft.repos.indices {
-            if draft.repos[idx].jenkinsJob.isEmpty,
+            if draft.repos[idx].jenkinsJobs.isEmpty && draft.repos[idx].jenkinsJob.isEmpty,
                let matched = MACPathUtils.bestMatchingJob(forRepo: draft.repos[idx].name, workspacePath: draft.path, jobs: draft.jenkinsJobs) {
+                draft.repos[idx].jenkinsJobs = [matched]
                 draft.repos[idx].jenkinsJob = matched
                 draft.repos[idx].deployEnabled = true
+            } else if !draft.repos[idx].jenkinsJobs.isEmpty && draft.repos[idx].jenkinsJob.isEmpty {
+                draft.repos[idx].jenkinsJob = draft.repos[idx].jenkinsJobs.joined(separator: ", ")
             }
             if draft.environmentMode == "multi",
-               draft.repos[idx].prodJenkinsJob.isEmpty,
+               draft.repos[idx].prodJenkinsJobs.isEmpty && draft.repos[idx].prodJenkinsJob.isEmpty,
                let matchedProd = MACPathUtils.bestMatchingJob(forRepo: draft.repos[idx].name, workspacePath: draft.path, jobs: draft.prodJenkinsJobs) {
+                draft.repos[idx].prodJenkinsJobs = [matchedProd]
                 draft.repos[idx].prodJenkinsJob = matchedProd
+            } else if !draft.repos[idx].prodJenkinsJobs.isEmpty && draft.repos[idx].prodJenkinsJob.isEmpty {
+                draft.repos[idx].prodJenkinsJob = draft.repos[idx].prodJenkinsJobs.joined(separator: ", ")
             }
         }
     }
