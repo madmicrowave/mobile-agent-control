@@ -1246,7 +1246,8 @@ export async function runWorkspacesWizard({
         branch: finalBranch,
         deployEnabled: finalDeployEnabled,
         stagingCommand: prev?.stagingCommand || '',
-        prodCommand: prev?.prodCommand || ''
+        prodCommand: prev?.prodCommand || '',
+        noOrigin: Boolean(prev?.noOrigin)
       });
     }
 

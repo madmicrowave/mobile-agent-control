@@ -3919,4 +3919,50 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await fsp.rm(cleanFile, { force: true });
     nextAgentAbort = () => {};
   });
+
+  it('commits changes locally without pushing to git origin when repo has noOrigin: true', async () => {
+    const ws = configStore.getWorkspace('payments');
+    const targetRepo = ws.repos.find((r) => r.name === 'core');
+    assert.ok(targetRepo);
+    const prevNoOrigin = targetRepo.noOrigin;
+    targetRepo.noOrigin = true;
+
+    const testFile = path.join(targetRepo.path, 'no-origin-test.txt');
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(testFile, 'no origin content\n', 'utf8');
+      return {
+        conversationId: 'conv-no-origin',
+        response: 'Created local-only file.'
+      };
+    };
+
+    const { stdout: preHead } = await runGit(targetRepo.path, ['rev-parse', 'HEAD']);
+    const { stdout: preRemoteHead } = await runGit(coreRepo.bareDir, ['rev-parse', 'master']);
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Add local-only feature'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // Verify commit was created locally in repo
+    const { stdout: postHead } = await runGit(targetRepo.path, ['rev-parse', 'HEAD']);
+    assert.notEqual(postHead.trim(), preHead.trim());
+
+    // Verify git push was NEVER executed against remote bare repository
+    const { stdout: postRemoteHead } = await runGit(coreRepo.bareDir, ['rev-parse', 'master']);
+    assert.equal(postRemoteHead.trim(), preRemoteHead.trim(), 'Remote bare repository should not be pushed');
+
+    // Verify notification message explains commit is local without origin
+    const commitMsg = mockTg.sentMessages.find((m) => /Committed locally/i.test(m.text) || /local commit, no origin/i.test(m.text));
+    assert.ok(commitMsg, 'Telegram message should report local commit with no origin');
+
+    // Cleanup
+    targetRepo.noOrigin = prevNoOrigin;
+    await fsp.rm(testFile, { force: true });
+  });
 });

@@ -4193,13 +4193,20 @@ export class BotController {
 
       const commitLines = commits.map(
         (c) =>
-          `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+          c.noOrigin || !c.pushed
+            ? `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> (local commit, no origin) (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+            : `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
       );
+
+      const hasPushed = commits.some((c) => c.pushed);
+      const title = hasPushed
+        ? `✅ <b>Auto-committed &amp; pushed fix for Jenkins build failure:</b>\n\n`
+        : `✅ <b>Auto-committed fix locally for Jenkins build failure (no origin):</b>\n\n`;
 
       await this.telegram.sendMessage({
         chatId,
         text:
-          `✅ <b>Auto-committed &amp; pushed fix for Jenkins build failure:</b>\n\n` +
+          title +
           `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
           commitLines.join('\n')
       });
@@ -4560,13 +4567,20 @@ export class BotController {
     // Output last action explicitly via message text!
     const commitLines = commits.map(
       (c) =>
-        `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+        c.noOrigin || !c.pushed
+          ? `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> (local commit, no origin) (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
+          : `• <code>${escapeHtml(c.repoName)}</code> @ <code>${escapeHtml(c.shortSha)}</code> → <code>origin/${escapeHtml(c.branch)}</code> (${c.changedFiles.length} file${c.changedFiles.length === 1 ? '' : 's'})`
     );
+
+    const hasPushed = commits.some((c) => c.pushed);
+    const title = hasPushed
+      ? `✅ <b>Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}:</b>\n\n`
+      : `✅ <b>Committed locally${customBranch ? ` to branch "${escapeHtml(customBranch)}"` : ''} (no origin):</b>\n\n`;
 
     await this.telegram.sendMessage({
       chatId,
       text:
-        `✅ <b>Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}:</b>\n\n` +
+        title +
         `Message: <code>${escapeHtml(commitMessage)}</code>\n\n` +
         commitLines.join('\n')
     });
@@ -4627,7 +4641,7 @@ export class BotController {
 
     try {
       for (const c of commits) {
-        if (!c.pushed && this.gitPush) {
+        if (!c.pushed && this.gitPush && !c.noOrigin) {
           await pushRepoCommit(c);
         }
       }

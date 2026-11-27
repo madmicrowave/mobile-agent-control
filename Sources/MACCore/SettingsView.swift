@@ -3267,7 +3267,7 @@ private struct WorkspaceEditorFormView: View {
     // 4. Per-Repository Mapping
     @ViewBuilder
     private var repositoriesSection: some View {
-        MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
+        MACSectionCard(title: "Repositories (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
                     HStack(spacing: 8) {
                         Button {
                             if let chosen = chooseDirectory(initialPath: draft.path.isEmpty ? "~" : draft.path) {
@@ -3332,16 +3332,21 @@ private struct WorkspaceEditorFormView: View {
                                         .help("Remove repository from workspace")
                                     }
 
-                                    // Default Branch Row + Open Repository Button
-                                    HStack(spacing: 10) {
+                                    // Branch Row + No Origin Checkbox + Open Repository Button
+                                    HStack(spacing: 12) {
                                         HStack(spacing: 6) {
-                                            Text("Default Branch:")
+                                            Text("Branch:")
                                                 .font(.system(size: 11.5))
                                                 .foregroundColor(.secondary)
                                             TextField("master (default)", text: $repo.branch)
                                                 .textFieldStyle(.roundedBorder)
                                                 .frame(width: 140)
                                         }
+
+                                        Toggle("No Origin", isOn: $repo.noOrigin)
+                                            .toggleStyle(.checkbox)
+                                            .font(.system(size: 11.5))
+                                            .help("If enabled, commits changes locally without pushing (no git remote origin).")
 
                                         Button {
                                             if let url = MACPathUtils.getGitRemoteWebURL(repoPath: repo.path) {
@@ -3369,7 +3374,7 @@ private struct WorkspaceEditorFormView: View {
                                             .padding(.vertical, 2)
                                     }
 
-                                    // Line under Default Branch: Job Dropdowns (Full Width, Stacked with Spacing)
+                                    // Line under Branch: Job Dropdowns (Full Width, Stacked with Spacing)
                                     if draft.ciProvider == "jenkins" {
                                         VStack(alignment: .leading, spacing: 10) {
                                             // Staging Jobs Column (Full Width)

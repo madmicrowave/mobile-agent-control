@@ -149,6 +149,7 @@ public struct MACRepo: Identifiable, Codable, Equatable {
     public var prodJenkinsJobs: [String]
     public var stagingCommand: String
     public var prodCommand: String
+    public var noOrigin: Bool
 
     public init(
         name: String,
@@ -166,7 +167,8 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         jenkinsJobs: [String] = [],
         prodJenkinsJobs: [String] = [],
         stagingCommand: String = "",
-        prodCommand: String = ""
+        prodCommand: String = "",
+        noOrigin: Bool = false
     ) {
         self.name = name
         self.path = path
@@ -179,6 +181,7 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.prodGcpTrigger = prodGcpTrigger
         self.stagingCommand = stagingCommand
         self.prodCommand = prodCommand
+        self.noOrigin = noOrigin
 
         let resolvedStaging = !jenkinsJobs.isEmpty ? MACPathUtils.sanitizeJobList(jenkinsJobs) : (!jenkinsJob.isEmpty ? MACPathUtils.parseJobList(jenkinsJob) : [])
         self.jenkinsJobs = resolvedStaging
@@ -196,6 +199,7 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
         case jenkinsJobs, prodJenkinsJobs
         case stagingCommand, prodCommand
+        case noOrigin
     }
 
     public init(from decoder: Decoder) throws {
@@ -215,6 +219,7 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         self.prodGcpTrigger = try c.decodeIfPresent(String.self, forKey: .prodGcpTrigger) ?? ""
         self.stagingCommand = try c.decodeIfPresent(String.self, forKey: .stagingCommand) ?? ""
         self.prodCommand = try c.decodeIfPresent(String.self, forKey: .prodCommand) ?? ""
+        self.noOrigin = try c.decodeIfPresent(Bool.self, forKey: .noOrigin) ?? false
 
         let resolvedStaging = !decodedStagingList.isEmpty ? MACPathUtils.sanitizeJobList(decodedStagingList) : (!decodedStaging.isEmpty ? MACPathUtils.parseJobList(decodedStaging) : [])
         self.jenkinsJobs = resolvedStaging
@@ -245,6 +250,7 @@ public struct MACRepo: Identifiable, Codable, Equatable {
         try c.encode(prodJenkinsJobs, forKey: .prodJenkinsJobs)
         try c.encode(stagingCommand, forKey: .stagingCommand)
         try c.encode(prodCommand, forKey: .prodCommand)
+        try c.encode(noOrigin, forKey: .noOrigin)
     }
 }
 

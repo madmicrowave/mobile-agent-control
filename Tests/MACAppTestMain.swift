@@ -755,14 +755,18 @@ private func testGitRemoteWebURLAndMultiJobMapping() throws {
     expect(MACPathUtils.convertGitRemoteToWebURL(bitbucketSSH)?.absoluteString == "https://bitbucket.org/org/repo", "Bitbucket SSH conversion failed")
     expect(MACPathUtils.convertGitRemoteToWebURL(plainWeb)?.absoluteString == "https://github.com/madmicrowave/mobile-agent-control", "Plain web URL conversion failed")
 
-    // 2. Test Multi-Job mapping and CLI commands on MACRepo
+    // 2. Test Multi-Job mapping, CLI commands, and noOrigin on MACRepo
+    let defaultRepo = MACRepo(name: "default-repo", path: "/test")
+    expect(defaultRepo.noOrigin == false, "noOrigin default is false")
+
     let repo = MACRepo(
         name: "test-repo",
         path: "/Users/test/code/test-repo",
         jenkinsJobs: ["Job/Staging/api", "Job/Staging/worker"],
         prodJenkinsJobs: ["Job/Prod/api", "Job/Prod/worker"],
         stagingCommand: "bash build_staging.sh --arg=ooo",
-        prodCommand: "bash deploy_prod.sh --arg=prod"
+        prodCommand: "bash deploy_prod.sh --arg=prod",
+        noOrigin: true
     )
     expect(repo.jenkinsJobs.count == 2, "Expected 2 staging jobs")
     expect(repo.prodJenkinsJobs.count == 2, "Expected 2 prod jobs")
@@ -770,6 +774,7 @@ private func testGitRemoteWebURLAndMultiJobMapping() throws {
     expect(repo.deployEnabled == true, "Deploy enabled automatically when jobs present")
     expect(repo.stagingCommand == "bash build_staging.sh --arg=ooo", "Staging command set")
     expect(repo.prodCommand == "bash deploy_prod.sh --arg=prod", "Prod command set")
+    expect(repo.noOrigin == true, "noOrigin flag set to true")
 
     // Test JSON roundtrip
     let encoder = JSONEncoder()
@@ -780,6 +785,7 @@ private func testGitRemoteWebURLAndMultiJobMapping() throws {
     expect(decoded.prodJenkinsJobs == ["Job/Prod/api", "Job/Prod/worker"], "Decoded prodJenkinsJobs match")
     expect(decoded.stagingCommand == "bash build_staging.sh --arg=ooo", "Decoded staging command matches")
     expect(decoded.prodCommand == "bash deploy_prod.sh --arg=prod", "Decoded prod command matches")
+    expect(decoded.noOrigin == true, "Decoded noOrigin matches")
 
     // Test sanitizeJobList
     let rawDirtyJobs = ["Job/Staging/api, Job/Staging/worker", "Job/Staging/extra", "Job/Staging/api"]

@@ -226,6 +226,10 @@ async function ensureGitAuthorArgs(repoPath) {
  * if `origin/<branch>` advanced ahead cleanly (non-fast-forward).
  */
 export async function pushRepoCommit(commitRecord) {
+  if (commitRecord.noOrigin) {
+    return commitRecord;
+  }
+
   const destRef = commitRecord.branch.startsWith('refs/')
     ? commitRecord.branch
     : `refs/heads/${commitRecord.branch}`;
@@ -319,11 +323,13 @@ export async function commitAndPushRepoChanges(
     changedFiles: stagedFiles,
     statSummary: statOut.trim(),
     pushed: false,
+    noOrigin: Boolean(repo.noOrigin),
     jenkinsJob: repo.jenkinsJob || '',
     deployEnabled: Boolean(repo.deployEnabled && repo.jenkinsJob)
   };
 
-  if (push) {
+  const shouldPush = push && !repo.noOrigin;
+  if (shouldPush) {
     try {
       await pushRepoCommit(commitRecord);
     } catch (pushErr) {
@@ -372,12 +378,14 @@ export async function collectAgentCommitsAndPush(repo, delta, { push = true } = 
       changedFiles: filesOut.split('\n').map((s) => s.trim()).filter(Boolean),
       statSummary: statOut.trim(),
       pushed: false,
+      noOrigin: Boolean(repo.noOrigin),
       jenkinsJob: repo.jenkinsJob || '',
       deployEnabled: Boolean(repo.deployEnabled && repo.jenkinsJob)
     });
   }
 
-  if (push && records.length > 0) {
+  const shouldPush = push && !repo.noOrigin;
+  if (shouldPush && records.length > 0) {
     const lastRecord = records[records.length - 1];
     try {
       await pushRepoCommit(lastRecord);

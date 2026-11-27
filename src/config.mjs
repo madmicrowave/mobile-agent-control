@@ -148,6 +148,7 @@ export async function discoverWorkspaceRepos(
       branch: prev.branch || '',
       stagingCommand: prev.stagingCommand || '',
       prodCommand: prev.prodCommand || '',
+      noOrigin: Boolean(prev.noOrigin),
       deployEnabled
     });
   }
@@ -520,6 +521,7 @@ export class ConfigStore {
         r.prodGcpTrigger = String(r.prodGcpTrigger || '').trim();
         r.stagingCommand = String(r.stagingCommand || '').trim();
         r.prodCommand = String(r.prodCommand || '').trim();
+        r.noOrigin = Boolean(r.noOrigin);
       }
 
       ws.liveUrl = String(ws.liveUrl || '').trim();
