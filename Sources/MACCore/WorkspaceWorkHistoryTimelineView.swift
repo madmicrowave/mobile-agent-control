@@ -191,17 +191,17 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
     private var headerBar: some View {
         HStack(spacing: 10) {
-            // Stats pills (no break to new line, horizontal scroll if needed)
+            // Stats pills (compact T / A / S with hover tooltips, horizontal scroll if needed)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    statPill(label: "Total", count: vm.items.count, color: .secondary)
+                    statPill(short: "T", full: "Total", count: vm.items.count, color: .secondary)
 
                     if activeCount > 0 {
-                        statPill(label: "Active", count: activeCount, color: .blue)
+                        statPill(short: "A", full: "Active", count: activeCount, color: .blue)
                     }
-                    statPill(label: "Success", count: successCount, color: .green)
+                    statPill(short: "S", full: "Success", count: successCount, color: .green)
                     if failedCount > 0 {
-                        statPill(label: "Failed/Reverted", count: failedCount, color: .red)
+                        statPill(short: "F", full: "Failed / Reverted", count: failedCount, color: .red)
                     }
                 }
             }
@@ -268,10 +268,10 @@ public struct WorkspaceWorkHistoryTimelineView: View {
         .padding(.top, 4)
     }
 
-    private func statPill(label: String, count: Int, color: Color) -> some View {
+    private func statPill(short: String, full: String, count: Int, color: Color) -> some View {
         HStack(spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
+            Text(short)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
             Text("\(count)")
@@ -279,11 +279,12 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                 .foregroundColor(color)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(color.opacity(0.08))
         .cornerRadius(6)
         .fixedSize()
+        .help(full)
     }
 
     private var formattedHistoryLimit: String {
