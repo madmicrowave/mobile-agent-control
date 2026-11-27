@@ -2092,6 +2092,9 @@ private struct WorkspaceSidebarEntry: Identifiable, Equatable {
 
 public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
     case settings = "Settings"
+    case aiEngineModel = "AI Engine & Model"
+    case cicd = "CI/CD"
+    case repositories = "Repositories"
     case history = "Work History"
 
     public var id: String { rawValue }
@@ -2099,6 +2102,9 @@ public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
     public var systemImage: String {
         switch self {
         case .settings: return "slider.horizontal.3"
+        case .aiEngineModel: return "cpu.fill"
+        case .cicd: return "shippingbox.fill"
+        case .repositories: return "point.3.connected.trianglepath.dotted"
         case .history: return "clock.arrow.circlepath"
         }
     }
@@ -2273,7 +2279,14 @@ private struct WorkspacesTabView: View {
                             .padding(.horizontal, 14)
                             .padding(.bottom, 10)
 
-                        if vm.selectedDetailTab == .settings {
+                        if vm.selectedDetailTab == .history {
+                            WorkspaceWorkHistoryTimelineView(
+                                workspace: entry.draft,
+                                dataDir: appState.configStore.dataDir
+                            )
+                            .id("history-\(entry.uid)")
+                            .padding(.leading, 14)
+                        } else {
                             WorkspaceEditorFormView(
                                 draft: Binding<MACWorkspace>(
                                     get: {
@@ -2288,6 +2301,7 @@ private struct WorkspacesTabView: View {
                                     }
                                 ),
                                 isNewWorkspace: entry.isNewUnsaved,
+                                selectedTab: vm.selectedDetailTab,
                                 config: appState.config,
                                 onAutoSave: {
                                     guard let i = vm.entries.firstIndex(where: { $0.uid == entry.uid }) else { return }
@@ -2298,13 +2312,6 @@ private struct WorkspacesTabView: View {
                                 }
                             )
                             .id(entry.uid)
-                            .padding(.leading, 14)
-                        } else {
-                            WorkspaceWorkHistoryTimelineView(
-                                workspace: entry.draft,
-                                dataDir: appState.configStore.dataDir
-                            )
-                            .id("history-\(entry.uid)")
                             .padding(.leading, 14)
                         }
                     }
@@ -2595,6 +2602,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
 private struct WorkspaceEditorFormView: View {
     @Binding var draft: MACWorkspace
     let isNewWorkspace: Bool
+    var selectedTab: WorkspaceDetailTab = .settings
     let config: MACConfig
     let onAutoSave: () -> Void
     let onDelete: (() -> Void)?
@@ -2701,8 +2709,65 @@ private struct WorkspaceEditorFormView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // 1. Identity & Paths
-                MACSectionCard(title: "Workspace Name & Paths", systemImage: "folder.fill") {
+                switch selectedTab {
+                case .settings:
+                    workspaceNameAndPathsSection
+                    saveDeleteActionRow
+                case .aiEngineModel:
+                    aiEngineAndModelSection
+                    saveDeleteActionRow
+                case .cicd:
+                    environmentsAndCicdSection
+                    saveDeleteActionRow
+                case .repositories:
+                    repositoriesSection
+                    saveDeleteActionRow
+                case .history:
+                    EmptyView()
+                }
+            }
+            .padding(.trailing, 8)
+        }
+        .onAppear {
+            loadFromDraft()
+        }
+        .onChange(of: draft) { _, _ in
+            guard !vm.isDeleting else { return }
+            syncModelFields()
+            onAutoSave()
+        }
+        .onChange(of: draft.engine) { _, newEngine in
+            guard !vm.isDeleting else { return }
+            let available = MACModelOption.options(forEngine: newEngine)
+            if !available.contains(where: { $0.id == vm.selectedModelFamily }) {
+                if let first = available.first {
+                    vm.selectedModelFamily = first.id
+                    syncModelFields()
+                }
+            }
+        }
+        .onChange(of: vm.selectedModelFamily) { _, _ in
+            guard !vm.isDeleting else { return }
+            syncModelFields()
+            onAutoSave()
+        }
+        .onChange(of: vm.selectedModelLevel) { _, _ in
+            guard !vm.isDeleting else { return }
+            syncModelFields()
+            onAutoSave()
+        }
+        .onDisappear {
+            guard !vm.isDeleting else { return }
+            commitPendingJobInputs()
+            syncModelFields()
+            onAutoSave()
+        }
+    }
+
+    // 1. Identity & Paths
+    @ViewBuilder
+    private var workspaceNameAndPathsSection: some View {
+        MACSectionCard(title: "Workspace Name & Paths", systemImage: "folder.fill") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Workspace Label (shown in Telegram)")
                             .font(.caption)
@@ -2856,9 +2921,12 @@ private struct WorkspaceEditorFormView: View {
                         }
                     }
                 }
+            }
 
-                // 2. AI Execution Engine & Model
-                MACSectionCard(title: "AI Engine & Model", systemImage: "cpu.fill") {
+    // 2. AI Execution Engine & Model
+    @ViewBuilder
+    private var aiEngineAndModelSection: some View {
+        MACSectionCard(title: "AI Engine & Model", systemImage: "cpu.fill") {
                     HStack(spacing: 6) {
                         Text("CLI ID:")
                             .font(.system(size: 11, weight: .medium))
@@ -2969,9 +3037,12 @@ private struct WorkspaceEditorFormView: View {
                         }
                     }
                 }
+            }
 
-                // 3. Environments & CI/CD Deployment
-                MACSectionCard(title: "Environments & CI/CD Deployment", systemImage: "shippingbox.fill") {
+    // 3. Environments & CI/CD Deployment
+    @ViewBuilder
+    private var environmentsAndCicdSection: some View {
+        MACSectionCard(title: "Environments & CI/CD Deployment", systemImage: "shippingbox.fill") {
                     Toggle("Git-only", isOn: isGitOnlyBinding)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 12))
@@ -3186,9 +3257,12 @@ private struct WorkspaceEditorFormView: View {
                     }
                 }
             }
+        }
 
-                // 4. Per-Repository Mapping
-                MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
+    // 4. Per-Repository Mapping
+    @ViewBuilder
+    private var repositoriesSection: some View {
+        MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
                     HStack(spacing: 8) {
                         Button {
                             if let chosen = chooseDirectory(initialPath: draft.path.isEmpty ? "~" : draft.path) {
@@ -3601,9 +3675,12 @@ private struct WorkspaceEditorFormView: View {
                         }
                     }
                 }
+            }
 
-                // 5. Save / Delete Action Row
-                HStack {
+    // 5. Save / Delete Action Row
+    @ViewBuilder
+    private var saveDeleteActionRow: some View {
+        HStack {
                     if let onDelete = onDelete {
                         Button(role: .destructive) {
                             vm.showDeleteConfirm = true
@@ -3663,43 +3740,6 @@ private struct WorkspaceEditorFormView: View {
                 .padding(.top, 2)
                 .padding(.bottom, 10)
             }
-            .padding(.trailing, 8)
-        }
-        .onAppear {
-            loadFromDraft()
-        }
-        .onChange(of: draft) { _, _ in
-            guard !vm.isDeleting else { return }
-            syncModelFields()
-            onAutoSave()
-        }
-        .onChange(of: draft.engine) { _, newEngine in
-            guard !vm.isDeleting else { return }
-            let available = MACModelOption.options(forEngine: newEngine)
-            if !available.contains(where: { $0.id == vm.selectedModelFamily }) {
-                if let first = available.first {
-                    vm.selectedModelFamily = first.id
-                    syncModelFields()
-                }
-            }
-        }
-        .onChange(of: vm.selectedModelFamily) { _, _ in
-            guard !vm.isDeleting else { return }
-            syncModelFields()
-            onAutoSave()
-        }
-        .onChange(of: vm.selectedModelLevel) { _, _ in
-            guard !vm.isDeleting else { return }
-            syncModelFields()
-            onAutoSave()
-        }
-        .onDisappear {
-            guard !vm.isDeleting else { return }
-            commitPendingJobInputs()
-            syncModelFields()
-            onAutoSave()
-        }
-    }
 
     private func loadFromDraft() {
         draft.jenkinsJobs = MACPathUtils.sanitizeJobList(draft.jenkinsJobs)

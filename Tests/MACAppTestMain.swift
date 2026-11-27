@@ -586,9 +586,15 @@ private func testConfigExportImportAndCrypto() throws {
 }
 
 private func testWorkspaceDetailTabsAndTimelineHistory() throws {
-    // 1. Verify 2 tabs exist with Settings as default
-    expect(WorkspaceDetailTab.allCases.map(\.rawValue) == ["Settings", "Work History"], "Expected 2 tabs: Settings and Work History")
+    // 1. Verify 5 tabs exist with Settings as default and Work History as latest tab
+    expect(
+        WorkspaceDetailTab.allCases.map(\.rawValue) == ["Settings", "AI Engine & Model", "CI/CD", "Repositories", "Work History"],
+        "Expected 5 tabs: Settings, AI Engine & Model, CI/CD, Repositories, Work History"
+    )
     expect(WorkspaceDetailTab.settings.rawValue == "Settings", "Settings tab title")
+    expect(WorkspaceDetailTab.aiEngineModel.rawValue == "AI Engine & Model", "AI Engine & Model tab title")
+    expect(WorkspaceDetailTab.cicd.rawValue == "CI/CD", "CI/CD tab title")
+    expect(WorkspaceDetailTab.repositories.rawValue == "Repositories", "Repositories tab title")
     expect(WorkspaceDetailTab.history.rawValue == "Work History", "Work History tab title")
 
     // 2. Test Timeline loader from sample state.json
