@@ -89,28 +89,45 @@ public enum MACConfigCrypto {
     }
 }
 
-private final class MACExportAccessoryView: NSView {
-    let historyCheckbox: NSButton
-    let encryptCheckbox: NSButton
-    let passwordField: NSSecureTextField
-    let confirmField: NSSecureTextField
+public final class MACExportAccessoryView: NSView {
+    public let historyCheckbox: NSButton
+    public let encryptCheckbox: NSButton
+    public let passwordField: NSSecureTextField
+    public let confirmField: NSSecureTextField
 
-    init() {
+    private var unencryptedBottomConstraint: NSLayoutConstraint!
+    private var encryptedBottomConstraint: NSLayoutConstraint!
+
+    public override var isFlipped: Bool { true }
+
+    public override var intrinsicContentSize: NSSize {
+        let isChecked = encryptCheckbox.state == .on
+        let h: CGFloat = isChecked ? 122 : 60
+        return NSSize(width: 440, height: h)
+    }
+
+    public init() {
         self.historyCheckbox = NSButton(checkboxWithTitle: "Export message history (workspaces → work history)", target: nil, action: nil)
         self.historyCheckbox.state = .off
 
         self.encryptCheckbox = NSButton(checkboxWithTitle: "Encrypt export with password", target: nil, action: nil)
         self.encryptCheckbox.state = .off
 
-        self.passwordField = NSSecureTextField(frame: .zero)
+        self.passwordField = NSSecureTextField()
         self.passwordField.placeholderString = "Password"
         self.passwordField.isHidden = true
 
-        self.confirmField = NSSecureTextField(frame: .zero)
+        self.confirmField = NSSecureTextField()
         self.confirmField.placeholderString = "Confirm Password"
         self.confirmField.isHidden = true
 
-        super.init(frame: NSRect(x: 0, y: 0, width: 340, height: 56))
+        super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 60))
+        self.wantsLayer = true
+
+        historyCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        encryptCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        passwordField.translatesAutoresizingMaskIntoConstraints = false
+        confirmField.translatesAutoresizingMaskIntoConstraints = false
 
         encryptCheckbox.target = self
         encryptCheckbox.action = #selector(handleCheckboxChanged)
@@ -120,30 +137,37 @@ private final class MACExportAccessoryView: NSView {
         addSubview(passwordField)
         addSubview(confirmField)
 
-        updateLayout()
+        unencryptedBottomConstraint = encryptCheckbox.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -10)
+        encryptedBottomConstraint = confirmField.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -10)
+
+        NSLayoutConstraint.activate([
+            historyCheckbox.topAnchor.constraint(equalTo: self.topAnchor, constant: 10),
+            historyCheckbox.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 16),
+            historyCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: self.trailingAnchor, constant: -16),
+
+            encryptCheckbox.topAnchor.constraint(equalTo: historyCheckbox.bottomAnchor, constant: 8),
+            encryptCheckbox.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 16),
+            encryptCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: self.trailingAnchor, constant: -16),
+
+            passwordField.topAnchor.constraint(equalTo: encryptCheckbox.bottomAnchor, constant: 8),
+            passwordField.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 16),
+            passwordField.widthAnchor.constraint(equalToConstant: 280),
+            passwordField.heightAnchor.constraint(equalToConstant: 24),
+
+            confirmField.topAnchor.constraint(equalTo: passwordField.bottomAnchor, constant: 6),
+            confirmField.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 16),
+            confirmField.widthAnchor.constraint(equalToConstant: 280),
+            confirmField.heightAnchor.constraint(equalToConstant: 24),
+
+            unencryptedBottomConstraint
+        ])
     }
 
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func updateLayout() {
-        let isEncrypt = encryptCheckbox.state == .on
-        let h: CGFloat = isEncrypt ? 118 : 56
-        self.frame = NSRect(x: 0, y: 0, width: 340, height: h)
-
-        if isEncrypt {
-            historyCheckbox.frame = NSRect(x: 10, y: 90, width: 320, height: 20)
-            encryptCheckbox.frame = NSRect(x: 10, y: 66, width: 320, height: 20)
-            passwordField.frame = NSRect(x: 10, y: 36, width: 320, height: 22)
-            confirmField.frame = NSRect(x: 10, y: 8, width: 320, height: 22)
-        } else {
-            historyCheckbox.frame = NSRect(x: 10, y: 28, width: 320, height: 20)
-            encryptCheckbox.frame = NSRect(x: 10, y: 4, width: 320, height: 20)
-        }
-    }
-
-    @objc private func handleCheckboxChanged() {
+    @objc public func handleCheckboxChanged() {
         let isChecked = encryptCheckbox.state == .on
         passwordField.isHidden = !isChecked
         confirmField.isHidden = !isChecked
@@ -151,22 +175,30 @@ private final class MACExportAccessoryView: NSView {
             passwordField.stringValue = ""
             confirmField.stringValue = ""
         }
-        updateLayout()
+        if isChecked {
+            unencryptedBottomConstraint.isActive = false
+            encryptedBottomConstraint.isActive = true
+        } else {
+            encryptedBottomConstraint.isActive = false
+            unencryptedBottomConstraint.isActive = true
+        }
+        self.invalidateIntrinsicContentSize()
+        self.window?.layoutIfNeeded()
     }
 
-    var isHistoryChecked: Bool {
+    public var isHistoryChecked: Bool {
         historyCheckbox.state == .on
     }
 
-    var isEncryptChecked: Bool {
+    public var isEncryptChecked: Bool {
         encryptCheckbox.state == .on
     }
 
-    var password: String {
+    public var password: String {
         passwordField.stringValue
     }
 
-    var confirmPassword: String {
+    public var confirmPassword: String {
         confirmField.stringValue
     }
 }

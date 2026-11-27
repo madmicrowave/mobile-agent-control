@@ -498,6 +498,7 @@ func testResourceMonitorAndMetrics() throws {
     print("✓ MACResourceMonitor process sampling and metrics formatting passed")
 }
 
+@MainActor
 private func testConfigExportImportAndCrypto() throws {
     let plainData = "{\"telegramBotToken\":\"12345:TOKEN\",\"agentEngine\":\"agy\"}".data(using: .utf8)!
     let password = "superSecretPassword123"
@@ -539,7 +540,26 @@ private func testConfigExportImportAndCrypto() throws {
     let histObj = parsedDec?["messageHistory"] as? [String: Any]
     expect(histObj != nil, "messageHistory must be present when included")
 
-    print("✓ MACConfigCrypto AES-GCM encryption & decryption round trip passed")
+    // Verify MACExportAccessoryView rendering, flipped coords, intrinsic sizes, and toggle states
+    let accessory = MACExportAccessoryView()
+    expect(accessory.isFlipped == true, "Accessory view must be flipped for proper top-to-bottom layout")
+    expect(accessory.wantsLayer == true, "Accessory view must be layer-backed")
+    expect(!accessory.historyCheckbox.isHidden && accessory.historyCheckbox.state == .off, "History checkbox visible and initially unchecked")
+    expect(!accessory.encryptCheckbox.isHidden && accessory.encryptCheckbox.state == .off, "Encrypt checkbox visible and initially unchecked")
+    expect(accessory.passwordField.isHidden && accessory.confirmField.isHidden, "Password fields initially hidden")
+    expect(accessory.intrinsicContentSize.height == 60, "Initial unencrypted accessory height is 60 pt")
+
+    accessory.encryptCheckbox.state = .on
+    accessory.handleCheckboxChanged()
+    expect(!accessory.passwordField.isHidden && !accessory.confirmField.isHidden, "Password fields visible when encrypt checked")
+    expect(accessory.intrinsicContentSize.height == 122, "Encrypted accessory height is 122 pt")
+
+    accessory.encryptCheckbox.state = .off
+    accessory.handleCheckboxChanged()
+    expect(accessory.passwordField.isHidden && accessory.confirmField.isHidden, "Password fields hidden when encrypt unchecked")
+    expect(accessory.intrinsicContentSize.height == 60, "Accessory height returns to 60 pt when unencrypted")
+
+    print("✓ MACConfigCrypto AES-GCM encryption & MACExportAccessoryView Auto Layout passed")
 }
 
 private func testWorkspaceDetailTabsAndTimelineHistory() throws {
@@ -708,10 +728,10 @@ struct MACAppTests {
             try testGitRemoteWebURLAndMultiJobMapping()
             try testConfigStoreRoundTrip()
             try testEngineModelFilteringAndEngineConfiguration()
-            try testConfigExportImportAndCrypto()
             try testWorkspaceDetailTabsAndTimelineHistory()
             try testSleepPreventerAndLaunchAgent()
             try MainActor.assumeIsolated {
+                try testConfigExportImportAndCrypto()
                 try testMenuBarControllerAndBotLifecycle()
                 try testResourceMonitorAndMetrics()
             }
