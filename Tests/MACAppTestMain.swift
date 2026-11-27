@@ -651,20 +651,19 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     let ws = MACWorkspace(id: "payment-book", label: "PAYMENT BOOK", path: "/tmp/payment-book")
     let items = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir)
 
-    expect(items.count == 5, "Expected 5 timeline items (1 working + 2 queued + 2 history), got \(items.count)")
-    // Running message must always be first / before queued messages
-    expect(items[0].status == .working, "First item must be active working turn (running before queued messages)")
-    expect(items[0].user == "@maksimsge", "User is @maksimsge")
-    expect(items[0].message == "Fix payment expiration redirect bug", "Prompt matches")
-    expect(items[0].files.contains("src/routes/payment.ts"), "Files extracted from commits")
-    expect(items[0].resultLabel == "Working...", "Result label is Working...")
+    expect(items.count == 5, "Expected 5 timeline items (2 queued + 1 working + 2 history), got \(items.count)")
+    // Queued messages must be before working messages as they will execute later
+    expect(items[0].status == .queued(2), "First item is latest queued message (#2, will execute later)")
+    expect(items[0].message == "Second later queued request", "Queued #2 prompt matches")
 
-    // Queued messages: latest on top (q-2 at 22:10 before q-1 at 22:05)
-    expect(items[1].status == .queued(2), "Second item is later queued message (#2)")
-    expect(items[1].message == "Second later queued request", "Queued #2 prompt matches")
+    expect(items[1].status == .queued(1), "Second item is earlier queued message (#1)")
+    expect(items[1].message == "Update footer copyright year to 2026", "Queued #1 prompt matches")
 
-    expect(items[2].status == .queued(1), "Third item is earlier queued message (#1)")
-    expect(items[2].message == "Update footer copyright year to 2026", "Queued #1 prompt matches")
+    expect(items[2].status == .working, "Third item is active working turn (executing now)")
+    expect(items[2].user == "@maksimsge", "User is @maksimsge")
+    expect(items[2].message == "Fix payment expiration redirect bug", "Prompt matches")
+    expect(items[2].files.contains("src/routes/payment.ts"), "Files extracted from commits")
+    expect(items[2].resultLabel == "Working...", "Result label is Working...")
 
     expect(items[3].status == .success, "Fourth item is success history")
     expect(items[3].resultLabel == "Success", "Fourth item result is Success")

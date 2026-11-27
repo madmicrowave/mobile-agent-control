@@ -459,7 +459,7 @@ public enum MACWorkspaceTimelineReader {
         let effectiveLimit = limit > 0 ? limit : 100
         let limitedHistory = historyItems.count > effectiveLimit ? Array(historyItems.prefix(effectiveLimit)) : historyItems
 
-        // Return ordered timeline: Currently Working (on top) -> Queued (latest on top) -> Worked Messages (latest on top)
-        return workingItems + queuedItems + limitedHistory
+        // Return ordered timeline: Queued (latest on top, will execute later) -> Currently Working -> Worked Messages (latest on top)
+        return queuedItems + workingItems + limitedHistory
     }
 }
