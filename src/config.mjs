@@ -86,12 +86,18 @@ export function parseJenkinsfileJobName(jenkinsfileContent) {
 export async function discoverWorkspaceRepos(
   workspacePath,
   existingRepoOverrides = {},
-  presetRepoJobs = null
+  presetRepoJobs = null,
+  extraDirs = []
 ) {
-  const resolvedRoot = expandUserPath(workspacePath);
+  const resolvedRoot = workspacePath ? expandUserPath(workspacePath) : '';
   const repos = [];
 
   async function inspectCandidate(repoDir, relName) {
+    if (!repoDir) return;
+    const normalizedDir = path.resolve(repoDir);
+    if (repos.some((r) => path.resolve(r.path) === normalizedDir)) {
+      return;
+    }
     const gitMarker = path.join(repoDir, '.git');
     try {
       await fsp.access(gitMarker);
@@ -146,19 +152,39 @@ export async function discoverWorkspaceRepos(
     });
   }
 
-  await inspectCandidate(resolvedRoot, path.basename(resolvedRoot));
+  if (resolvedRoot) {
+    await inspectCandidate(resolvedRoot, path.basename(resolvedRoot));
 
-  try {
-    const entries = await fsp.readdir(resolvedRoot, { withFileTypes: true });
-    const sorted = entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    try {
+      const entries = await fsp.readdir(resolvedRoot, { withFileTypes: true });
+      const sorted = entries
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+        .sort((a, b) => a.name.localeCompare(b.name));
 
-    for (const entry of sorted) {
-      await inspectCandidate(path.join(resolvedRoot, entry.name), entry.name);
+      for (const entry of sorted) {
+        await inspectCandidate(path.join(resolvedRoot, entry.name), entry.name);
+      }
+    } catch {
+      // Ignore missing directory in synthetic tests
     }
-  } catch {
-    // Ignore missing directory in synthetic tests
+  }
+
+  if (Array.isArray(extraDirs)) {
+    for (const extraDir of extraDirs) {
+      const resolvedExtra = expandUserPath(extraDir);
+      if (!resolvedExtra) continue;
+      await inspectCandidate(resolvedExtra, path.basename(resolvedExtra));
+      try {
+        const entries = await fsp.readdir(resolvedExtra, { withFileTypes: true });
+        const sorted = entries
+          .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        for (const entry of sorted) {
+          await inspectCandidate(path.join(resolvedExtra, entry.name), entry.name);
+        }
+      } catch {}
+    }
   }
 
   return repos;
@@ -603,8 +629,8 @@ export class ConfigStore {
     }
 
     for (const ws of this.config.workspaces) {
-      if (ws.repos.length === 0 && ws.path && fs.existsSync(ws.path)) {
-        ws.repos = await discoverWorkspaceRepos(ws.path);
+      if (ws.repos.length === 0 && (ws.path || (ws.extraDirs && ws.extraDirs.length > 0))) {
+        ws.repos = await discoverWorkspaceRepos(ws.path, {}, null, ws.extraDirs || []);
       }
     }
     await this.saveConfig();

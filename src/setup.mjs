@@ -147,12 +147,17 @@ async function detectCurrentGitBranch(repoPath) {
  * Scans `workspacePath` (both root and all immediate non-hidden child folders),
  * returning `{ gitRepos, nonGitFolders }` with detected Git branches and Jenkinsfile hints.
  */
-export async function scanWorkspaceDirectoryForSetup(workspacePath) {
-  const resolvedRoot = expandUserPath(workspacePath);
+export async function scanWorkspaceDirectoryForSetup(workspacePath, extraDirs = []) {
+  const resolvedRoot = workspacePath ? expandUserPath(workspacePath) : '';
   const gitRepos = [];
   const nonGitFolders = [];
 
   async function inspectGitDir(dirPath, relName) {
+    if (!dirPath) return null;
+    const normalizedDir = path.resolve(dirPath);
+    if (gitRepos.some((r) => path.resolve(r.path) === normalizedDir)) {
+      return null;
+    }
     try {
       await fsp.access(path.join(dirPath, '.git'));
     } catch {
@@ -176,29 +181,55 @@ export async function scanWorkspaceDirectoryForSetup(workspacePath) {
     };
   }
 
-  const rootRepo = await inspectGitDir(resolvedRoot, path.basename(resolvedRoot));
-  if (rootRepo) {
-    gitRepos.push(rootRepo);
+  if (resolvedRoot) {
+    const rootRepo = await inspectGitDir(resolvedRoot, path.basename(resolvedRoot));
+    if (rootRepo) {
+      gitRepos.push(rootRepo);
+    }
+
+    let entries = [];
+    try {
+      entries = await fsp.readdir(resolvedRoot, { withFileTypes: true });
+    } catch {
+      entries = [];
+    }
+
+    const childDirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of childDirs) {
+      const fullChild = path.join(resolvedRoot, entry.name);
+      const repoInfo = await inspectGitDir(fullChild, entry.name);
+      if (repoInfo) {
+        gitRepos.push(repoInfo);
+      } else {
+        nonGitFolders.push(entry.name);
+      }
+    }
   }
 
-  let entries = [];
-  try {
-    entries = await fsp.readdir(resolvedRoot, { withFileTypes: true });
-  } catch {
-    entries = [];
-  }
-
-  const childDirs = entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  for (const entry of childDirs) {
-    const fullChild = path.join(resolvedRoot, entry.name);
-    const repoInfo = await inspectGitDir(fullChild, entry.name);
-    if (repoInfo) {
-      gitRepos.push(repoInfo);
-    } else {
-      nonGitFolders.push(entry.name);
+  if (Array.isArray(extraDirs)) {
+    for (const extraDir of extraDirs) {
+      const resolvedExtra = expandUserPath(extraDir);
+      if (!resolvedExtra) continue;
+      const extraRepo = await inspectGitDir(resolvedExtra, path.basename(resolvedExtra));
+      if (extraRepo) {
+        gitRepos.push(extraRepo);
+      }
+      try {
+        const extraEntries = await fsp.readdir(resolvedExtra, { withFileTypes: true });
+        const extraChildDirs = extraEntries
+          .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+          .sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of extraChildDirs) {
+          const fullChild = path.join(resolvedExtra, entry.name);
+          const repoInfo = await inspectGitDir(fullChild, entry.name);
+          if (repoInfo) {
+            gitRepos.push(repoInfo);
+          }
+        }
+      } catch {}
     }
   }
 
@@ -1086,7 +1117,7 @@ export async function runWorkspacesWizard({
     }
 
     log(`\nScanning folders inside ${targetPath} ...`);
-    const { gitRepos, nonGitFolders } = await scanWorkspaceDirectoryForSetup(targetPath);
+    const { gitRepos, nonGitFolders } = await scanWorkspaceDirectoryForSetup(targetPath, wsExtraDirs);
 
     if (nonGitFolders.length > 0) {
       log(`  (Ignored non-git subfolders: ${nonGitFolders.join(', ')})`);

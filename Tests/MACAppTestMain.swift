@@ -37,7 +37,26 @@ private func testJobParsingAndRepoDiscovery() throws {
     expect(client?.jenkinsJob == "HS-1/crypto-fusion/client", "Expected client staging job match")
     expect(client?.prodJenkinsJob == "PROD/crypto-fusion/client", "Expected client prod job match")
     expect(merchant?.jenkinsJob == "HS-1/crypto-fusion/merchant", "Expected dashboard-merchant staging job match")
-    print("✓ Job list parsing & Git repository auto-discovery passed")
+
+    // Test discovery of git repos in extraDirs
+    let tempExtra = FileManager.default.temporaryDirectory.appendingPathComponent("mac-extra-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempExtra) }
+    let extraJenkinsRepo = tempExtra.appendingPathComponent("jenkins", isDirectory: true)
+    try FileManager.default.createDirectory(at: extraJenkinsRepo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+    let reposWithExtra = MACPathUtils.discoverGitRepos(
+        at: tempRoot.path,
+        extraDirs: [extraJenkinsRepo.path],
+        stagingJobs: ["HS-1/crypto-fusion/merchant", "HS-1/crypto-fusion/client", "HS-1/crypto-fusion/jenkins"],
+        prodJobs: ["PROD/crypto-fusion/merchant", "PROD/crypto-fusion/client", "PROD/crypto-fusion/jenkins"]
+    )
+    expect(reposWithExtra.count == 3, "Expected 3 discovered Git repos including extraDirs, got \(reposWithExtra.count)")
+    let jenkins = reposWithExtra.first(where: { $0.name == "jenkins" })
+    expect(jenkins != nil, "Expected extraDirs repo 'jenkins' to be discovered")
+    expect(jenkins?.path == (extraJenkinsRepo.path as NSString).standardizingPath, "Expected matching path for extraDirs repo")
+    expect(jenkins?.jenkinsJob == "HS-1/crypto-fusion/jenkins", "Expected matched staging job for extraDirs repo")
+
+    print("✓ Job list parsing & Git repository auto-discovery (including extraDirs) passed")
 }
 
 private func testConfigStoreRoundTrip() throws {

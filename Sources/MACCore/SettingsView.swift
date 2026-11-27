@@ -2479,6 +2479,7 @@ private struct WorkspacesTabView: View {
         if normalized.repos.isEmpty {
             normalized.repos = MACPathUtils.discoverGitRepos(
                 at: normalized.path,
+                extraDirs: normalized.extraDirs,
                 existingRepos: [],
                 stagingJobs: normalized.jenkinsJobs,
                 prodJobs: normalized.prodJenkinsJobs
@@ -2769,7 +2770,15 @@ private struct WorkspaceEditorFormView: View {
                                             .truncationMode(.middle)
                                         Spacer()
                                         Button(role: .destructive) {
-                                            draft.extraDirs.remove(at: idx)
+                                            let removedPath = draft.extraDirs.remove(at: idx)
+                                            let removedNorm = (MACPathUtils.expandPath(removedPath) as NSString).standardizingPath
+                                            let rootNorm = (MACPathUtils.expandPath(draft.path) as NSString).standardizingPath
+                                            draft.repos.removeAll { repo in
+                                                let repoNorm = (MACPathUtils.expandPath(repo.path) as NSString).standardizingPath
+                                                let isInsideRemoved = repoNorm == removedNorm || repoNorm.hasPrefix(removedNorm + "/")
+                                                let isInsideRoot = !rootNorm.isEmpty && (repoNorm == rootNorm || repoNorm.hasPrefix(rootNorm + "/"))
+                                                return isInsideRemoved && !isInsideRoot
+                                            }
                                         } label: {
                                             Image(systemName: "minus.circle.fill")
                                         }
@@ -2789,6 +2798,7 @@ private struct WorkspaceEditorFormView: View {
                                 let p = MACPathUtils.expandPath(vm.extraDirInput)
                                 if !p.isEmpty && !draft.extraDirs.contains(p) {
                                     draft.extraDirs.append(p)
+                                    rescanRepos()
                                 }
                                 vm.extraDirInput = ""
                             }
@@ -2799,6 +2809,7 @@ private struct WorkspaceEditorFormView: View {
                                 if let chosen = chooseDirectory(initialPath: draft.path) {
                                     if !draft.extraDirs.contains(chosen) {
                                         draft.extraDirs.append(chosen)
+                                        rescanRepos()
                                     }
                                 }
                             }
@@ -3178,18 +3189,33 @@ private struct WorkspaceEditorFormView: View {
 
                 // 4. Per-Repository Mapping
                 MACSectionCard(title: "Git Repositories in Workspace (\(draft.repos.count))", systemImage: "point.3.connected.trianglepath.dotted") {
-                    Button("Re-Scan") {
-                        rescanRepos()
+                    HStack(spacing: 8) {
+                        Button {
+                            if let chosen = chooseDirectory(initialPath: draft.path.isEmpty ? "~" : draft.path) {
+                                addCustomRepo(at: chosen)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                Text("Add Repo...")
+                            }
+                        }
+                        .controlSize(.small)
+                        .fixedSize()
+
+                        Button("Re-Scan") {
+                            rescanRepos()
+                        }
+                        .controlSize(.small)
+                        .disabled(draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.extraDirs.isEmpty)
+                        .fixedSize()
                     }
-                    .controlSize(.small)
-                    .disabled(draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .fixedSize()
                 } content: {
                     if draft.repos.isEmpty {
                         HStack(spacing: 8) {
                             Image(systemName: "info.circle")
                                 .foregroundColor(.secondary)
-                            Text("No Git repositories scanned yet. Pick a Workspace Root Folder Path above and click 'Scan Git Repos'.")
+                            Text("No Git repositories scanned yet. Pick a Workspace Root Folder Path or Extra Allowed Path above and click 'Scan Git Repos'.")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
@@ -3215,6 +3241,16 @@ private struct WorkspaceEditorFormView: View {
                                             .truncationMode(.middle)
 
                                         Spacer(minLength: 8)
+
+                                        Button(role: .destructive) {
+                                            draft.repos.removeAll(where: { $0.id == repo.id })
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Remove repository from workspace")
                                     }
 
                                     // Default Branch Row + Open Repository Button
@@ -3733,14 +3769,67 @@ private struct WorkspaceEditorFormView: View {
 
     private func rescanRepos() {
         let cleanPath = MACPathUtils.expandPath(draft.path)
-        guard !cleanPath.isEmpty else { return }
         draft.path = cleanPath
+        guard !cleanPath.isEmpty || !draft.extraDirs.isEmpty else { return }
         draft.repos = MACPathUtils.discoverGitRepos(
             at: cleanPath,
+            extraDirs: draft.extraDirs,
             existingRepos: draft.repos,
             stagingJobs: draft.jenkinsJobs,
             prodJobs: draft.prodJenkinsJobs
         )
+    }
+
+    private func addCustomRepo(at folderPath: String) {
+        let clean = MACPathUtils.expandPath(folderPath)
+        guard !clean.isEmpty else { return }
+        let cleanNorm = (clean as NSString).standardizingPath
+        let fm = FileManager.default
+
+        let discovered = MACPathUtils.discoverGitRepos(
+            at: clean,
+            existingRepos: draft.repos,
+            stagingJobs: draft.jenkinsJobs,
+            prodJobs: draft.prodJenkinsJobs
+        )
+
+        var addedAny = false
+        if !discovered.isEmpty {
+            for r in discovered {
+                let rPathNorm = (r.path as NSString).standardizingPath
+                if !draft.repos.contains(where: { ($0.path as NSString).standardizingPath == rPathNorm }) {
+                    draft.repos.append(r)
+                    addedAny = true
+                }
+            }
+        } else {
+            let gitPath = (clean as NSString).appendingPathComponent(".git")
+            if fm.fileExists(atPath: gitPath) {
+                let repoName = URL(fileURLWithPath: clean).lastPathComponent
+                if !draft.repos.contains(where: { ($0.path as NSString).standardizingPath == cleanNorm }) {
+                    let matchedStaging = MACPathUtils.bestMatchingJob(forRepo: repoName, workspacePath: draft.path, jobs: draft.jenkinsJobs) ?? ""
+                    let matchedProd = MACPathUtils.bestMatchingJob(forRepo: repoName, workspacePath: draft.path, jobs: draft.prodJenkinsJobs) ?? ""
+                    draft.repos.append(MACRepo(
+                        name: repoName,
+                        path: clean,
+                        jenkinsJob: matchedStaging,
+                        prodJenkinsJob: matchedProd,
+                        branch: "",
+                        deployEnabled: !matchedStaging.isEmpty,
+                        jenkinsJobs: !matchedStaging.isEmpty ? [matchedStaging] : [],
+                        prodJenkinsJobs: !matchedProd.isEmpty ? [matchedProd] : []
+                    ))
+                    addedAny = true
+                }
+            }
+        }
+
+        let rootNorm = (MACPathUtils.expandPath(draft.path) as NSString).standardizingPath
+        if addedAny && !cleanNorm.isEmpty && cleanNorm != rootNorm && !cleanNorm.hasPrefix(rootNorm + "/") {
+            if !draft.extraDirs.contains(where: { (MACPathUtils.expandPath($0) as NSString).standardizingPath == cleanNorm }) {
+                draft.extraDirs.append(clean)
+            }
+        }
     }
 
     private func definedStagingJobs() -> [String] {

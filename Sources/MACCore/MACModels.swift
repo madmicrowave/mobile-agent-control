@@ -947,45 +947,55 @@ public enum MACPathUtils {
         return String(content[capRange]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Scans `workspacePath` (and its immediate subdirectories) for `.git` repositories and matches Jenkins jobs.
+    /// Scans `workspacePath` (and its immediate subdirectories) as well as `extraDirs` for `.git` repositories and matches Jenkins jobs.
     public static func discoverGitRepos(
         at workspacePath: String,
+        extraDirs: [String] = [],
         existingRepos: [MACRepo] = [],
         stagingJobs: [String] = [],
         prodJobs: [String] = []
     ) -> [MACRepo] {
         let rootPath = expandPath(workspacePath)
-        guard !rootPath.isEmpty else { return existingRepos }
+        let cleanExtraDirs = extraDirs.map { expandPath($0) }.filter { !$0.isEmpty }
+        guard !rootPath.isEmpty || !cleanExtraDirs.isEmpty else { return existingRepos }
         let fm = FileManager.default
+        var existingByPath: [String: MACRepo] = [:]
         var existingByName: [String: MACRepo] = [:]
         for r in existingRepos {
+            let norm = (expandPath(r.path) as NSString).standardizingPath
+            existingByPath[norm] = r
             existingByName[r.name] = r
         }
 
         var discovered: [MACRepo] = []
 
         func inspectDir(_ dirPath: String, repoName: String) {
-            let gitPath = (dirPath as NSString).appendingPathComponent(".git")
+            let normalizedDirPath = (expandPath(dirPath) as NSString).standardizingPath
+            guard !discovered.contains(where: { ($0.path as NSString).standardizingPath == normalizedDirPath }) else { return }
+
+            let gitPath = (normalizedDirPath as NSString).appendingPathComponent(".git")
             guard fm.fileExists(atPath: gitPath) else { return }
 
             var detectedJob = ""
-            let jfPath = (dirPath as NSString).appendingPathComponent("Jenkinsfile")
+            let jfPath = (normalizedDirPath as NSString).appendingPathComponent("Jenkinsfile")
             if let content = try? String(contentsOfFile: jfPath, encoding: .utf8),
                let parsed = parseJenkinsfileJobName(content) {
                 detectedJob = parsed
             }
 
-            if let prev = existingByName[repoName] {
+            let effectiveRoot = !rootPath.isEmpty ? rootPath : normalizedDirPath
+
+            if let prev = existingByPath[normalizedDirPath] ?? existingByName[repoName] {
                 var updated = prev
-                updated.path = dirPath
-                if updated.jenkinsJobs.isEmpty && updated.jenkinsJob.isEmpty, let matched = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: stagingJobs) {
+                updated.path = normalizedDirPath
+                if updated.jenkinsJobs.isEmpty && updated.jenkinsJob.isEmpty, let matched = bestMatchingJob(forRepo: repoName, workspacePath: effectiveRoot, jobs: stagingJobs) {
                     updated.jenkinsJobs = [matched]
                     updated.jenkinsJob = matched
                     updated.deployEnabled = true
                 } else if updated.jenkinsJobs.isEmpty && !updated.jenkinsJob.isEmpty {
                     updated.jenkinsJobs = parseJobList(updated.jenkinsJob)
                 }
-                if updated.prodJenkinsJobs.isEmpty && updated.prodJenkinsJob.isEmpty, let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: prodJobs) {
+                if updated.prodJenkinsJobs.isEmpty && updated.prodJenkinsJob.isEmpty, let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: effectiveRoot, jobs: prodJobs) {
                     updated.prodJenkinsJobs = [matchedProd]
                     updated.prodJenkinsJob = matchedProd
                 } else if updated.prodJenkinsJobs.isEmpty && !updated.prodJenkinsJob.isEmpty {
@@ -995,14 +1005,14 @@ public enum MACPathUtils {
                 return
             }
 
-            let matchedStaging = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: stagingJobs) ?? detectedJob
-            let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: rootPath, jobs: prodJobs) ?? ""
+            let matchedStaging = bestMatchingJob(forRepo: repoName, workspacePath: effectiveRoot, jobs: stagingJobs) ?? detectedJob
+            let matchedProd = bestMatchingJob(forRepo: repoName, workspacePath: effectiveRoot, jobs: prodJobs) ?? ""
             let stagingList = !matchedStaging.isEmpty ? [matchedStaging] : []
             let prodList = !matchedProd.isEmpty ? [matchedProd] : []
             discovered.append(
                 MACRepo(
                     name: repoName,
-                    path: dirPath,
+                    path: normalizedDirPath,
                     jenkinsJob: matchedStaging,
                     prodJenkinsJob: matchedProd,
                     branch: "",
@@ -1013,15 +1023,33 @@ public enum MACPathUtils {
             )
         }
 
-        let rootName = URL(fileURLWithPath: rootPath).lastPathComponent
-        inspectDir(rootPath, repoName: rootName)
+        if !rootPath.isEmpty && fm.fileExists(atPath: rootPath) {
+            let rootName = URL(fileURLWithPath: rootPath).lastPathComponent
+            inspectDir(rootPath, repoName: rootName)
 
-        if let children = try? fm.contentsOfDirectory(atPath: rootPath).sorted() {
-            for child in children where !child.hasPrefix(".") {
-                let childPath = (rootPath as NSString).appendingPathComponent(child)
-                var isDir: ObjCBool = false
-                if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
-                    inspectDir(childPath, repoName: child)
+            if let children = try? fm.contentsOfDirectory(atPath: rootPath).sorted() {
+                for child in children where !child.hasPrefix(".") && child != "node_modules" {
+                    let childPath = (rootPath as NSString).appendingPathComponent(child)
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
+                        inspectDir(childPath, repoName: child)
+                    }
+                }
+            }
+        }
+
+        for extraDir in cleanExtraDirs {
+            guard fm.fileExists(atPath: extraDir) else { continue }
+            let extraName = URL(fileURLWithPath: extraDir).lastPathComponent
+            inspectDir(extraDir, repoName: extraName)
+
+            if let children = try? fm.contentsOfDirectory(atPath: extraDir).sorted() {
+                for child in children where !child.hasPrefix(".") && child != "node_modules" {
+                    let childPath = (extraDir as NSString).appendingPathComponent(child)
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
+                        inspectDir(childPath, repoName: child)
+                    }
                 }
             }
         }
