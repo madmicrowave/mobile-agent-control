@@ -191,18 +191,21 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
     private var headerBar: some View {
         HStack(spacing: 10) {
-            // Stats pills
-            HStack(spacing: 6) {
-                statPill(label: "Total", count: vm.items.count, color: .secondary)
+            // Stats pills (no break to new line, horizontal scroll if needed)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    statPill(label: "Total", count: vm.items.count, color: .secondary)
 
-                if activeCount > 0 {
-                    statPill(label: "Active", count: activeCount, color: .blue)
-                }
-                statPill(label: "Success", count: successCount, color: .green)
-                if failedCount > 0 {
-                    statPill(label: "Failed/Reverted", count: failedCount, color: .red)
+                    if activeCount > 0 {
+                        statPill(label: "Active", count: activeCount, color: .blue)
+                    }
+                    statPill(label: "Success", count: successCount, color: .green)
+                    if failedCount > 0 {
+                        statPill(label: "Failed/Reverted", count: failedCount, color: .red)
+                    }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
 
             Spacer()
 
@@ -270,14 +273,17 @@ public struct WorkspaceWorkHistoryTimelineView: View {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
             Text("\(count)")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundColor(color)
+                .lineLimit(1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(color.opacity(0.08))
         .cornerRadius(6)
+        .fixedSize()
     }
 
     private var formattedHistoryLimit: String {
@@ -291,19 +297,19 @@ public struct WorkspaceWorkHistoryTimelineView: View {
     private var bufferLimitMenu: some View {
         Menu {
             let currentLimit = vm.historyLimit
-            Button(currentLimit == 100 ? "✓ Buffer limit: 100 messages (default)" : "Buffer limit: 100 messages (default)") {
+            Button(currentLimit == 100 ? "✓ 100 messages (default)" : "100 messages (default)") {
                 vm.setHistoryLimit(100)
                 reloadTimeline()
             }
-            Button(currentLimit == 500 ? "✓ Buffer limit: 500 messages" : "Buffer limit: 500 messages") {
+            Button(currentLimit == 500 ? "✓ 500 messages" : "500 messages") {
                 vm.setHistoryLimit(500)
                 reloadTimeline()
             }
-            Button(currentLimit == 1000 ? "✓ Buffer limit: 1,000 messages" : "Buffer limit: 1,000 messages") {
+            Button(currentLimit == 1000 ? "✓ 1,000 messages" : "1,000 messages") {
                 vm.setHistoryLimit(1000)
                 reloadTimeline()
             }
-            Button(currentLimit == 3000 ? "✓ Buffer limit: 3,000 messages" : "Buffer limit: 3,000 messages") {
+            Button(currentLimit == 3000 ? "✓ 3,000 messages" : "3,000 messages") {
                 vm.setHistoryLimit(3000)
                 reloadTimeline()
             }
@@ -311,10 +317,12 @@ public struct WorkspaceWorkHistoryTimelineView: View {
             HStack(spacing: 5) {
                 Text("Buffer: \(vm.items.count) / \(formattedHistoryLimit)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
                 if vm.items.count >= vm.historyLimit && !vm.items.isEmpty {
                     Text("(Full)")
                         .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                         .foregroundColor(.orange)
+                        .lineLimit(1)
                 }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8))
@@ -325,6 +333,9 @@ public struct WorkspaceWorkHistoryTimelineView: View {
             .background(Color.primary.opacity(0.06))
             .cornerRadius(5)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help("Work history buffer limit (persisted across sessions)")
     }
 

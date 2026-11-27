@@ -4581,23 +4581,23 @@ private struct LiveActivityTabView: View {
 
             Menu {
                 let currentLimit = appState.maxLogLines
-                Button(currentLimit == 1000 ? "✓ Buffer limit: 1,000 lines" : "Buffer limit: 1,000 lines") {
+                Button(currentLimit == 1000 ? "✓ 1,000 lines" : "1,000 lines") {
                     appState.maxLogLines = 1000
                     appState.trimLogsToMax()
                 }
-                Button(currentLimit == 3000 ? "✓ Buffer limit: 3,000 lines (default)" : "Buffer limit: 3,000 lines (default)") {
+                Button(currentLimit == 3000 ? "✓ 3,000 lines (default)" : "3,000 lines (default)") {
                     appState.maxLogLines = 3000
                     appState.trimLogsToMax()
                 }
-                Button(currentLimit == 5000 ? "✓ Buffer limit: 5,000 lines" : "Buffer limit: 5,000 lines") {
+                Button(currentLimit == 5000 ? "✓ 5,000 lines" : "5,000 lines") {
                     appState.maxLogLines = 5000
                     appState.trimLogsToMax()
                 }
-                Button(currentLimit == 10000 ? "✓ Buffer limit: 10,000 lines" : "Buffer limit: 10,000 lines") {
+                Button(currentLimit == 10000 ? "✓ 10,000 lines" : "10,000 lines") {
                     appState.maxLogLines = 10000
                     appState.trimLogsToMax()
                 }
-                Button(currentLimit == 20000 ? "✓ Buffer limit: 20,000 lines" : "Buffer limit: 20,000 lines") {
+                Button(currentLimit == 20000 ? "✓ 20,000 lines" : "20,000 lines") {
                     appState.maxLogLines = 20000
                     appState.trimLogsToMax()
                 }
