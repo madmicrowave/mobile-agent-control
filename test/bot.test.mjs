@@ -3965,4 +3965,100 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     targetRepo.noOrigin = prevNoOrigin;
     await fsp.rm(testFile, { force: true });
   });
+
+  it('runs fix message before queued messages, claims commit after fix, and then continues with queued messages', async () => {
+    const ws = configStore.getWorkspace('payments');
+    const targetRepo = ws.repos.find((r) => r.name === 'core');
+    assert.ok(targetRepo);
+
+    const testFile = path.join(targetRepo.path, 'turn-and-fix.txt');
+
+    // 1) Turn 1 runs and introduces initial changes
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(testFile, 'initial code with typo\n', 'utf8');
+      return {
+        conversationId: 'conv-turn-1',
+        response: 'Implemented turn 1.'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Start turn 1'));
+    await controller.waitForBackgroundTasks();
+
+    // Turn 1 completes and enters AWAITING_COMMIT_CHOICE
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+
+    // 2) User queues a message while waiting for commit
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Queued subsequent feature'));
+    const queuePromptMsg = mockTg.sentMessages.find((m) => /waiting for your commit choice/i.test(m.text));
+    assert.ok(queuePromptMsg, 'Should prompt with Apply as Fix vs Queue Message options');
+
+    // Extract candidate ID from queue button
+    const queueBtn = queuePromptMsg.replyMarkup?.inline_keyboard?.[1]?.[0];
+    assert.ok(queueBtn && queueBtn.callback_data?.startsWith('agent:queue:'));
+    await controller.handleUpdate(makeCallback(queueBtn.callback_data));
+
+    // Verify message is in queue
+    const st = configStore.getWorkspaceState('payments');
+    assert.equal(st.messageQueue?.length, 1);
+    assert.equal(st.messageQueue[0].text, 'Queued subsequent feature');
+
+    // 3) Now user sends a FIX message while in AWAITING_COMMIT_CHOICE
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Fix the typo in file'));
+    const fixPromptMsg = mockTg.sentMessages.find((m) => /waiting for your commit choice/i.test(m.text));
+    assert.ok(fixPromptMsg);
+
+    const fixBtn = fixPromptMsg.replyMarkup?.inline_keyboard?.[0]?.[0];
+    assert.ok(fixBtn && fixBtn.callback_data?.startsWith('agent:fix:'));
+
+    // Fix agent modifies the file before queued messages run
+    let fixExecuted = false;
+    nextAgentBehavior = async () => {
+      fixExecuted = true;
+      await fsp.writeFile(testFile, 'fixed code without typo\n', 'utf8');
+      return {
+        conversationId: 'conv-turn-1',
+        response: 'Fixed typo in file.'
+      };
+    };
+
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback(fixBtn.callback_data));
+    await controller.waitForBackgroundTasks();
+
+    // 4) Verify fix ran immediately BEFORE queued message was dequeued
+    assert.ok(fixExecuted, 'Fix must have executed');
+    assert.equal(st.messageQueue?.length, 1, 'Queued message must still be in queue waiting');
+    assert.equal(st.messageQueue[0].text, 'Queued subsequent feature');
+
+    // 5) Verify bot claims commit after fix (AWAITING_COMMIT_CHOICE)
+    assert.equal(st.phase, 'AWAITING_COMMIT_CHOICE');
+    const commitPrompt = mockTg.sentMessages.find((m) => /Commit & push these changes\?/i.test(m.text) || /turn-and-fix\.txt/i.test(m.text));
+    assert.ok(commitPrompt, 'Must claim commit after fix');
+
+    // 6) Next agent behavior for the queued message once commit is confirmed
+    let queuedExecuted = false;
+    nextAgentBehavior = async () => {
+      queuedExecuted = true;
+      return {
+        conversationId: 'conv-turn-1',
+        response: 'Finished queued message.'
+      };
+    };
+
+    // User confirms commit for Turn 1 + Fix
+    mockTg.clearSent();
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // 7) Verify queued message is now executed
+    assert.ok(queuedExecuted, 'Queued message must execute after commit');
+    assert.equal(st.messageQueue?.length, 0, 'Queue should now be empty');
+
+    // Cleanup
+    await fsp.rm(testFile, { force: true });
+  });
 });

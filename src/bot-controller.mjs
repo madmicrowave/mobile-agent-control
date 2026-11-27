@@ -1087,6 +1087,47 @@ export class BotController {
           },
           replyToMessageId: msg.message_id || undefined
         });
+      } else if (st.phase === 'AWAITING_COMMIT_CHOICE' || st.phase === 'AWAITING_FIX_PROMPT') {
+        const isDirectReplyToPrompt = Boolean(
+          msg.reply_to_message &&
+          this.isWorkspacePromptMessage(ws.id, chatId, msg.reply_to_message.message_id)
+        );
+
+        if (isDirectReplyToPrompt) {
+          this.pendingQueueCandidates.delete(candidateId);
+          st.pendingPhotos = savedPhoto ? [savedPhoto] : [];
+          await this.startAgentTurn(chatId, ws, promptText, {
+            isAddFix: true,
+            user: senderName,
+            replyToMessageId: msg.message_id || null
+          });
+          return;
+        }
+
+        const waitingCount = Array.isArray(st.messageQueue) ? st.messageQueue.length : 0;
+        await this.telegram.sendMessage({
+          chatId,
+          text:
+            `⚠️ <b>${escapeHtml(wsLabel)}</b> is waiting for your commit choice` +
+            (waitingCount > 0 ? ` (${waitingCount} message${waitingCount === 1 ? '' : 's'} waiting in queue)` : '') +
+            `.\n\n` +
+            `• Tap <b>Apply as Fix</b> to run this immediately before queued messages and update uncommitted changes.\n` +
+            `• Tap <b>Queue Message</b> to queue it to run after current turn and existing queued messages:`,
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                { text: '🔧 Apply as Fix (Run Now)', callback_data: `agent:fix:${ws.id}:${candidateId}` }
+              ],
+              [
+                { text: '📥 Queue Message (Run Later)', callback_data: `agent:queue:${ws.id}:${candidateId}` }
+              ]
+            ]
+          },
+          replyToMessageId: msg.message_id || undefined
+        });
+        if (!this.#shouldSuppressDuplicateGateNotice(ws.id, msg.media_group_id)) {
+          await this.sendCurrentWorkspaceGatePrompt(chatId, ws);
+        }
       } else {
         await this.telegram.sendMessage({
           chatId,
@@ -1430,6 +1471,12 @@ export class BotController {
       this.activePromptMessagesByWs.set(wsId, map);
     }
     map.set(`${chatId}:${messageId}`, { chatId, messageId });
+  }
+
+  isWorkspacePromptMessage(wsId, chatId, messageId) {
+    if (!wsId || !chatId || !messageId) return false;
+    const map = this.activePromptMessagesByWs.get(wsId);
+    return Boolean(map && map.has(`${chatId}:${messageId}`));
   }
 
   async clearWorkspacePromptButtons(wsId, currentChatId = null, currentMessageId = null) {
@@ -2064,6 +2111,16 @@ export class BotController {
           return;
         }
 
+        const queueBtns = [];
+        if (st.phase === 'AWAITING_COMMIT_CHOICE' || st.phase === 'AWAITING_FIX_PROMPT') {
+          queueBtns.push([
+            { text: '🔧 Run as Fix Now', callback_data: `agent:runfix:${ws.id}:${candidateId}` }
+          ]);
+        }
+        queueBtns.push([
+          { text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }
+        ]);
+
         await this.telegram.editMessageText({
           chatId,
           messageId,
@@ -2072,10 +2129,117 @@ export class BotController {
             `<i>"${escapeHtml(preview)}"</i>\n\n` +
             `It will be executed once you complete or skip the current step.`,
           replyMarkup: {
-            inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${candidateId}` }]]
+            inline_keyboard: queueBtns
           }
         });
         this.log('agent', `Message queued for workspace "${wsLabel}" (#${queuePos}): ${preview}`, wsLabel);
+        return;
+      }
+
+      if (data.startsWith('agent:fix:')) {
+        const parts = data.split(':');
+        const wsId = parts[2];
+        const candidateId = parts[3];
+        const ws = this.getWorkspace(wsId);
+        if (!ws) return;
+        const wsLabel = this.getWorkspaceLabel(ws);
+        const st = this.configStore.getWorkspaceState(ws.id);
+        const candidate = this.pendingQueueCandidates.get(candidateId);
+        if (!candidate) {
+          if (chatId && messageId) {
+            await this.telegram.clearInlineButtons(chatId, messageId).catch(() => {});
+          }
+          await this.telegram.sendMessage({
+            chatId,
+            text: `⚠️ Message expired or already processed.`
+          });
+          return;
+        }
+
+        this.pendingQueueCandidates.delete(candidateId);
+        await this.clearWorkspacePromptButtons(ws.id, chatId, messageId);
+
+        const preview = candidate.text
+          ? (candidate.text.length > 70 ? candidate.text.slice(0, 67) + '…' : candidate.text)
+          : (candidate.photos?.length ? `[${candidate.photos.length} file(s)]` : '(Fix)');
+
+        const waitingCount = Array.isArray(st.messageQueue) ? st.messageQueue.length : 0;
+        await this.telegram.editMessageText({
+          chatId,
+          messageId,
+          text:
+            `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}:</b>\n` +
+            `<i>"${escapeHtml(preview)}"</i>\n\n` +
+            (waitingCount > 0
+              ? `<i>Running fix now before ${waitingCount} queued message${waitingCount === 1 ? '' : 's'}. Commit will be requested after fix.</i>`
+              : `<i>Running fix now. Commit will be requested after fix.</i>`),
+          replyMarkup: {
+            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+          }
+        });
+
+        st.pendingPhotos = candidate.photos || [];
+        await this.startAgentTurn(chatId, ws, candidate.text || '', {
+          isAddFix: true,
+          replyToMessageId: candidate.userMessageId || null,
+          user: candidate.user || ''
+        });
+        return;
+      }
+
+      if (data.startsWith('agent:runfix:')) {
+        const parts = data.split(':');
+        const wsId = parts[2];
+        const candidateId = parts[3];
+        const ws = this.getWorkspace(wsId);
+        if (!ws) return;
+        const wsLabel = this.getWorkspaceLabel(ws);
+        const st = this.configStore.getWorkspaceState(ws.id);
+
+        const queueIndex = st.messageQueue ? st.messageQueue.findIndex((item) => item.id === candidateId) : -1;
+        if (queueIndex === -1) {
+          if (chatId && messageId) {
+            await this.telegram.clearInlineButtons(chatId, messageId).catch(() => {});
+          }
+          await this.telegram.sendMessage({
+            chatId,
+            text: `⚠️ Queued message not found or already executed.`
+          });
+          return;
+        }
+
+        const [item] = st.messageQueue.splice(queueIndex, 1);
+        st.messageQueue.forEach((qItem, idx) => {
+          qItem.queueNumber = idx + 1;
+        });
+        await this.configStore.saveState();
+        await this.clearWorkspacePromptButtons(ws.id, chatId, messageId);
+
+        const preview = item.text
+          ? (item.text.length > 70 ? item.text.slice(0, 67) + '…' : item.text)
+          : (item.photos?.length ? `[${item.photos.length} file(s)]` : '(Fix)');
+
+        const waitingCount = st.messageQueue.length;
+        await this.telegram.editMessageText({
+          chatId,
+          messageId,
+          text:
+            `🔧 <b>Running queued message as fix in ${escapeHtml(wsLabel)}:</b>\n` +
+            `<i>"${escapeHtml(preview)}"</i>\n\n` +
+            (waitingCount > 0
+              ? `<i>Running fix now before ${waitingCount} queued message${waitingCount === 1 ? '' : 's'}. Commit will be requested after fix.</i>`
+              : `<i>Running fix now. Commit will be requested after fix.</i>`),
+          replyMarkup: {
+            inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+          }
+        });
+
+        st.pendingPhotos = item.photos || [];
+        await this.startAgentTurn(chatId, ws, item.text || '', {
+          isAddFix: true,
+          replyToMessageId: item.userMessageId || null,
+          user: item.user || ''
+        });
         return;
       }
 
