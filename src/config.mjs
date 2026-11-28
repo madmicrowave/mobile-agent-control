@@ -794,7 +794,31 @@ export class ConfigStore {
     st.accumulatedCommits = st.accumulatedCommits || [];
     st.pendingDeltas = st.pendingDeltas || [];
     st.messages = st.messages || [];
-    st.history = st.history || [];
+    st.history = (st.history || []).map((h) => {
+      if (!Array.isArray(h.files) || h.files.length === 0) {
+        const s = new Set();
+        if (Array.isArray(h.commits)) {
+          for (const c of h.commits) {
+            if (Array.isArray(c?.changedFiles)) {
+              for (const f of c.changedFiles) if (f) s.add(f);
+            }
+          }
+        }
+        if (Array.isArray(h.revertCommits)) {
+          for (const c of h.revertCommits) {
+            if (Array.isArray(c?.changedFiles)) {
+              for (const f of c.changedFiles) if (f) s.add(f);
+            }
+          }
+        }
+        if (Array.isArray(h.changedFiles)) {
+          for (const f of h.changedFiles) if (f) s.add(f);
+        }
+        h.files = Array.from(s);
+        h.changedFiles = h.files;
+      }
+      return h;
+    });
     return st;
   }
 

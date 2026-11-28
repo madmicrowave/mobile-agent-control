@@ -3880,6 +3880,45 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await fsp.rm(stagingMarker, { force: true });
   });
 
+  it('saves files in history next to each message', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    const ws = controller.getWorkspace('payments');
+    const gateRepo = ws.repos.find((r) => r.name === 'payments_gate');
+    assert.ok(gateRepo);
+
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(path.join(gateRepo.path, 'history_files_test.txt'), 'testing files in history\n');
+      return {
+        conversationId: 'conv-history-files',
+        response: 'Added history files test'
+      };
+    };
+
+    await controller.handleUpdate(makeUserMsg('Change to verify files saved in history'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // Answer No to Jenkins prompt to finalize into history
+    await controller.handleUpdate(makeCallback('jnk:no:payments'));
+    await controller.waitForBackgroundTasks();
+
+    // Confirm okay
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
+    const st = configStore.getWorkspaceState('payments');
+    const lastHistory = st.history[st.history.length - 1];
+    assert.ok(lastHistory, 'Expected history entry to exist');
+    assert.ok(Array.isArray(lastHistory.files), 'Expected files array on history entry');
+    assert.ok(lastHistory.files.includes('history_files_test.txt'), 'Expected changed file to be saved in history entry files');
+  });
+
   it('stops agent, discards uncommitted changes, and runs new message from clean state without finalizing stopped turn', async () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));

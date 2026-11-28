@@ -1448,6 +1448,41 @@ export class BotController {
   #recordHistory(st, entry) {
     if (!st || !entry) return;
     st.history = st.history || [];
+
+    const filesSet = new Set(Array.isArray(entry.files) ? entry.files.filter(Boolean) : []);
+    if (Array.isArray(entry.changedFiles)) {
+      for (const f of entry.changedFiles) if (f) filesSet.add(f);
+    }
+    if (Array.isArray(entry.commits)) {
+      for (const c of entry.commits) {
+        if (Array.isArray(c?.changedFiles)) {
+          for (const f of c.changedFiles) if (f) filesSet.add(f);
+        }
+      }
+    }
+    if (Array.isArray(entry.revertCommits)) {
+      for (const c of entry.revertCommits) {
+        if (Array.isArray(c?.changedFiles)) {
+          for (const f of c.changedFiles) if (f) filesSet.add(f);
+        }
+      }
+    }
+    if (Array.isArray(st.activeTurn?.files)) {
+      for (const f of st.activeTurn.files) if (f) filesSet.add(f);
+    }
+    if (Array.isArray(st.activeTurn?.changedFiles)) {
+      for (const f of st.activeTurn.changedFiles) if (f) filesSet.add(f);
+    }
+    if (Array.isArray(st.pendingDeltas)) {
+      for (const d of st.pendingDeltas) {
+        if (Array.isArray(d?.changedFiles)) {
+          for (const f of d.changedFiles) if (f) filesSet.add(f);
+        }
+      }
+    }
+    entry.files = Array.from(filesSet);
+    entry.changedFiles = entry.files;
+
     st.history.push(entry);
     if (st.history.length > 3000) {
       st.history = st.history.slice(-3000);
@@ -4230,6 +4265,12 @@ export class BotController {
       }
     }
 
+    if (deltas.length > 0 && st.activeTurn) {
+      const turnFiles = deltas.flatMap((d) => d.changedFiles || []);
+      st.activeTurn.files = turnFiles;
+      st.activeTurn.changedFiles = turnFiles;
+    }
+
     if (deltas.length === 0) {
       if (isAutoCommitFix) {
         st.phase = 'AWAITING_OK_OR_REVERT';
@@ -4483,12 +4524,14 @@ export class BotController {
     }
 
     if (st.activeTurn) {
+      const discardedFiles = (st.pendingDeltas || []).flatMap((d) => d.changedFiles || []);
       this.#recordHistory(st, {
         id: st.activeTurn.id,
         createdAt: st.activeTurn.createdAt,
         finishedAt: this.nowProvider().toISOString(),
         prompt: st.activeTurn.prompt,
         user: st.activeTurn.user || 'User',
+        files: discardedFiles.length > 0 ? discardedFiles : (st.activeTurn.files || []),
         outcome: 'DISCARDED_BEFORE_COMMIT'
       });
     }

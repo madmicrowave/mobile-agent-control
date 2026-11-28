@@ -738,6 +738,25 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     timelineVM.startAutoRefresh {}
     timelineVM.stopAutoRefresh()
 
+    // 4. Test File resolution and FilePreviewItem
+    let testRepoDir = tempDir.appendingPathComponent("backend", isDirectory: true)
+    let testFileDir = testRepoDir.appendingPathComponent("src/routes", isDirectory: true)
+    try FileManager.default.createDirectory(at: testFileDir, withIntermediateDirectories: true)
+    let testFile = testFileDir.appendingPathComponent("payment.ts")
+    try "export const payment = () => 'ok';\n".write(to: testFile, atomically: true, encoding: .utf8)
+
+    let testRepo = MACRepo(name: "backend", path: testRepoDir.path)
+    let wsWithRepo = MACWorkspace(id: "payment-book", label: "PAYMENT BOOK", path: tempDir.path, repos: [testRepo])
+
+    let resolved = MACWorkspaceTimelineReader.resolveFilePath(file: "src/routes/payment.ts", workspace: wsWithRepo)
+    expect(resolved == testFile.path, "Expected resolveFilePath to locate file inside repo directory")
+
+    let previewItem = FilePreviewItem(relativePath: "src/routes/payment.ts", workspace: wsWithRepo)
+    expect(previewItem.fileExists == true, "previewItem fileExists is true")
+    expect(previewItem.content?.contains("export const payment") == true, "previewItem read content matches")
+    expect(previewItem.fileName == "payment.ts", "previewItem fileName matches")
+    expect(previewItem.isImage == false, "payment.ts is not image")
+
     print("✓ Workspace 2-tab layout (Settings & Work History) & Timeline 60s auto-refresh passed")
 }
 

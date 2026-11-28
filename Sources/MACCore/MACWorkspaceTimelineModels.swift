@@ -306,6 +306,19 @@ public enum MACWorkspaceTimelineReader {
                             commits.append(MACTimelineCommit(repoName: repo, branch: branch, shortSha: sha, commitMessage: msg, changedFiles: cFiles))
                         }
                     }
+                    if let fList = activeTurn["files"] as? [String] {
+                        files.append(contentsOf: fList)
+                    }
+                    if let cList = activeTurn["changedFiles"] as? [String] {
+                        files.append(contentsOf: cList)
+                    }
+                    if let deltas = wsObj["pendingDeltas"] as? [[String: Any]] {
+                        for d in deltas {
+                            if let dFiles = d["changedFiles"] as? [String] {
+                                files.append(contentsOf: dFiles)
+                            }
+                        }
+                    }
 
                     workingItems.append(MACTimelineItem(
                         id: turnId,
@@ -334,7 +347,10 @@ public enum MACWorkspaceTimelineReader {
                         let user = resolveUser(entry["user"] as? String ?? entry["userName"] as? String)
                         let queuedDate = parseDate(entry["queuedAt"] as? String)
                         let elapsed = "waiting " + formatDuration(from: queuedDate, to: Date())
-                        let photos = entry["photos"] as? [String] ?? []
+                        var photos = entry["photos"] as? [String] ?? []
+                        if let fList = entry["files"] as? [String] {
+                            photos.append(contentsOf: fList)
+                        }
 
                         queuedItems.append(MACTimelineItem(
                             id: qId,
@@ -379,8 +395,11 @@ public enum MACWorkspaceTimelineReader {
                                 commits.append(MACTimelineCommit(repoName: repo, branch: branch, shortSha: sha, commitMessage: msg, changedFiles: cFiles))
                             }
                         }
-                        if let extraFiles = item["changedFiles"] as? [String] ?? item["files"] as? [String] {
-                            files.append(contentsOf: extraFiles)
+                        if let fList = item["files"] as? [String] {
+                            files.append(contentsOf: fList)
+                        }
+                        if let cList = item["changedFiles"] as? [String] {
+                            files.append(contentsOf: cList)
                         }
 
                         let upperOutcome = outcome.uppercased()
@@ -461,5 +480,59 @@ public enum MACWorkspaceTimelineReader {
 
         // Return ordered timeline: Queued (latest on top, will execute later) -> Currently Working -> Worked Messages (latest on top)
         return queuedItems + workingItems + limitedHistory
+    }
+
+    public static func resolveFilePath(file: String, workspace: MACWorkspace) -> String? {
+        let fm = FileManager.default
+        let expandedWs = MACPathUtils.expandPath(workspace.path)
+
+        // 1. Direct absolute path
+        if file.hasPrefix("/") && fm.fileExists(atPath: file) {
+            return file
+        }
+
+        // 2. Direct inside workspace root
+        let directWs = URL(fileURLWithPath: expandedWs).appendingPathComponent(file).path
+        if fm.fileExists(atPath: directWs) {
+            return directWs
+        }
+
+        // 3. Check inside each repo
+        for repo in workspace.repos {
+            let repoPath = MACPathUtils.expandPath(repo.path)
+            let directRepo = URL(fileURLWithPath: repoPath).appendingPathComponent(file).path
+            if fm.fileExists(atPath: directRepo) {
+                return directRepo
+            }
+            let repoPrefix = repo.name + "/"
+            if file.hasPrefix(repoPrefix) {
+                let stripped = String(file.dropFirst(repoPrefix.count))
+                let strippedPath = URL(fileURLWithPath: repoPath).appendingPathComponent(stripped).path
+                if fm.fileExists(atPath: strippedPath) {
+                    return strippedPath
+                }
+            }
+        }
+
+        // 4. Check extra dirs
+        for extra in workspace.extraDirs {
+            let extraPath = MACPathUtils.expandPath(extra)
+            let directExtra = URL(fileURLWithPath: extraPath).appendingPathComponent(file).path
+            if fm.fileExists(atPath: directExtra) {
+                return directExtra
+            }
+            for repo in workspace.repos {
+                let repoPrefix = repo.name + "/"
+                if file.hasPrefix(repoPrefix) {
+                    let stripped = String(file.dropFirst(repoPrefix.count))
+                    let strippedExtra = URL(fileURLWithPath: extraPath).appendingPathComponent(stripped).path
+                    if fm.fileExists(atPath: strippedExtra) {
+                        return strippedExtra
+                    }
+                }
+            }
+        }
+
+        return nil
     }
 }
