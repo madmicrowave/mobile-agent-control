@@ -29,6 +29,36 @@ public final class WorkspaceTimelineVM: ObservableObject {
         self.previewingFile = FilePreviewItem(relativePath: file, workspace: workspace)
     }
 
+    public func openMessageFilesPreview(item: MACTimelineItem, workspace: MACWorkspace, initialPath: String? = nil) {
+        var entries: [FilePreviewSourceEntry] = []
+        for att in item.attachments {
+            entries.append(FilePreviewSourceEntry(
+                id: "att:\(att.path)",
+                path: att.path,
+                label: att.displayName,
+                isAttachment: true
+            ))
+        }
+        for f in item.files {
+            entries.append(FilePreviewSourceEntry(
+                id: "mod:\(f)",
+                path: f,
+                label: f,
+                isAttachment: false
+            ))
+        }
+        guard !entries.isEmpty else { return }
+        let selected = entries.first(where: { $0.path == initialPath }) ?? entries[0]
+        self.previewingFile = FilePreviewItem(
+            relativePath: selected.path,
+            workspace: workspace,
+            commits: item.commits,
+            entries: entries,
+            selectedEntryId: selected.id,
+            messagePrompt: item.message
+        )
+    }
+
     public func toggleMessageExpand(_ id: String) {
         if expandedItemIds.contains(id) {
             expandedItemIds.remove(id)
@@ -99,8 +129,11 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                 let matchesPrompt = item.message.lowercased().contains(q)
                 let matchesUser = item.user.lowercased().contains(q)
                 let matchesFiles = item.files.contains(where: { $0.lowercased().contains(q) })
+                let matchesAttachments = item.attachments.contains(where: {
+                    $0.displayName.lowercased().contains(q) || $0.fileName.lowercased().contains(q)
+                })
                 let matchesResult = item.resultLabel.lowercased().contains(q)
-                if !matchesPrompt && !matchesUser && !matchesFiles && !matchesResult {
+                if !matchesPrompt && !matchesUser && !matchesFiles && !matchesAttachments && !matchesResult {
                     return false
                 }
             }
@@ -172,7 +205,10 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                                     vm.toggleFilesExpand(item.id)
                                 },
                                 onViewFile: { file in
-                                    vm.openFilePreview(file: file, workspace: workspace)
+                                    vm.openMessageFilesPreview(item: item, workspace: workspace, initialPath: file)
+                                },
+                                onViewAllFiles: {
+                                    vm.openMessageFilesPreview(item: item, workspace: workspace, initialPath: nil)
                                 }
                             )
                         }
@@ -418,6 +454,7 @@ private struct TimelineItemRow: View {
     let onToggleMessageExpand: () -> Void
     let onToggleFilesExpand: () -> Void
     let onViewFile: (String) -> Void
+    let onViewAllFiles: () -> Void
 
     private var nodeColor: Color {
         switch item.status {
@@ -504,25 +541,48 @@ private struct TimelineItemRow: View {
 
                     Spacer()
 
-                    // Files pill if present
-                    if !item.files.isEmpty {
+                    // Attached files indicator + View Files button right next to message
+                    if !item.attachments.isEmpty {
                         Button {
-                            onToggleFilesExpand()
+                            if let firstAtt = item.attachments.first {
+                                onViewFile(firstAtt.path)
+                            }
                         } label: {
                             HStack(spacing: 3) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 9))
-                                Text("\(item.files.count) file\(item.files.count == 1 ? "" : "s")")
+                                Image(systemName: "paperclip")
+                                    .font(.system(size: 9, weight: .semibold))
+                                Text("\(item.attachments.count)")
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(Color.primary.opacity(0.06))
+                            .background(Color.accentColor.opacity(0.1))
                             .cornerRadius(5)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.accentColor)
                         }
                         .buttonStyle(.plain)
-                        .help("Toggle files list (\(item.files.count) files)")
+                        .help("View \(item.attachments.count) file(s) attached with this message")
+                    }
+
+                    // Modified files count pill + View Files button
+                    if item.totalFileCount > 0 {
+                        Button {
+                            onViewAllFiles()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "eye")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                Text("View Files (\(item.totalFileCount))")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.12))
+                            .cornerRadius(5)
+                            .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open viewer for all files saved with this message")
                     }
 
                     // Result badge
@@ -542,23 +602,127 @@ private struct TimelineItemRow: View {
                     .foregroundColor(.secondary)
                 }
 
-                // Message Text
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.message)
-                        .font(.system(size: 12.5))
-                        .lineLimit(isMessageExpanded ? nil : 4)
-                        .textSelection(.enabled)
-                        .foregroundColor(.primary)
+                // Message Text + Attached Message Files
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.message)
+                            .font(.system(size: 12.5))
+                            .lineLimit(isMessageExpanded ? nil : 4)
+                            .textSelection(.enabled)
+                            .foregroundColor(.primary)
 
-                    if item.message.count > 180 {
-                        Button {
-                            onToggleMessageExpand()
-                        } label: {
-                            Text(isMessageExpanded ? "Show less" : "Show full message...")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.accentColor)
+                        if item.message.count > 180 {
+                            Button {
+                                onToggleMessageExpand()
+                            } label: {
+                                Text(isMessageExpanded ? "Show less" : "Show full message...")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.accentColor)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    }
+
+                    // Attached files saved directly with this message (screenshots, photos, documents)
+                    if !item.attachments.isEmpty {
+                        Divider()
+                            .opacity(0.5)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "paperclip")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                Text("Attached Files (\(item.attachments.count)):")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(item.attachments) { att in
+                                        HStack(spacing: 7) {
+                                            if isImageFile(att.path),
+                                               FileManager.default.fileExists(atPath: att.path),
+                                               let thumb = NSImage(contentsOfFile: att.path) {
+                                                Image(nsImage: thumb)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 32, height: 32)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                                    )
+                                            } else {
+                                                ZStack {
+                                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                        .fill(Color.primary.opacity(0.06))
+                                                        .frame(width: 32, height: 32)
+                                                    Image(systemName: fileIcon(for: att.fileName))
+                                                        .font(.system(size: 13))
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            }
+
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(att.displayName)
+                                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
+                                                    .frame(maxWidth: 170, alignment: .leading)
+
+                                                HStack(spacing: 6) {
+                                                    Button {
+                                                        onViewFile(att.path)
+                                                    } label: {
+                                                        HStack(spacing: 3) {
+                                                            Image(systemName: "eye")
+                                                                .font(.system(size: 9))
+                                                            Text("View")
+                                                                .font(.system(size: 10, weight: .semibold))
+                                                        }
+                                                        .foregroundColor(.accentColor)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help("View attached file")
+
+                                                    Button {
+                                                        openInDefaultApp(relativePath: att.path)
+                                                    } label: {
+                                                        Image(systemName: "arrow.up.right.square")
+                                                            .font(.system(size: 9.5))
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help("Open in default viewer")
+
+                                                    Button {
+                                                        revealFile(relativePath: att.path)
+                                                    } label: {
+                                                        Image(systemName: "folder")
+                                                            .font(.system(size: 9.5))
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help("Show in Finder")
+                                                }
+                                            }
+                                        }
+                                        .padding(5)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .fill(Color.primary.opacity(0.045))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(10)
@@ -572,20 +736,39 @@ private struct TimelineItemRow: View {
                         .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 )
 
-                // Files section
+                // Modified Workspace Files section
                 if !item.files.isEmpty {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.on.doc.fill")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
-                            Text("Files (\(item.files.count)):")
+                            Text("Modified Files (\(item.files.count)):")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(.secondary)
 
                             Spacer()
 
+                            Button {
+                                if let firstMod = item.files.first {
+                                    onViewFile(firstMod)
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "eye")
+                                        .font(.system(size: 9.5))
+                                    Text("View All")
+                                        .font(.system(size: 10.5, weight: .medium))
+                                }
+                                .foregroundColor(.accentColor)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Browse all modified files in viewer")
+
                             if item.files.count > 3 {
+                                Text("•")
+                                    .foregroundColor(.secondary.opacity(0.5))
+
                                 Button {
                                     onToggleFilesExpand()
                                 } label: {
@@ -604,13 +787,19 @@ private struct TimelineItemRow: View {
                                     Image(systemName: fileIcon(for: file))
                                         .font(.system(size: 9.5))
                                         .foregroundColor(.secondary)
-                                    Text(file)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
 
-                                    Spacer()
+                                    Button {
+                                        onViewFile(file)
+                                    } label: {
+                                        Text(file)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(.primary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Click to view \(file)")
 
                                     // View file button (in-app viewer)
                                     Button {
@@ -628,7 +817,7 @@ private struct TimelineItemRow: View {
                                         .cornerRadius(4)
                                     }
                                     .buttonStyle(.plain)
-                                    .help("View file content right here")
+                                    .help("View file content and diff right here")
 
                                     // Open in Default App
                                     Button {
@@ -663,7 +852,7 @@ private struct TimelineItemRow: View {
                     .padding(.vertical, 6)
                     .background(Color.primary.opacity(0.02))
                     .cornerRadius(6)
-                } else {
+                } else if item.attachments.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 9))
@@ -729,6 +918,11 @@ private struct TimelineItemRow: View {
         .cornerRadius(6)
     }
 
+    private func isImageFile(_ path: String) -> Bool {
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "icns", "tiff"].contains(ext)
+    }
+
     private func fileIcon(for file: String) -> String {
         let ext = URL(fileURLWithPath: file).pathExtension.lowercased()
         switch ext {
@@ -773,7 +967,21 @@ private struct TimelineItemRow: View {
     }
 }
 
-// MARK: - File Preview Models & Sheet
+// MARK: - File Preview Models & Multi-File Viewer Sheet
+
+public struct FilePreviewSourceEntry: Identifiable, Equatable {
+    public let id: String
+    public let path: String
+    public let label: String
+    public let isAttachment: Bool
+
+    public init(id: String, path: String, label: String, isAttachment: Bool) {
+        self.id = id
+        self.path = path
+        self.label = label
+        self.isAttachment = isAttachment
+    }
+}
 
 public struct FilePreviewItem: Identifiable, Equatable {
     public let id: String
@@ -782,22 +990,50 @@ public struct FilePreviewItem: Identifiable, Equatable {
     public let absolutePath: String?
     public let fileExists: Bool
     public let content: String?
+    public let commitDiff: String?
+    public let loadedFromGitCommit: Bool
     public let fileSizeFormatted: String
     public let lineCount: Int?
     public let isImage: Bool
     public let error: String?
+    public let commits: [MACTimelineCommit]
+    public let entries: [FilePreviewSourceEntry]
+    public let selectedEntryId: String
+    public let messagePrompt: String?
 
-    public init(relativePath: String, workspace: MACWorkspace) {
-        self.id = relativePath
+    public init(
+        relativePath: String,
+        workspace: MACWorkspace,
+        commits: [MACTimelineCommit] = [],
+        entries: [FilePreviewSourceEntry] = [],
+        selectedEntryId: String? = nil,
+        messagePrompt: String? = nil
+    ) {
+        self.id = "\(selectedEntryId ?? relativePath)::\(entries.count)"
         self.relativePath = relativePath
         self.fileName = URL(fileURLWithPath: relativePath).lastPathComponent
+        self.commits = commits
+        self.messagePrompt = messagePrompt
 
+        let effectiveEntries = entries.isEmpty
+            ? [FilePreviewSourceEntry(id: "single:\(relativePath)", path: relativePath, label: relativePath, isAttachment: false)]
+            : entries
+        self.entries = effectiveEntries
+        self.selectedEntryId = selectedEntryId ?? effectiveEntries[0].id
+
+        let isAtt = effectiveEntries.first(where: { $0.id == (selectedEntryId ?? effectiveEntries[0].id) })?.isAttachment ?? false
         let resolved = MACWorkspaceTimelineReader.resolveFilePath(file: relativePath, workspace: workspace)
         self.absolutePath = resolved
+
+        let diffText = (!isAtt && !commits.isEmpty)
+            ? MACWorkspaceTimelineReader.loadCommitDiff(file: relativePath, commits: commits, workspace: workspace)
+            : nil
+        self.commitDiff = diffText
 
         let fm = FileManager.default
         if let resolved, fm.fileExists(atPath: resolved) {
             self.fileExists = true
+            self.loadedFromGitCommit = false
             let ext = URL(fileURLWithPath: resolved).pathExtension.lowercased()
             let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "icns", "tiff"]
             self.isImage = imageExtensions.contains(ext)
@@ -821,7 +1057,7 @@ public struct FilePreviewItem: Identifiable, Equatable {
                 } else if let data = try? Data(contentsOf: URL(fileURLWithPath: resolved)), data.count > 2 * 1024 * 1024 {
                     self.content = nil
                     self.lineCount = nil
-                    self.error = "File is larger than 2 MB. Use 'Open in Default App' to view."
+                    self.error = "File is larger than 2 MB. Use 'Open in App' to view."
                 } else {
                     self.content = nil
                     self.lineCount = nil
@@ -832,8 +1068,24 @@ public struct FilePreviewItem: Identifiable, Equatable {
                 self.lineCount = nil
                 self.error = nil
             }
+        } else if !isAtt,
+                  let gitContent = MACWorkspaceTimelineReader.loadCommittedFileContent(
+                      file: relativePath,
+                      commits: commits,
+                      workspace: workspace
+                  ) {
+            self.fileExists = false
+            self.loadedFromGitCommit = true
+            self.isImage = false
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            self.fileSizeFormatted = formatter.string(fromByteCount: Int64(gitContent.utf8.count))
+            self.content = gitContent
+            self.lineCount = gitContent.components(separatedBy: "\n").count
+            self.error = nil
         } else {
             self.fileExists = false
+            self.loadedFromGitCommit = false
             self.isImage = false
             self.fileSizeFormatted = ""
             self.content = nil
@@ -844,8 +1096,38 @@ public struct FilePreviewItem: Identifiable, Equatable {
 }
 
 final class FilePreviewSheetState: ObservableObject {
+    @Published var activePreview: FilePreviewItem
+    @Published var viewMode: String = "file"
     @Published var copiedPath: Bool = false
     @Published var copiedContent: Bool = false
+
+    let workspace: MACWorkspace
+
+    init(initialPreview: FilePreviewItem, workspace: MACWorkspace) {
+        self.activePreview = initialPreview
+        self.workspace = workspace
+        if initialPreview.content == nil && initialPreview.commitDiff != nil {
+            self.viewMode = "diff"
+        }
+    }
+
+    func selectEntry(_ entry: FilePreviewSourceEntry) {
+        guard entry.id != activePreview.selectedEntryId else { return }
+        let next = FilePreviewItem(
+            relativePath: entry.path,
+            workspace: workspace,
+            commits: activePreview.commits,
+            entries: activePreview.entries,
+            selectedEntryId: entry.id,
+            messagePrompt: activePreview.messagePrompt
+        )
+        self.activePreview = next
+        if next.isImage || next.commitDiff == nil {
+            self.viewMode = "file"
+        }
+        self.copiedPath = false
+        self.copiedContent = false
+    }
 
     func copyPath(_ path: String) {
         NSPasteboard.general.clearContents()
@@ -870,24 +1152,59 @@ public struct MACFilePreviewSheet: View {
     public let preview: FilePreviewItem
     public let workspace: MACWorkspace
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var sheetState = FilePreviewSheetState()
+    @StateObject private var sheetState: FilePreviewSheetState
+
+    public init(preview: FilePreviewItem, workspace: MACWorkspace) {
+        self.preview = preview
+        self.workspace = workspace
+        self._sheetState = StateObject(wrappedValue: FilePreviewSheetState(initialPreview: preview, workspace: workspace))
+    }
+
+    private var cur: FilePreviewItem {
+        sheetState.activePreview
+    }
+
+    private var displayedText: String? {
+        if sheetState.viewMode == "diff", let diff = cur.commitDiff {
+            return diff
+        }
+        return cur.content ?? cur.commitDiff
+    }
+
+    private var attachmentEntries: [FilePreviewSourceEntry] {
+        cur.entries.filter(\.isAttachment)
+    }
+
+    private var modifiedEntries: [FilePreviewSourceEntry] {
+        cur.entries.filter { !$0.isAttachment }
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 10) {
-                Image(systemName: preview.isImage ? "photo.fill" : "doc.text.fill")
+                Image(systemName: cur.isImage ? "photo.fill" : "doc.text.fill")
                     .font(.system(size: 16))
                     .foregroundColor(.accentColor)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(preview.fileName)
+                        Text(cur.fileName)
                             .font(.system(size: 14, weight: .bold))
                             .lineLimit(1)
 
-                        if !preview.fileSizeFormatted.isEmpty {
-                            Text(preview.fileSizeFormatted)
+                        if cur.loadedFromGitCommit {
+                            Text("Git History")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(Color.accentColor.opacity(0.12))
+                                .cornerRadius(4)
+                                .foregroundColor(.accentColor)
+                        }
+
+                        if !cur.fileSizeFormatted.isEmpty {
+                            Text(cur.fileSizeFormatted)
                                 .font(.system(size: 10, design: .monospaced))
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -896,7 +1213,7 @@ public struct MACFilePreviewSheet: View {
                                 .foregroundColor(.secondary)
                         }
 
-                        if let lines = preview.lineCount {
+                        if let lines = cur.lineCount {
                             Text("\(lines) lines")
                                 .font(.system(size: 10, design: .monospaced))
                                 .padding(.horizontal, 5)
@@ -907,7 +1224,7 @@ public struct MACFilePreviewSheet: View {
                         }
                     }
 
-                    Text(preview.absolutePath ?? preview.relativePath)
+                    Text(cur.absolutePath ?? cur.relativePath)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -917,8 +1234,19 @@ public struct MACFilePreviewSheet: View {
 
                 Spacer()
 
+                // File vs Commit Diff toggle when commit diff exists
+                if cur.commitDiff != nil && cur.content != nil {
+                    Picker("", selection: $sheetState.viewMode) {
+                        Text("File").tag("file")
+                        Text("Commit Diff").tag("diff")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 155)
+                    .controlSize(.small)
+                }
+
                 // Actions
-                if preview.fileExists, let abs = preview.absolutePath {
+                if cur.fileExists, let abs = cur.absolutePath {
                     Button {
                         NSWorkspace.shared.open(URL(fileURLWithPath: abs))
                     } label: {
@@ -947,7 +1275,7 @@ public struct MACFilePreviewSheet: View {
                 }
 
                 Button {
-                    sheetState.copyPath(preview.absolutePath ?? preview.relativePath)
+                    sheetState.copyPath(cur.absolutePath ?? cur.relativePath)
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: sheetState.copiedPath ? "checkmark" : "doc.on.doc")
@@ -958,9 +1286,9 @@ public struct MACFilePreviewSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                if let content = preview.content, !content.isEmpty {
+                if let textToCopy = displayedText, !textToCopy.isEmpty {
                     Button {
-                        sheetState.copyContent(content)
+                        sheetState.copyContent(textToCopy)
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: sheetState.copiedContent ? "checkmark" : "doc.on.clipboard")
@@ -987,48 +1315,129 @@ public struct MACFilePreviewSheet: View {
 
             Divider()
 
-            // Body Content
-            if preview.isImage, let abs = preview.absolutePath, let nsImg = NSImage(contentsOfFile: abs) {
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: nsImg)
-                        .resizable()
-                        .scaledToFit()
+            // Split layout: left file switcher (when > 1 file in message) + right viewer
+            HStack(spacing: 0) {
+                if cur.entries.count > 1 {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if !attachmentEntries.isEmpty {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("ATTACHED (\(attachmentEntries.count))")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 6)
+
+                                    ForEach(attachmentEntries) { entry in
+                                        sidebarRow(entry: entry, icon: "paperclip")
+                                    }
+                                }
+                            }
+
+                            if !modifiedEntries.isEmpty {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("MODIFIED (\(modifiedEntries.count))")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 6)
+
+                                    ForEach(modifiedEntries) { entry in
+                                        sidebarRow(entry: entry, icon: "doc.text")
+                                    }
+                                }
+                            }
+                        }
+                        .padding(10)
+                    }
+                    .frame(width: 230)
+                    .background(Color.primary.opacity(0.025))
+
+                    Divider()
+                }
+
+                // Viewer Body
+                Group {
+                    if cur.isImage && sheetState.viewMode == "file",
+                       let abs = cur.absolutePath,
+                       let nsImg = NSImage(contentsOfFile: abs) {
+                        ScrollView([.horizontal, .vertical]) {
+                            Image(nsImage: nsImg)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(20)
+                        }
+                        .background(Color.primary.opacity(0.02))
+                    } else if let text = displayedText {
+                        ScrollView([.horizontal, .vertical]) {
+                            Text(text)
+                                .font(.system(size: 12, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                        }
+                        .background(Color(NSColor.textBackgroundColor))
+                    } else if let err = cur.error {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.orange)
+                            Text(err)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.secondary)
+                            if let abs = cur.absolutePath {
+                                Text(abs)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(20)
-                }
-                .background(Color.primary.opacity(0.02))
-            } else if let content = preview.content {
-                ScrollView([.horizontal, .vertical]) {
-                    Text(content)
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                }
-                .background(Color(NSColor.textBackgroundColor))
-            } else if let err = preview.error {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.orange)
-                    Text(err)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
-                    if let abs = preview.absolutePath {
-                        Text(abs)
-                            .font(.system(size: 11, design: .monospaced))
+                        .padding(24)
+                    } else {
+                        Text("No preview available.")
                             .foregroundColor(.secondary)
-                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
-            } else {
-                Text("No preview available.")
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 700, idealWidth: 850, minHeight: 480, idealHeight: 600)
+        .frame(minWidth: 760, idealWidth: 940, minHeight: 500, idealHeight: 640)
+    }
+
+    private func sidebarRow(entry: FilePreviewSourceEntry, icon: String) -> some View {
+        let isSelected = entry.id == cur.selectedEntryId
+        let shortName = URL(fileURLWithPath: entry.label).lastPathComponent
+        return Button {
+            sheetState.selectEntry(entry)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                    Text(shortName)
+                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                        .foregroundColor(isSelected ? .accentColor : .primary)
+                        .lineLimit(1)
+                }
+                if entry.label != shortName {
+                    Text(entry.label)
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(entry.label)
     }
 }

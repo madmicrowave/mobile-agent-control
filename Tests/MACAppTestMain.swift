@@ -628,7 +628,13 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
               "text": "Update footer copyright year to 2026",
               "user": "@maksimsge",
               "queuedAt": "2026-11-26T22:05:00.000Z",
-              "photos": []
+              "photos": [
+                {
+                  "path": "/tmp/payment-book/uploads/queued-shot.jpg",
+                  "fileName": "queued-shot.jpg",
+                  "originalName": "footer-spec.jpg"
+                }
+              ]
             },
             {
               "id": "q-2",
@@ -647,6 +653,13 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
               "prompt": "Add dark mode toggle to navigation bar",
               "user": "@maksimsge",
               "outcome": "CONFIRMED",
+              "attachments": [
+                {
+                  "path": "/tmp/payment-book/uploads/nav-mockup.png",
+                  "fileName": "nav-mockup.png",
+                  "originalName": "nav-mockup.png"
+                }
+              ],
               "commits": [
                 {
                   "repoName": "frontend",
@@ -683,6 +696,8 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
 
     expect(items[1].status == .queued(1), "Second item is earlier queued message (#1)")
     expect(items[1].message == "Update footer copyright year to 2026", "Queued #1 prompt matches")
+    expect(items[1].attachments.count == 1, "Queued #1 parsed dictionary photo attachment")
+    expect(items[1].attachments[0].displayName == "footer-spec.jpg", "Queued #1 attachment displayName matches")
 
     expect(items[2].status == .working, "Third item is active working turn (executing now)")
     expect(items[2].user == "@maksimsge", "User is @maksimsge")
@@ -694,6 +709,8 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     expect(items[3].resultLabel == "Success", "Fourth item result is Success")
     expect(items[3].elapsedTime == "2m 30s", "Elapsed time calculated accurately as 2m 30s, got \(items[3].elapsedTime)")
     expect(items[3].files.count == 2, "Files count is 2")
+    expect(items[3].attachments.count == 1, "History item parsed attached file")
+    expect(items[3].totalFileCount == 3, "Total file count combines 1 attachment + 2 modified files")
 
     expect(items[4].status == .failed, "Fifth item is failed/reverted")
     expect(items[4].resultLabel == "Reverted", "Fifth item result is Reverted")

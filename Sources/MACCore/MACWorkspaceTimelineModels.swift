@@ -53,12 +53,30 @@ public struct MACTimelineCommit: Identifiable, Equatable, Hashable {
     }
 }
 
+public struct MACTimelineAttachment: Identifiable, Equatable, Hashable {
+    public let id: String
+    public let path: String
+    public let fileName: String
+    public let displayName: String
+
+    public init(path: String, fileName: String? = nil, displayName: String? = nil) {
+        self.path = path
+        let base = fileName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedFileName = (base?.isEmpty == false) ? base! : URL(fileURLWithPath: path).lastPathComponent
+        self.fileName = resolvedFileName
+        let disp = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.displayName = (disp?.isEmpty == false) ? disp! : resolvedFileName
+        self.id = path
+    }
+}
+
 public struct MACTimelineItem: Identifiable, Equatable {
     public let id: String
     public let status: MACTimelineStatus
     public let user: String
     public let message: String
     public let files: [String]
+    public let attachments: [MACTimelineAttachment]
     public let date: Date?
     public let formattedDate: String
     public let resultLabel: String
@@ -67,12 +85,17 @@ public struct MACTimelineItem: Identifiable, Equatable {
     public let commits: [MACTimelineCommit]
     public let outcome: String?
 
+    public var totalFileCount: Int {
+        attachments.count + files.count
+    }
+
     public init(
         id: String = UUID().uuidString,
         status: MACTimelineStatus,
         user: String,
         message: String,
         files: [String] = [],
+        attachments: [MACTimelineAttachment] = [],
         date: Date? = nil,
         formattedDate: String,
         resultLabel: String,
@@ -86,6 +109,7 @@ public struct MACTimelineItem: Identifiable, Equatable {
         self.user = user
         self.message = message
         self.files = files
+        self.attachments = attachments
         self.date = date
         self.formattedDate = formattedDate
         self.resultLabel = resultLabel
@@ -283,6 +307,90 @@ public enum MACWorkspaceTimelineReader {
         var historyItems: [MACTimelineItem] = []
         var seenTurnIds = Set<String>()
 
+        let uploadsDir = dataDir.appendingPathComponent("uploads", isDirectory: true)
+        let fm = FileManager.default
+
+        func parseAttachments(_ rawValues: [Any?]) -> [MACTimelineAttachment] {
+            var seen = Set<String>()
+            var result: [MACTimelineAttachment] = []
+            for raw in rawValues {
+                if let strList = raw as? [String] {
+                    for s in strList {
+                        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { continue }
+                        let base = URL(fileURLWithPath: trimmed).lastPathComponent
+                        var resolvedPath = trimmed
+                        if !fm.fileExists(atPath: resolvedPath) {
+                            let inUploads = uploadsDir.appendingPathComponent(base).path
+                            if fm.fileExists(atPath: inUploads) {
+                                resolvedPath = inUploads
+                            }
+                        }
+                        if seen.insert(resolvedPath).inserted {
+                            result.append(MACTimelineAttachment(path: resolvedPath, fileName: base, displayName: base))
+                        }
+                    }
+                } else if let dictList = raw as? [[String: Any]] {
+                    for dict in dictList {
+                        let rawPath = (dict["path"] as? String ?? dict["fileName"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !rawPath.isEmpty else { continue }
+                        let fName = (dict["fileName"] as? String ?? URL(fileURLWithPath: rawPath).lastPathComponent).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let origName = (dict["originalName"] as? String ?? fName).trimmingCharacters(in: .whitespacesAndNewlines)
+                        var resolvedPath = rawPath
+                        if !fm.fileExists(atPath: resolvedPath) {
+                            let inUploads = uploadsDir.appendingPathComponent(fName).path
+                            if fm.fileExists(atPath: inUploads) {
+                                resolvedPath = inUploads
+                            }
+                        }
+                        if seen.insert(resolvedPath).inserted {
+                            result.append(MACTimelineAttachment(path: resolvedPath, fileName: fName, displayName: origName))
+                        }
+                    }
+                }
+            }
+            return result
+        }
+
+        // Index existing files in data/uploads/<wsPrefix>-[queued-]<timestampMs>-<hex>.<ext>
+        // so legacy history items created before attachments were explicitly saved in state.json
+        // can also recover their uploaded screenshots/files.
+        struct IndexedUpload {
+            let path: String
+            let fileName: String
+            let timestampMs: Int64
+        }
+        var legacyUploads: [IndexedUpload] = []
+        if let uploadNames = try? fm.contentsOfDirectory(atPath: uploadsDir.path) {
+            let candidatePrefixes = Array(seenKeys) + [targetId, targetBase].filter { !$0.isEmpty }
+            for uName in uploadNames where !uName.hasPrefix(".") {
+                let lowerName = uName.lowercased()
+                var matchedPrefix: String?
+                for pref in candidatePrefixes where !pref.isEmpty {
+                    if lowerName.hasPrefix(pref + "-") {
+                        if matchedPrefix == nil || pref.count > matchedPrefix!.count {
+                            matchedPrefix = pref
+                        }
+                    }
+                }
+                guard let pref = matchedPrefix else { continue }
+                var rest = String(lowerName.dropFirst(pref.count + 1))
+                if rest.hasPrefix("queued-") {
+                    rest = String(rest.dropFirst("queued-".count))
+                }
+                let parts = rest.split(separator: "-")
+                if let firstPart = parts.first, let ts = Int64(firstPart) {
+                    legacyUploads.append(IndexedUpload(
+                        path: uploadsDir.appendingPathComponent(uName).path,
+                        fileName: uName,
+                        timestampMs: ts
+                    ))
+                }
+            }
+            legacyUploads.sort { $0.timestampMs < $1.timestampMs }
+        }
+        var claimedLegacyUploadPaths = Set<String>()
+
         for wsObj in matchedWorkspaceDicts {
             // 1. Currently working on message (activeTurn)
             if let activeTurn = wsObj["activeTurn"] as? [String: Any] {
@@ -320,12 +428,22 @@ public enum MACWorkspaceTimelineReader {
                         }
                     }
 
+                    let attachments = parseAttachments([
+                        activeTurn["attachments"],
+                        activeTurn["photos"],
+                        wsObj["pendingPhotos"]
+                    ])
+                    for att in attachments {
+                        claimedLegacyUploadPaths.insert(att.path)
+                    }
+
                     workingItems.append(MACTimelineItem(
                         id: turnId,
                         status: .working,
                         user: user,
                         message: prompt,
                         files: Array(NSOrderedSet(array: files)) as? [String] ?? files,
+                        attachments: attachments,
                         date: createdDate,
                         formattedDate: formatRelativeDate(createdDate),
                         resultLabel: "Working...",
@@ -347,17 +465,19 @@ public enum MACWorkspaceTimelineReader {
                         let user = resolveUser(entry["user"] as? String ?? entry["userName"] as? String)
                         let queuedDate = parseDate(entry["queuedAt"] as? String)
                         let elapsed = "waiting " + formatDuration(from: queuedDate, to: Date())
-                        var photos = entry["photos"] as? [String] ?? []
-                        if let fList = entry["files"] as? [String] {
-                            photos.append(contentsOf: fList)
+                        let attachments = parseAttachments([entry["attachments"], entry["photos"]])
+                        for att in attachments {
+                            claimedLegacyUploadPaths.insert(att.path)
                         }
+                        let qFiles = entry["files"] as? [String] ?? []
 
                         queuedItems.append(MACTimelineItem(
                             id: qId,
                             status: .queued(qPos),
                             user: user,
                             message: text,
-                            files: photos,
+                            files: qFiles,
+                            attachments: attachments,
                             date: queuedDate,
                             formattedDate: formatRelativeDate(queuedDate),
                             resultLabel: "Queued (#\(qPos))",
@@ -402,6 +522,22 @@ public enum MACWorkspaceTimelineReader {
                             files.append(contentsOf: cList)
                         }
 
+                        var attachments = parseAttachments([item["attachments"], item["photos"]])
+                        for att in attachments {
+                            claimedLegacyUploadPaths.insert(att.path)
+                        }
+                        if attachments.isEmpty && item["attachments"] == nil && item["photos"] == nil,
+                           let createdMs = createdDate.map({ Int64($0.timeIntervalSince1970 * 1000.0) }) {
+                            // Recover legacy uploaded files created right before/at turn start (within 90s before to 5s after)
+                            for up in legacyUploads where !claimedLegacyUploadPaths.contains(up.path) {
+                                let diff = createdMs - up.timestampMs
+                                if diff >= -5_000 && diff <= 90_000 {
+                                    claimedLegacyUploadPaths.insert(up.path)
+                                    attachments.append(MACTimelineAttachment(path: up.path, fileName: up.fileName, displayName: up.fileName))
+                                }
+                            }
+                        }
+
                         let upperOutcome = outcome.uppercased()
                         let status: MACTimelineStatus
                         let resultLabel: String
@@ -439,6 +575,7 @@ public enum MACWorkspaceTimelineReader {
                             user: user,
                             message: prompt,
                             files: Array(NSOrderedSet(array: files)) as? [String] ?? files,
+                            attachments: attachments,
                             date: finishedDate ?? createdDate,
                             formattedDate: formatRelativeDate(finishedDate ?? createdDate),
                             resultLabel: resultLabel,
@@ -534,5 +671,93 @@ public enum MACWorkspaceTimelineReader {
         }
 
         return nil
+    }
+
+    private static func runGitOutput(repoPath: String, args: [String]) -> String? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: "/usr/bin/git"), fm.fileExists(atPath: repoPath) else { return nil }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", repoPath] + args
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = errPipe
+        do {
+            try proc.run()
+        } catch {
+            return nil
+        }
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0, !data.isEmpty, data.count <= 2 * 1024 * 1024 else { return nil }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+    }
+
+    private static func resolveCommitTarget(
+        file: String,
+        commits: [MACTimelineCommit],
+        workspace: MACWorkspace
+    ) -> (repoPath: String, relFile: String, shas: [String])? {
+        guard !commits.isEmpty else { return nil }
+        let matchingCommits = commits.filter { c in
+            guard !c.shortSha.isEmpty else { return false }
+            if c.changedFiles.contains(file) { return true }
+            if !c.repoName.isEmpty && file.hasPrefix(c.repoName + "/") {
+                let stripped = String(file.dropFirst(c.repoName.count + 1))
+                if c.changedFiles.contains(stripped) { return true }
+            }
+            return false
+        }
+        let candidateCommits = matchingCommits.isEmpty ? commits.filter { !$0.shortSha.isEmpty } : matchingCommits
+        guard let first = candidateCommits.first else { return nil }
+
+        let expandedWs = MACPathUtils.expandPath(workspace.path)
+        var repoPath = expandedWs
+        if !first.repoName.isEmpty,
+           let matchedRepo = workspace.repos.first(where: { $0.name == first.repoName }) {
+            repoPath = MACPathUtils.expandPath(matchedRepo.path)
+        } else if let firstRepo = workspace.repos.first {
+            repoPath = MACPathUtils.expandPath(firstRepo.path)
+        }
+
+        var relFile = file
+        if !first.repoName.isEmpty && relFile.hasPrefix(first.repoName + "/") {
+            relFile = String(relFile.dropFirst(first.repoName.count + 1))
+        }
+        let shas = candidateCommits.map(\.shortSha)
+        return (repoPath, relFile, shas)
+    }
+
+    public static func loadCommitDiff(
+        file: String,
+        commits: [MACTimelineCommit],
+        workspace: MACWorkspace
+    ) -> String? {
+        guard let target = resolveCommitTarget(file: file, commits: commits, workspace: workspace) else {
+            return nil
+        }
+        var chunks: [String] = []
+        for sha in target.shas {
+            if let out = runGitOutput(
+                repoPath: target.repoPath,
+                args: ["show", "--no-color", "--format=commit %h — %s", sha, "--", target.relFile]
+            )?.trimmingCharacters(in: .whitespacesAndNewlines), !out.isEmpty {
+                chunks.append(out)
+            }
+        }
+        return chunks.isEmpty ? nil : chunks.joined(separator: "\n\n")
+    }
+
+    public static func loadCommittedFileContent(
+        file: String,
+        commits: [MACTimelineCommit],
+        workspace: MACWorkspace
+    ) -> String? {
+        guard let target = resolveCommitTarget(file: file, commits: commits, workspace: workspace),
+              let latestSha = target.shas.last else {
+            return nil
+        }
+        return runGitOutput(repoPath: target.repoPath, args: ["show", "\(latestSha):\(target.relFile)"])
     }
 }

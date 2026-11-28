@@ -817,6 +817,12 @@ export class ConfigStore {
         h.files = Array.from(s);
         h.changedFiles = h.files;
       }
+      if (!Array.isArray(h.attachments)) {
+        h.attachments = Array.isArray(h.photos) ? h.photos : [];
+      }
+      if (!Array.isArray(h.photos)) {
+        h.photos = h.attachments;
+      }
       return h;
     });
     return st;

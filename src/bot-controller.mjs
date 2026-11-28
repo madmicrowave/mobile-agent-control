@@ -1018,7 +1018,13 @@ export class BotController {
           );
           savedPhoto = {
             path: savedPath,
-            fileName: path.basename(savedPath)
+            fileName: path.basename(savedPath),
+            originalName:
+              incomingAttachment.displayName &&
+              incomingAttachment.displayName !== 'photo.jpg' &&
+              incomingAttachment.displayName !== 'file'
+                ? incomingAttachment.displayName
+                : path.basename(savedPath)
           };
         } catch (dlErr) {
           await this.telegram.sendMessage({
@@ -1231,9 +1237,16 @@ export class BotController {
         return;
       }
 
+      const baseName = path.basename(savedPath);
       st.pendingPhotos.push({
         path: savedPath,
-        fileName: path.basename(savedPath)
+        fileName: baseName,
+        originalName:
+          incomingAttachment.displayName &&
+          incomingAttachment.displayName !== 'photo.jpg' &&
+          incomingAttachment.displayName !== 'file'
+            ? incomingAttachment.displayName
+            : baseName
       });
       await this.configStore.saveState();
 
@@ -1269,6 +1282,31 @@ export class BotController {
       replyToMessageId: msg.message_id || null,
       user: senderName
     });
+  }
+
+  async downloadAttachment(incomingAttachment, wsId, { prefix = '' } = {}) {
+    if (!incomingAttachment || !incomingAttachment.fileId) return null;
+    const tag = prefix ? `${wsId}-${prefix}` : wsId;
+    const destBase = path.join(
+      this.configStore.uploadsDir,
+      `${tag}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`
+    );
+    const savedPath = await this.telegram.downloadFile(
+      incomingAttachment.fileId,
+      destBase,
+      incomingAttachment.preferredExt
+    );
+    const baseName = path.basename(savedPath);
+    return {
+      path: savedPath,
+      fileName: baseName,
+      originalName:
+        incomingAttachment.displayName &&
+        incomingAttachment.displayName !== 'photo.jpg' &&
+        incomingAttachment.displayName !== 'file'
+          ? incomingAttachment.displayName
+          : baseName
+    };
   }
 
   extractIncomingAttachment(msg) {
@@ -1449,6 +1487,13 @@ export class BotController {
     if (!st || !entry) return;
     st.history = st.history || [];
 
+    const matchingTurn =
+      st.activeTurn && st.activeTurn.id === entry.id
+        ? st.activeTurn
+        : st.deployingTurn && st.deployingTurn.id === entry.id
+          ? st.deployingTurn
+          : null;
+
     const filesSet = new Set(Array.isArray(entry.files) ? entry.files.filter(Boolean) : []);
     if (Array.isArray(entry.changedFiles)) {
       for (const f of entry.changedFiles) if (f) filesSet.add(f);
@@ -1467,13 +1512,13 @@ export class BotController {
         }
       }
     }
-    if (Array.isArray(st.activeTurn?.files)) {
-      for (const f of st.activeTurn.files) if (f) filesSet.add(f);
+    if (Array.isArray(matchingTurn?.files)) {
+      for (const f of matchingTurn.files) if (f) filesSet.add(f);
     }
-    if (Array.isArray(st.activeTurn?.changedFiles)) {
-      for (const f of st.activeTurn.changedFiles) if (f) filesSet.add(f);
+    if (Array.isArray(matchingTurn?.changedFiles)) {
+      for (const f of matchingTurn.changedFiles) if (f) filesSet.add(f);
     }
-    if (Array.isArray(st.pendingDeltas)) {
+    if (matchingTurn === st.activeTurn && Array.isArray(st.pendingDeltas)) {
       for (const d of st.pendingDeltas) {
         if (Array.isArray(d?.changedFiles)) {
           for (const f of d.changedFiles) if (f) filesSet.add(f);
@@ -1482,6 +1527,40 @@ export class BotController {
     }
     entry.files = Array.from(filesSet);
     entry.changedFiles = entry.files;
+
+    // Normalize and persist message-attached files (photos/documents uploaded with prompt)
+    const attachmentsByKey = new Map();
+    const collectAttachments = (arr) => {
+      if (!Array.isArray(arr)) return;
+      for (const item of arr) {
+        if (!item) continue;
+        if (typeof item === 'string') {
+          const trimmed = item.trim();
+          if (!trimmed) continue;
+          const base = path.basename(trimmed);
+          if (!attachmentsByKey.has(trimmed)) {
+            attachmentsByKey.set(trimmed, { path: trimmed, fileName: base, originalName: base });
+          }
+        } else if (typeof item === 'object') {
+          const p = String(item.path || item.fileName || '').trim();
+          if (!p) continue;
+          const base = String(item.fileName || path.basename(p)).trim();
+          const orig = String(item.originalName || base).trim();
+          if (!attachmentsByKey.has(p)) {
+            attachmentsByKey.set(p, { path: p, fileName: base, originalName: orig });
+          }
+        }
+      }
+    };
+
+    collectAttachments(entry.attachments);
+    collectAttachments(entry.photos);
+    collectAttachments(matchingTurn?.attachments);
+    collectAttachments(matchingTurn?.photos);
+
+    const normalizedAttachments = Array.from(attachmentsByKey.values());
+    entry.attachments = normalizedAttachments;
+    entry.photos = normalizedAttachments;
 
     st.history.push(entry);
     if (st.history.length > 3000) {
@@ -1596,9 +1675,16 @@ export class BotController {
             incomingAttachment.preferredExt
           );
           if ((st.pendingPhotos?.length || 0) + batch.files.length < MAX_FILES_PER_TURN) {
+            const baseName = path.basename(savedPath);
             batch.files.push({
               path: savedPath,
-              fileName: path.basename(savedPath)
+              fileName: baseName,
+              originalName:
+                incomingAttachment.displayName &&
+                incomingAttachment.displayName !== 'photo.jpg' &&
+                incomingAttachment.displayName !== 'file'
+                  ? incomingAttachment.displayName
+                  : baseName
             });
           } else {
             batch.skippedCount += 1;
@@ -3700,6 +3786,17 @@ export class BotController {
       if (promptText) {
         st.activeTurn.prompt = `${st.activeTurn.prompt}\n[Fix]: ${promptText}`;
       }
+      if (attachedPhotos.length > 0) {
+        const existingPhotos = Array.isArray(st.activeTurn.attachments)
+          ? st.activeTurn.attachments
+          : Array.isArray(st.activeTurn.photos)
+            ? st.activeTurn.photos
+            : [];
+        const mergedPhotos = [...existingPhotos, ...attachedPhotos];
+        st.activeTurn.attachments = mergedPhotos;
+        st.activeTurn.photos = mergedPhotos;
+        st.activeTurn.photoCount = mergedPhotos.length;
+      }
       if (replyToMessageId) {
         st.activeTurn.userMessageId = replyToMessageId;
       }
@@ -3709,6 +3806,10 @@ export class BotController {
         createdAt: this.nowProvider().toISOString(),
         prompt: promptText || '(Photo prompt)',
         photoCount: attachedPhotos.length,
+        photos: attachedPhotos,
+        attachments: attachedPhotos,
+        files: [],
+        changedFiles: [],
         user: queueInfo?.user || user || 'User',
         agentResponse: '',
         commits: [],
@@ -3724,6 +3825,7 @@ export class BotController {
     st.messages.push({
       role: 'user',
       text: promptText || `[Attached ${attachedPhotos.length} file(s)]`,
+      attachments: attachedPhotos,
       conversationId: st.conversationId || null,
       at: this.nowProvider().toISOString()
     });
@@ -4267,8 +4369,9 @@ export class BotController {
 
     if (deltas.length > 0 && st.activeTurn) {
       const turnFiles = deltas.flatMap((d) => d.changedFiles || []);
-      st.activeTurn.files = turnFiles;
-      st.activeTurn.changedFiles = turnFiles;
+      const mergedFiles = Array.from(new Set([...(st.activeTurn.files || []), ...turnFiles]));
+      st.activeTurn.files = mergedFiles;
+      st.activeTurn.changedFiles = mergedFiles;
     }
 
     if (deltas.length === 0) {

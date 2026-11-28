@@ -3845,39 +3845,49 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const stagingMarker = path.join(gateRepo.path, 'staging_cli_disabled.marker');
     await fsp.rm(stagingMarker, { force: true });
 
-    const originalDeployEnabled = gateRepo.deployEnabled;
-    gateRepo.deployEnabled = false;
+    const originalRepoDeploy = ws.repos.map((r) => ({ repo: r, deployEnabled: r.deployEnabled }));
+    const originalWsJobs = [...(ws.jenkinsJobs || [])];
+    for (const r of ws.repos) {
+      r.deployEnabled = false;
+    }
+    ws.jenkinsJobs = [];
     gateRepo.stagingCommand = `echo "staging: $(pwd)" > "${stagingMarker}"`;
 
-    nextAgentBehavior = async () => {
-      await fsp.writeFile(path.join(gateRepo.path, 'disabled_deploy_test.txt'), 'testing disabled deploy\n');
-      return {
-        conversationId: 'conv-disabled-deploy',
-        response: 'Disabled deploy test change'
+    try {
+      nextAgentBehavior = async () => {
+        await fsp.writeFile(path.join(gateRepo.path, 'disabled_deploy_test.txt'), 'testing disabled deploy\n');
+        return {
+          conversationId: 'conv-disabled-deploy',
+          response: 'Disabled deploy test change'
+        };
       };
-    };
 
-    mockJenkins.triggeredBuilds.length = 0;
-    mockTg.clearSent();
-    await controller.handleUpdate(makeUserMsg('Change for disabled deploy test'));
-    await controller.waitForBackgroundTasks();
+      mockJenkins.triggeredBuilds.length = 0;
+      mockTg.clearSent();
+      await controller.handleUpdate(makeUserMsg('Change for disabled deploy test'));
+      await controller.waitForBackgroundTasks();
 
-    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
-    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+      await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+      await controller.waitForBackgroundTasks();
 
-    // Because deployEnabled is false, neither Jenkins nor CLI commands run, so it moves to AWAITING_OK_OR_REVERT
-    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
-    assert.equal(fs.existsSync(stagingMarker), false, 'Staging command should NOT execute when deployEnabled is false');
+      // Because deployEnabled is false and no workspace jobs are enabled, neither Jenkins nor CLI commands run
+      assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+      assert.equal(fs.existsSync(stagingMarker), false, 'Staging command should NOT execute when deployEnabled is false');
 
-    // Confirm prompt says no Jenkins/deploy mapped
-    assert.ok(mockTg.sentMessages.some((m) => /No Jenkins job is mapped/i.test(m.text)));
+      // Confirm prompt says no Jenkins/deploy mapped
+      assert.ok(mockTg.sentMessages.some((m) => /No Jenkins job is mapped/i.test(m.text)));
 
-    // Cleanup
-    await controller.handleUpdate(makeCallback('ok:yes:payments'));
-    await controller.waitForBackgroundTasks();
-    gateRepo.deployEnabled = originalDeployEnabled;
-    gateRepo.stagingCommand = '';
-    await fsp.rm(stagingMarker, { force: true });
+      await controller.handleUpdate(makeCallback('ok:yes:payments'));
+      await controller.waitForBackgroundTasks();
+    } finally {
+      for (const item of originalRepoDeploy) {
+        item.repo.deployEnabled = item.deployEnabled;
+      }
+      ws.jenkinsJobs = originalWsJobs;
+      gateRepo.stagingCommand = '';
+      await fsp.rm(stagingMarker, { force: true });
+    }
   });
 
   it('saves files in history next to each message', async () => {
@@ -3889,7 +3899,9 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const gateRepo = ws.repos.find((r) => r.name === 'payments_gate');
     assert.ok(gateRepo);
 
+    let capturedRunningAttachments = null;
     nextAgentBehavior = async () => {
+      capturedRunningAttachments = configStore.getWorkspaceState('payments').activeTurn?.attachments;
       await fsp.writeFile(path.join(gateRepo.path, 'history_files_test.txt'), 'testing files in history\n');
       return {
         conversationId: 'conv-history-files',
@@ -3897,8 +3909,20 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       };
     };
 
-    await controller.handleUpdate(makeUserMsg('Change to verify files saved in history'));
+    // Send a message with an attached screenshot/file + caption
+    await controller.handleUpdate(
+      makeUserMsg('Change to verify files saved in history', {
+        photo: [
+          { file_id: 'thumb_hist_1', width: 100, height: 100 },
+          { file_id: 'hires_history_photo_1', width: 1200, height: 800 }
+        ]
+      })
+    );
+    await new Promise((r) => setTimeout(r, 80));
     await controller.waitForBackgroundTasks();
+
+    assert.ok(Array.isArray(capturedRunningAttachments), 'Active turn should save attached files');
+    assert.equal(capturedRunningAttachments.length, 1);
 
     assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
     await controller.handleUpdate(makeCallback('cmt:yes:payments'));
@@ -3917,6 +3941,9 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(lastHistory, 'Expected history entry to exist');
     assert.ok(Array.isArray(lastHistory.files), 'Expected files array on history entry');
     assert.ok(lastHistory.files.includes('history_files_test.txt'), 'Expected changed file to be saved in history entry files');
+    assert.ok(Array.isArray(lastHistory.attachments), 'Expected attachments array on history entry');
+    assert.equal(lastHistory.attachments.length, 1, 'Expected attached photo saved next to message in history');
+    assert.equal(fs.existsSync(lastHistory.attachments[0].path), true, 'Expected saved attachment file to exist on disk');
   });
 
   it('stops agent, discards uncommitted changes, and runs new message from clean state without finalizing stopped turn', async () => {
