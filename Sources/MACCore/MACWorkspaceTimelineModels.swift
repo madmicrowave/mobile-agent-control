@@ -163,6 +163,53 @@ public enum MACWorkspaceTimelineReader {
         return remMinutes > 0 ? "\(hours)h \(remMinutes)m" : "\(hours)h"
     }
 
+    public static func isWorkspaceDictWorking(_ dict: [String: Any]) -> Bool {
+        if let explicitRunning = dict["isAgentRunning"] as? Bool {
+            return explicitRunning
+        }
+        if let phase = (dict["phase"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+           !phase.isEmpty {
+            return phase == "RUNNING_AGENT"
+        }
+        return false
+    }
+
+    public static func workingWorkspaceIds(workspaces: [MACWorkspace], dataDir: URL) -> Set<String> {
+        let stateURL = dataDir.appendingPathComponent("state.json")
+        guard let rawData = try? Data(contentsOf: stateURL),
+              let json = (try? JSONSerialization.jsonObject(with: rawData)) as? [String: Any],
+              let workspacesDict = json["workspaces"] as? [String: Any] else {
+            return []
+        }
+
+        var workingIds = Set<String>()
+        for workspace in workspaces {
+            let wsId = workspace.id
+            guard !wsId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let targetId = wsId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let targetPath = workspace.path.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let targetBase = URL(fileURLWithPath: workspace.path).lastPathComponent.lowercased()
+
+            for (key, val) in workspacesDict {
+                guard let dict = val as? [String: Any] else { continue }
+                let lowerKey = key.lowercased()
+                let isExact = lowerKey == targetId
+                let isPathMatch = !targetPath.isEmpty && (targetPath.hasSuffix("/" + lowerKey) || targetBase == lowerKey)
+                let isSlugMatch = !targetId.isEmpty && (targetId.contains(lowerKey) || lowerKey.contains(targetId))
+
+                if (isExact || isPathMatch || isSlugMatch) && isWorkspaceDictWorking(dict) {
+                    workingIds.insert(wsId)
+                    break
+                }
+            }
+        }
+        return workingIds
+    }
+
+    public static func isAgentWorking(workspace: MACWorkspace, dataDir: URL) -> Bool {
+        workingWorkspaceIds(workspaces: [workspace], dataDir: dataDir).contains(workspace.id)
+    }
+
     public static func loadTimeline(workspace: MACWorkspace, dataDir: URL, limit: Int = 100) -> [MACTimelineItem] {
         let stateURL = dataDir.appendingPathComponent("state.json")
         guard let rawData = try? Data(contentsOf: stateURL),

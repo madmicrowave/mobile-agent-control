@@ -727,6 +727,41 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
     let limitedItems = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir, limit: 1)
     expect(limitedItems.count == 4, "Expected 4 items with limit 1 (1 working + 2 queued + 1 history), got \(limitedItems.count)")
 
+    // Test working-agent status detection (green dot vs gray dot in Workspaces sidebar)
+    let workingStateJSON = """
+    {
+      "workspaces": {
+        "pb": {
+          "phase": "RUNNING_AGENT",
+          "activeTurn": { "id": "t-1", "prompt": "Working now" }
+        },
+        "ai-portfolio": {
+          "phase": "AWAITING_COMMIT_CHOICE",
+          "activeTurn": { "id": "t-2", "prompt": "Finished waiting commit" }
+        },
+        "dai": {
+          "phase": "IDLE"
+        }
+      }
+    }
+    """
+    let workingDir = tempDir.appendingPathComponent("working-dot-check", isDirectory: true)
+    try FileManager.default.createDirectory(at: workingDir, withIntermediateDirectories: true)
+    try workingStateJSON.write(to: workingDir.appendingPathComponent("state.json"), atomically: true, encoding: .utf8)
+
+    let wsWorking = MACWorkspace(id: "payment-book", label: "PAYMENT BOOK", path: "/Users/test/code/domonk/pb")
+    let wsAwaitingCommit = MACWorkspace(id: "ai-portfolio", label: "AI Portfolio", path: "/Users/test/code/domonk/madmicrowave")
+    let wsIdle = MACWorkspace(id: "dai", label: "DAI", path: "/Users/test/code/domonk/factory")
+
+    let activeIds = MACWorkspaceTimelineReader.workingWorkspaceIds(
+        workspaces: [wsWorking, wsAwaitingCommit, wsIdle],
+        dataDir: workingDir
+    )
+    expect(activeIds == Set(["payment-book"]), "Only RUNNING_AGENT workspace should show green working dot, got \(activeIds)")
+    expect(MACWorkspaceTimelineReader.isAgentWorking(workspace: wsWorking, dataDir: workingDir) == true, "RUNNING_AGENT workspace is working (green dot)")
+    expect(MACWorkspaceTimelineReader.isAgentWorking(workspace: wsAwaitingCommit, dataDir: workingDir) == false, "AWAITING_COMMIT_CHOICE workspace is not working (gray dot)")
+    expect(MACWorkspaceTimelineReader.isAgentWorking(workspace: wsIdle, dataDir: workingDir) == false, "IDLE workspace is not working (gray dot)")
+
     // 3. Test WorkspaceTimelineVM auto-refresh countdown, tick, and reset behavior, plus historyLimit buffer options
     let timelineVM = WorkspaceTimelineVM()
     expect(timelineVM.autoRefreshSecondsRemaining == 60, "Initial countdown is 60s")

@@ -2123,7 +2123,44 @@ private final class WorkspacesTabVM: ObservableObject {
     @Published var entries: [WorkspaceSidebarEntry] = []
     @Published var selectedUID: UUID?
     @Published var selectedDetailTab: WorkspaceDetailTab = .general
+    @Published var workingWorkspaceIds: Set<String> = []
     private var didBootstrap: Bool = false
+    private var activityPollTimer: Timer?
+
+    deinit {
+        activityPollTimer?.invalidate()
+    }
+
+    func refreshWorkingWorkspaces(dataDir: URL) {
+        let currentWorkspaces = entries.filter { !$0.isNewUnsaved }.map(\.draft)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let activeIds = MACWorkspaceTimelineReader.workingWorkspaceIds(
+                workspaces: currentWorkspaces,
+                dataDir: dataDir
+            )
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if self.workingWorkspaceIds != activeIds {
+                    self.workingWorkspaceIds = activeIds
+                }
+            }
+        }
+    }
+
+    func startActivityPolling(dataDir: URL) {
+        stopActivityPolling()
+        refreshWorkingWorkspaces(dataDir: dataDir)
+        activityPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refreshWorkingWorkspaces(dataDir: dataDir)
+            }
+        }
+    }
+
+    func stopActivityPolling() {
+        activityPollTimer?.invalidate()
+        activityPollTimer = nil
+    }
 
     func syncFromConfig(_ config: MACConfig, preferredWorkspaceId: String?) {
         let unsavedEntries = entries.filter { $0.isNewUnsaved }
@@ -2354,11 +2391,19 @@ private struct WorkspacesTabView: View {
         }
         .onAppear {
             vm.syncFromConfig(appState.config, preferredWorkspaceId: appState.selectedWorkspaceId)
+            vm.startActivityPolling(dataDir: appState.configStore.dataDir)
         }
         .onDisappear {
+            vm.stopActivityPolling()
             if let idx = selectedIndex, vm.entries.indices.contains(idx) {
                 saveWorkspaceEntry(at: idx, silent: true)
             }
+        }
+        .onChange(of: appState.isTaskRunning) { _, _ in
+            vm.refreshWorkingWorkspaces(dataDir: appState.configStore.dataDir)
+        }
+        .onChange(of: appState.activeStage) { _, _ in
+            vm.refreshWorkingWorkspaces(dataDir: appState.configStore.dataDir)
         }
     }
 
@@ -2390,6 +2435,10 @@ private struct WorkspacesTabView: View {
             return "AGY"
         }()
 
+        let isWorkingAgent = !entry.isNewUnsaved
+            && appState.status.isRunningOrStarting
+            && vm.workingWorkspaceIds.contains(entry.draft.id)
+
         return Button {
             if let currIdx = selectedIndex, vm.entries.indices.contains(currIdx) {
                 saveWorkspaceEntry(at: currIdx, silent: true)
@@ -2401,6 +2450,30 @@ private struct WorkspacesTabView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    Circle()
+                        .fill(
+                            isWorkingAgent
+                                ? Color(red: 0.16, green: 0.85, blue: 0.44)
+                                : (isSelected ? Color(white: 0.76) : Color.gray.opacity(0.65))
+                        )
+                        .frame(width: 8, height: 8)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isSelected
+                                        ? Color.white.opacity(isWorkingAgent ? 0.7 : 0.35)
+                                        : Color.black.opacity(0.12),
+                                    lineWidth: 0.75
+                                )
+                        )
+                        .shadow(
+                            color: isWorkingAgent ? Color.green.opacity(0.55) : .clear,
+                            radius: 2.5,
+                            x: 0,
+                            y: 0
+                        )
+                        .help(isWorkingAgent ? "Working agent active in workspace" : "No working agent in workspace")
+
                     Text(isLabelEmpty ? "New Workspace (empty)" : trimmedLabel)
                         .font(.system(size: 13, weight: isLabelEmpty ? .medium : .bold))
                         .italic(isLabelEmpty)
