@@ -1177,6 +1177,129 @@ private func testLogbookMultiRowSelectionAndSmartAutoScroll() throws {
     print("✓ Logbook multi-row selection & smart auto-scroll behavior passed")
 }
 
+@MainActor
+private func testWorkHistoryQueuedMessageEditAndDelete() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("mac-queue-edit-delete-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let ws = MACWorkspace(
+        id: "mac-os",
+        label: "MAC OS",
+        path: "/tmp/mac-os",
+        repos: []
+    )
+
+    // Write current test PID to bot.pid so MACWorkspaceTimelineQueueManager also verifies live queue-actions IPC files
+    let pidPayload: [String: Any] = [
+        "pid": Int(getpid()),
+        "mode": "background",
+        "startedAt": "2026-11-28T12:00:00Z"
+    ]
+    let pidData = try JSONSerialization.data(withJSONObject: pidPayload, options: [.prettyPrinted])
+    try pidData.write(to: tempDir.appendingPathComponent("bot.pid"))
+
+    let initialState: [String: Any] = [
+        "workspaces": [
+            "mac-os": [
+                "phase": "RUNNING_AGENT",
+                "isAgentRunning": true,
+                "activeTurn": [
+                    "id": "turn-active-1",
+                    "prompt": "Currently running turn",
+                    "user": "@tester",
+                    "createdAt": "2026-11-28T12:00:00Z"
+                ],
+                "messageQueue": [
+                    [
+                        "id": "q_1",
+                        "queueNumber": 1,
+                        "text": "Queued task one original",
+                        "user": "@tester",
+                        "chatId": 12345,
+                        "queueMessageId": 501,
+                        "userMessageId": 500,
+                        "queuedAt": "2026-11-28T12:01:00Z"
+                    ],
+                    [
+                        "id": "q_2",
+                        "queueNumber": 2,
+                        "text": "Queued task two original",
+                        "user": "@tester",
+                        "chatId": 12345,
+                        "queueMessageId": 503,
+                        "userMessageId": 502,
+                        "queuedAt": "2026-11-28T12:02:00Z"
+                    ]
+                ],
+                "history": [
+                    [
+                        "id": "hist-1",
+                        "prompt": "Completed historical task",
+                        "user": "@tester",
+                        "outcome": "CONFIRMED",
+                        "createdAt": "2026-11-28T11:50:00Z",
+                        "finishedAt": "2026-11-28T11:55:00Z"
+                    ]
+                ]
+            ]
+        ]
+    ]
+    let stateData = try JSONSerialization.data(withJSONObject: initialState, options: [.prettyPrinted])
+    try stateData.write(to: tempDir.appendingPathComponent("state.json"))
+
+    let vm = WorkspaceTimelineVM()
+    vm.items = MACWorkspaceTimelineReader.loadTimeline(workspace: ws, dataDir: tempDir)
+    expect(vm.items.count == 4, "Expected 2 queued + 1 working + 1 history item")
+
+    // Verify ONLY queued items have isQueued == true (working & history items must NOT allow edit/delete)
+    let workingItem = vm.items.first(where: { $0.id == "turn-active-1" })!
+    let historyItem = vm.items.first(where: { $0.id == "hist-1" })!
+    let q1Item = vm.items.first(where: { $0.id == "q_1" })!
+    let q2Item = vm.items.first(where: { $0.id == "q_2" })!
+
+    expect(q1Item.isQueued && q2Item.isQueued, "Queued items must report isQueued == true")
+    expect(!workingItem.isQueued && !historyItem.isQueued, "Working and completed items must report isQueued == false")
+
+    // Non-queued items must ignore edit/delete requests
+    vm.beginEditingQueuedItem(workingItem)
+    expect(vm.editingItemId == nil, "Must not enter edit mode for working item")
+    expect(
+        !vm.deleteQueuedItem(historyItem, workspace: ws, dataDir: tempDir, syncTelegramWhenBotStopped: false),
+        "Must not delete completed history item"
+    )
+
+    // Edit queued message q_2 via VM
+    vm.beginEditingQueuedItem(q2Item)
+    expect(vm.editingItemId == "q_2", "Entered edit mode for q_2")
+    expect(vm.editingDraftText == "Queued task two original", "Pre-populated draft text from q_2")
+    vm.editingDraftText = "Queued task two UPDATED from Work History"
+    let savedEdit = vm.saveEditedQueuedItem(workspace: ws, dataDir: tempDir, syncTelegramWhenBotStopped: false)
+    expect(savedEdit, "Editing queued item q_2 must succeed")
+    expect(vm.editingItemId == nil, "Edit mode exits cleanly after save")
+
+    let updatedQ2 = vm.items.first(where: { $0.id == "q_2" })!
+    expect(updatedQ2.message == "Queued task two UPDATED from Work History", "Updated message persisted in timeline")
+    expect(updatedQ2.isEdited, "Edited queued item marks isEdited == true")
+
+    // Delete queued message q_1 via VM -> q_2 must renumber from #2 to #1
+    let deletedQ1 = vm.deleteQueuedItem(q1Item, workspace: ws, dataDir: tempDir, syncTelegramWhenBotStopped: false)
+    expect(deletedQ1, "Deleting queued item q_1 must succeed")
+    expect(!vm.items.contains(where: { $0.id == "q_1" }), "Deleted queued item q_1 removed from timeline")
+
+    let renumberedQ2 = vm.items.first(where: { $0.id == "q_2" })!
+    expect(renumberedQ2.status == .queued(1), "Remaining queued item q_2 renumbered to Queued (#1)")
+    expect(renumberedQ2.resultLabel == "Queued (#1)", "Remaining queued item label updated to Queued (#1)")
+
+    // Verify 2 IPC action files (edit + delete) were written to queue-actions/ for live bot sync
+    let actionsDir = tempDir.appendingPathComponent("queue-actions", isDirectory: true)
+    let actionFiles = (try? FileManager.default.contentsOfDirectory(atPath: actionsDir.path))?.filter { $0.hasSuffix(".json") } ?? []
+    expect(actionFiles.count == 2, "Expected 2 queue-actions JSON files written for live bot sync")
+
+    print("✓ Work History queued-only edit & delete with Telegram queue-actions sync passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -1199,6 +1322,7 @@ struct MACAppTests {
                 try testResourceMonitorAndMetrics()
                 try testFilterPlaceholderStabilityAndClickOutsideUnfocus()
                 try testLogbookMultiRowSelectionAndSmartAutoScroll()
+                try testWorkHistoryQueuedMessageEditAndDelete()
             }
             print("✅ All MAC macOS native app tests passed!")
         } catch {

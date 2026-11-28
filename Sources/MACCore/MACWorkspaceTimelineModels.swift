@@ -84,9 +84,17 @@ public struct MACTimelineItem: Identifiable, Equatable {
     public let elapsedTime: String
     public let commits: [MACTimelineCommit]
     public let outcome: String?
+    public let isEdited: Bool
 
     public var totalFileCount: Int {
         attachments.count + files.count
+    }
+
+    public var isQueued: Bool {
+        if case .queued = status {
+            return true
+        }
+        return false
     }
 
     public init(
@@ -102,7 +110,8 @@ public struct MACTimelineItem: Identifiable, Equatable {
         isSuccess: Bool,
         elapsedTime: String,
         commits: [MACTimelineCommit] = [],
-        outcome: String? = nil
+        outcome: String? = nil,
+        isEdited: Bool = false
     ) {
         self.id = id
         self.status = status
@@ -117,6 +126,7 @@ public struct MACTimelineItem: Identifiable, Equatable {
         self.elapsedTime = elapsedTime
         self.commits = commits
         self.outcome = outcome
+        self.isEdited = isEdited
     }
 }
 
@@ -517,6 +527,8 @@ public enum MACWorkspaceTimelineReader {
                             claimedLegacyUploadPaths.insert(att.path)
                         }
                         let qFiles = entry["files"] as? [String] ?? []
+                        let editedAtRaw = (entry["editedAt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let isEdited = (editedAtRaw?.isEmpty == false)
 
                         queuedItems.append(MACTimelineItem(
                             id: qId,
@@ -531,7 +543,8 @@ public enum MACWorkspaceTimelineReader {
                             isSuccess: true,
                             elapsedTime: elapsed,
                             commits: [],
-                            outcome: "QUEUED"
+                            outcome: "QUEUED",
+                            isEdited: isEdited
                         ))
                     }
                 }
@@ -806,5 +819,446 @@ public enum MACWorkspaceTimelineReader {
             return nil
         }
         return runGitOutput(repoPath: target.repoPath, args: ["show", "\(latestSha):\(target.relFile)"])
+    }
+}
+
+// MARK: - Queued Message Edit & Delete Manager (State + Live Bot IPC + Direct Telegram Sync)
+
+public enum MACWorkspaceTimelineQueueManager {
+    public static func isBotProcessAlive(dataDir: URL) -> Bool {
+        let pidURL = dataDir.appendingPathComponent("bot.pid")
+        guard let raw = try? Data(contentsOf: pidURL),
+              let json = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else {
+            return false
+        }
+        let pidVal: Int32?
+        if let i = json["pid"] as? Int {
+            pidVal = Int32(i)
+        } else if let i32 = json["pid"] as? Int32 {
+            pidVal = i32
+        } else if let s = json["pid"] as? String, let parsed = Int32(s) {
+            pidVal = parsed
+        } else {
+            pidVal = nil
+        }
+        guard let pid = pidVal, pid > 0 else { return false }
+        return Darwin.kill(pid, 0) == 0
+    }
+
+    @discardableResult
+    public static func editQueuedMessage(
+        workspace: MACWorkspace,
+        dataDir: URL,
+        itemId: String,
+        newText: String,
+        syncTelegramWhenBotStopped: Bool = true
+    ) -> Bool {
+        let stateURL = dataDir.appendingPathComponent("state.json")
+        guard !itemId.isEmpty,
+              let rawData = try? Data(contentsOf: stateURL),
+              var rootJson = (try? JSONSerialization.jsonObject(with: rawData)) as? [String: Any],
+              var workspacesDict = rootJson["workspaces"] as? [String: Any] else {
+            return false
+        }
+
+        let cleanedText = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = findQueuedEntry(itemId: itemId, workspace: workspace, workspacesDict: workspacesDict) else {
+            return false
+        }
+
+        var wsObj = match.wsObj
+        var queue = match.queue
+        var entry = queue[match.index]
+        let hasPhotos = ((entry["photos"] as? [Any])?.isEmpty == false) || ((entry["attachments"] as? [Any])?.isEmpty == false)
+        if cleanedText.isEmpty && !hasPhotos {
+            return false
+        }
+
+        let isoNow = ISO8601DateFormatter().string(from: Date())
+        entry["text"] = cleanedText
+        entry["editedAt"] = isoNow
+        queue[match.index] = entry
+        wsObj["messageQueue"] = queue
+        workspacesDict[match.stateKey] = wsObj
+        rootJson["workspaces"] = workspacesDict
+
+        guard writeJSONAtomically(rootJson, to: stateURL) else {
+            return false
+        }
+
+        let wsLabel = workspace.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? workspace.id : workspace.label
+        let phase = (wsObj["phase"] as? String) ?? ""
+        let isAgentActive = MACWorkspaceTimelineReader.isWorkspaceDictWorking(wsObj)
+
+        if isBotProcessAlive(dataDir: dataDir) {
+            let actionPayload: [String: Any] = [
+                "action": "edit",
+                "workspaceId": workspace.id,
+                "itemId": itemId,
+                "text": cleanedText
+            ]
+            if let actionURL = writeQueueActionFile(actionPayload, dataDir: dataDir), syncTelegramWhenBotStopped {
+                let capturedEntry = entry
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.2) {
+                    if FileManager.default.fileExists(atPath: actionURL.path) {
+                        try? FileManager.default.removeItem(at: actionURL)
+                        sendDirectTelegramEdit(
+                            entry: capturedEntry,
+                            wsId: workspace.id,
+                            wsLabel: wsLabel,
+                            phase: phase,
+                            isAgentActive: isAgentActive,
+                            dataDir: dataDir
+                        )
+                    }
+                }
+            }
+        } else if syncTelegramWhenBotStopped {
+            let capturedEntry = entry
+            DispatchQueue.global(qos: .utility).async {
+                sendDirectTelegramEdit(
+                    entry: capturedEntry,
+                    wsId: workspace.id,
+                    wsLabel: wsLabel,
+                    phase: phase,
+                    isAgentActive: isAgentActive,
+                    dataDir: dataDir
+                )
+            }
+        }
+
+        return true
+    }
+
+    @discardableResult
+    public static func deleteQueuedMessage(
+        workspace: MACWorkspace,
+        dataDir: URL,
+        itemId: String,
+        syncTelegramWhenBotStopped: Bool = true
+    ) -> Bool {
+        let stateURL = dataDir.appendingPathComponent("state.json")
+        guard !itemId.isEmpty,
+              let rawData = try? Data(contentsOf: stateURL),
+              var rootJson = (try? JSONSerialization.jsonObject(with: rawData)) as? [String: Any],
+              var workspacesDict = rootJson["workspaces"] as? [String: Any] else {
+            return false
+        }
+
+        guard let match = findQueuedEntry(itemId: itemId, workspace: workspace, workspacesDict: workspacesDict) else {
+            return false
+        }
+
+        var wsObj = match.wsObj
+        var queue = match.queue
+        let removedEntry = queue.remove(at: match.index)
+        for idx in queue.indices {
+            queue[idx]["queueNumber"] = idx + 1
+        }
+        wsObj["messageQueue"] = queue
+        workspacesDict[match.stateKey] = wsObj
+        rootJson["workspaces"] = workspacesDict
+
+        guard writeJSONAtomically(rootJson, to: stateURL) else {
+            return false
+        }
+
+        let wsLabel = workspace.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? workspace.id : workspace.label
+        let phase = (wsObj["phase"] as? String) ?? ""
+        let isAgentActive = MACWorkspaceTimelineReader.isWorkspaceDictWorking(wsObj)
+
+        if isBotProcessAlive(dataDir: dataDir) {
+            var actionPayload: [String: Any] = [
+                "action": "delete",
+                "workspaceId": workspace.id,
+                "itemId": itemId
+            ]
+            if let chatId = removedEntry["chatId"] { actionPayload["chatId"] = chatId }
+            if let qMsgId = removedEntry["queueMessageId"] { actionPayload["queueMessageId"] = qMsgId }
+            if let uMsgId = removedEntry["userMessageId"] { actionPayload["userMessageId"] = uMsgId }
+
+            if let actionURL = writeQueueActionFile(actionPayload, dataDir: dataDir), syncTelegramWhenBotStopped {
+                let remainingQueue = queue
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.2) {
+                    if FileManager.default.fileExists(atPath: actionURL.path) {
+                        try? FileManager.default.removeItem(at: actionURL)
+                        sendDirectTelegramDelete(
+                            removedEntry: removedEntry,
+                            remainingQueue: remainingQueue,
+                            wsId: workspace.id,
+                            wsLabel: wsLabel,
+                            phase: phase,
+                            isAgentActive: isAgentActive,
+                            dataDir: dataDir
+                        )
+                    }
+                }
+            }
+        } else if syncTelegramWhenBotStopped {
+            let remainingQueue = queue
+            DispatchQueue.global(qos: .utility).async {
+                sendDirectTelegramDelete(
+                    removedEntry: removedEntry,
+                    remainingQueue: remainingQueue,
+                    wsId: workspace.id,
+                    wsLabel: wsLabel,
+                    phase: phase,
+                    isAgentActive: isAgentActive,
+                    dataDir: dataDir
+                )
+            }
+        }
+
+        return true
+    }
+
+    private static func findQueuedEntry(
+        itemId: String,
+        workspace: MACWorkspace,
+        workspacesDict: [String: Any]
+    ) -> (stateKey: String, wsObj: [String: Any], queue: [[String: Any]], index: Int)? {
+        let targetId = workspace.id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let targetPath = workspace.path.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let targetBase = URL(fileURLWithPath: workspace.path).lastPathComponent.lowercased()
+
+        // Prefer matching workspace keys first, then fallback to any workspace containing itemId
+        var orderedKeys: [String] = []
+        var fallbackKeys: [String] = []
+        for key in workspacesDict.keys {
+            let lowerKey = key.lowercased()
+            let isMatch = lowerKey == targetId ||
+                (!targetPath.isEmpty && (targetPath.hasSuffix("/" + lowerKey) || targetBase == lowerKey)) ||
+                (!targetId.isEmpty && (targetId.contains(lowerKey) || lowerKey.contains(targetId)))
+            if isMatch {
+                orderedKeys.append(key)
+            } else {
+                fallbackKeys.append(key)
+            }
+        }
+
+        for key in orderedKeys + fallbackKeys {
+            guard let wsObj = workspacesDict[key] as? [String: Any],
+                  let queue = wsObj["messageQueue"] as? [[String: Any]],
+                  let idx = queue.firstIndex(where: { ($0["id"] as? String) == itemId }) else {
+                continue
+            }
+            return (key, wsObj, queue, idx)
+        }
+        return nil
+    }
+
+    private static func writeJSONAtomically(_ jsonObject: [String: Any], to url: URL) -> Bool {
+        guard let outData = try? JSONSerialization.data(withJSONObject: jsonObject, options: [.prettyPrinted, .sortedKeys]) else {
+            return false
+        }
+        do {
+            try outData.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func writeQueueActionFile(_ payload: [String: Any], dataDir: URL) -> URL? {
+        let fm = FileManager.default
+        let dirURL = dataDir.appendingPathComponent("queue-actions", isDirectory: true)
+        try? fm.createDirectory(at: dirURL, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let tsMs = Int64(Date().timeIntervalSince1970 * 1000.0)
+        let fileURL = dirURL.appendingPathComponent("\(tsMs)-\(UUID().uuidString).json")
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
+            return nil
+        }
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            return fileURL
+        } catch {
+            return nil
+        }
+    }
+
+    private static func loadTelegramEndpoint(dataDir: URL) -> (token: String, baseURL: String)? {
+        let configURL = dataDir.appendingPathComponent("config.json")
+        guard let raw = try? Data(contentsOf: configURL),
+              let json = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any],
+              let token = (json["telegramBotToken"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            return nil
+        }
+        let rawBase = (json["telegramApiBaseUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = (rawBase?.isEmpty == false ? rawBase! : "https://api.telegram.org").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return (token, base)
+    }
+
+    private static func escapeTelegramHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    private static func buildTelegramCardPayload(
+        entry: [String: Any],
+        wsId: String,
+        wsLabel: String,
+        phase: String,
+        isAgentActive: Bool
+    ) -> (text: String, replyMarkup: [String: Any]) {
+        let itemId = (entry["id"] as? String) ?? ""
+        let queuePos = (entry["queueNumber"] as? Int) ?? 1
+        let isEdited = ((entry["editedAt"] as? String)?.isEmpty == false)
+        let maxLen = isEdited ? 280 : 140
+        let rawText = (entry["text"] as? String) ?? ""
+        let photosCount = (entry["photos"] as? [Any])?.count ?? 0
+        let preview: String
+        if !rawText.isEmpty {
+            preview = rawText.count > maxLen ? String(rawText.prefix(maxLen - 3)) + "…" : rawText
+        } else if photosCount > 0 {
+            preview = "[\(photosCount) file(s)]"
+        } else {
+            preview = "(Message)"
+        }
+        let editedBadge = isEdited ? " <i>(edited)</i>" : ""
+
+        if isAgentActive {
+            let text =
+                "📥 <b>Message queued (#\(queuePos)) for \(escapeTelegramHTML(wsLabel))\(editedBadge):</b>\n" +
+                "<i>\"\(escapeTelegramHTML(preview))\"</i>\n\n" +
+                "It will be executed before Jenkins deployment once the current agent finishes."
+            let kb: [[[String: Any]]] = [[["text": "🗑 Remove from Queue", "callback_data": "agent:dequeue:\(wsId):\(itemId)"]]]
+            return (text, ["inline_keyboard": kb])
+        }
+
+        var rows: [[[String: Any]]] = []
+        if phase == "AWAITING_COMMIT_CHOICE" || phase == "AWAITING_FIX_PROMPT" {
+            rows.append([["text": "🔧 Run as Fix Now", "callback_data": "agent:runfix:\(wsId):\(itemId)"]])
+        }
+        rows.append([["text": "🗑 Remove from Queue", "callback_data": "agent:dequeue:\(wsId):\(itemId)"]])
+        let text =
+            "📥 <b>Message queued (#\(queuePos)) for \(escapeTelegramHTML(wsLabel))\(editedBadge):</b>\n" +
+            "<i>\"\(escapeTelegramHTML(preview))\"</i>\n\n" +
+            "It will be executed once you complete or skip the current step."
+        return (text, ["inline_keyboard": rows])
+    }
+
+    @discardableResult
+    private static func postTelegramMethodSync(
+        endpoint: (token: String, baseURL: String),
+        method: String,
+        body: [String: Any]
+    ) -> Bool {
+        guard let url = URL(string: "\(endpoint.baseURL)/bot\(endpoint.token)/\(method)"),
+              let data = try? JSONSerialization.data(withJSONObject: body) else {
+            return false
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        req.timeoutInterval = 10
+
+        let sem = DispatchSemaphore(value: 0)
+        var succeeded = false
+        URLSession.shared.dataTask(with: req) { respData, _, _ in
+            if let respData = respData,
+               let parsed = (try? JSONSerialization.jsonObject(with: respData)) as? [String: Any],
+               (parsed["ok"] as? Bool) == true {
+                succeeded = true
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 12)
+        return succeeded
+    }
+
+    private static func sendDirectTelegramEdit(
+        entry: [String: Any],
+        wsId: String,
+        wsLabel: String,
+        phase: String,
+        isAgentActive: Bool,
+        dataDir: URL
+    ) {
+        guard let endpoint = loadTelegramEndpoint(dataDir: dataDir),
+              let chatId = entry["chatId"],
+              let queueMessageId = entry["queueMessageId"] else {
+            return
+        }
+        let card = buildTelegramCardPayload(
+            entry: entry,
+            wsId: wsId,
+            wsLabel: wsLabel,
+            phase: phase,
+            isAgentActive: isAgentActive
+        )
+        _ = postTelegramMethodSync(
+            endpoint: endpoint,
+            method: "editMessageText",
+            body: [
+                "chat_id": chatId,
+                "message_id": queueMessageId,
+                "text": card.text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": true,
+                "reply_markup": card.replyMarkup
+            ]
+        )
+    }
+
+    private static func sendDirectTelegramDelete(
+        removedEntry: [String: Any],
+        remainingQueue: [[String: Any]],
+        wsId: String,
+        wsLabel: String,
+        phase: String,
+        isAgentActive: Bool,
+        dataDir: URL
+    ) {
+        guard let endpoint = loadTelegramEndpoint(dataDir: dataDir) else { return }
+        if let chatId = removedEntry["chatId"], let queueMessageId = removedEntry["queueMessageId"] {
+            let deleted = postTelegramMethodSync(
+                endpoint: endpoint,
+                method: "deleteMessage",
+                body: ["chat_id": chatId, "message_id": queueMessageId]
+            )
+            if !deleted {
+                let rawText = (removedEntry["text"] as? String) ?? ""
+                let preview = rawText.isEmpty ? "(Message)" : (rawText.count > 70 ? String(rawText.prefix(67)) + "…" : rawText)
+                let fallbackText =
+                    "🗑 <b>Removed from queue for \(escapeTelegramHTML(wsLabel)):</b>\n" +
+                    "<i>\"\(escapeTelegramHTML(preview))\"</i>\n\n" +
+                    "This message was removed and will not be executed."
+                _ = postTelegramMethodSync(
+                    endpoint: endpoint,
+                    method: "editMessageText",
+                    body: [
+                        "chat_id": chatId,
+                        "message_id": queueMessageId,
+                        "text": fallbackText,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": true,
+                        "reply_markup": ["inline_keyboard": []]
+                    ]
+                )
+            }
+        }
+        if let chatId = removedEntry["chatId"], let userMessageId = removedEntry["userMessageId"] {
+            _ = postTelegramMethodSync(
+                endpoint: endpoint,
+                method: "deleteMessage",
+                body: ["chat_id": chatId, "message_id": userMessageId]
+            )
+        }
+        for rem in remainingQueue {
+            sendDirectTelegramEdit(
+                entry: rem,
+                wsId: wsId,
+                wsLabel: wsLabel,
+                phase: phase,
+                isAgentActive: isAgentActive,
+                dataDir: dataDir
+            )
+        }
     }
 }

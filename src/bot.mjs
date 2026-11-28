@@ -467,6 +467,10 @@ export async function startBotRunner({
   }
   await telegram.setMyCommands(BOT_COMMANDS).catch(() => {});
 
+  const queueActionsDir = path.join(dataDir, 'queue-actions');
+  await fsp.mkdir(queueActionsDir, { recursive: true, mode: 0o700 }).catch(() => {});
+  await controller.processExternalQueueActions().catch(() => {});
+
   if (autoStartQueued) {
     await controller.resumeQueuedMessagesOnStartup().catch((err) => {
       logger.warn?.(`[bot] Startup queue auto-start warning: ${err.message || err}`);
@@ -475,6 +479,25 @@ export async function startBotRunner({
 
   const abortController = new AbortController();
   let stopped = false;
+
+  let queueActionsWatcher = null;
+  try {
+    queueActionsWatcher = fs.watch(queueActionsDir, () => {
+      if (!stopped) {
+        controller.processExternalQueueActions().catch(() => {});
+      }
+    });
+    queueActionsWatcher.unref?.();
+  } catch {
+    queueActionsWatcher = null;
+  }
+
+  const queueActionsInterval = setInterval(() => {
+    if (!stopped) {
+      controller.processExternalQueueActions().catch(() => {});
+    }
+  }, 500);
+  queueActionsInterval.unref?.();
 
   const loopPromise = (async () => {
     let backoffMs = 2000;
@@ -506,6 +529,7 @@ export async function startBotRunner({
               );
             }
             if (typeof upd?.update_id === 'number') {
+              await controller.processExternalQueueActions().catch(() => {});
               configStore.state.telegramOffset = upd.update_id + 1;
               await configStore.saveState();
             }
@@ -547,6 +571,12 @@ export async function startBotRunner({
   async function stop() {
     if (stopped) return;
     stopped = true;
+    clearInterval(queueActionsInterval);
+    try {
+      queueActionsWatcher?.close();
+    } catch {
+      // ignore
+    }
     controller.prepareShutdown();
     abortController.abort();
     await loopPromise;

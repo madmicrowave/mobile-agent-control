@@ -4371,4 +4371,126 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
       await runner.stop();
     }
   });
+
+  it('edits and deletes queued messages from Work History queue-actions and updates Telegram immediately', async () => {
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'IDLE';
+    st.runningJenkins = null;
+    st.activeTurn = null;
+    st.messageQueue = [];
+    st.accumulatedCommits = [];
+    await configStore.saveState();
+
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    let turn1Resolver;
+    const turn1Promise = new Promise((resolve) => {
+      turn1Resolver = resolve;
+    });
+    const executedPrompts = [];
+
+    nextAgentBehavior = async (opts) => {
+      executedPrompts.push(opts.prompt);
+      if (executedPrompts.length === 1) {
+        await turn1Promise;
+      }
+      return {
+        conversationId: 'conv-queue-edit-delete',
+        response: `Completed: ${opts.prompt}`
+      };
+    };
+
+    // 1) Start Turn 1 so subsequent messages can be queued
+    await controller.handleUpdate(makeUserMsg('Active turn 1'));
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'RUNNING_AGENT');
+
+    // 2) Queue Message #1
+    mockTg.clearSent();
+    const q1UserUpdate = makeUserMsg('First queued draft to delete');
+    await controller.handleUpdate(q1UserUpdate);
+    const q1PromptMsg = mockTg.lastSent();
+    const q1Btn = q1PromptMsg.reply_markup.inline_keyboard[0][0];
+    await controller.handleUpdate(makeCallback(q1Btn.callback_data, q1PromptMsg.message_id));
+
+    // 3) Queue Message #2
+    mockTg.clearSent();
+    const q2UserUpdate = makeUserMsg('Second queued draft before edit');
+    await controller.handleUpdate(q2UserUpdate);
+    const q2PromptMsg = mockTg.lastSent();
+    const q2Btn = q2PromptMsg.reply_markup.inline_keyboard[0][0];
+    await controller.handleUpdate(makeCallback(q2Btn.callback_data, q2PromptMsg.message_id));
+
+    assert.equal(st.messageQueue.length, 2);
+    const firstQueued = { ...st.messageQueue[0] };
+    const secondQueued = { ...st.messageQueue[1] };
+    assert.equal(firstQueued.queueNumber, 1);
+    assert.equal(secondQueued.queueNumber, 2);
+
+    // 4) Simulate Work History Delete button writing queue-actions file for #1
+    const actionsDir = path.join(configStore.dataDir, 'queue-actions');
+    await fsp.mkdir(actionsDir, { recursive: true });
+    mockTg.clearSent();
+    mockTg.deletedMessages.length = 0;
+
+    await fsp.writeFile(
+      path.join(actionsDir, '1001-delete.json'),
+      JSON.stringify({
+        action: 'delete',
+        workspaceId: 'payments',
+        itemId: firstQueued.id,
+        chatId: firstQueued.chatId,
+        queueMessageId: firstQueued.queueMessageId,
+        userMessageId: firstQueued.userMessageId
+      })
+    );
+    await controller.processExternalQueueActions();
+
+    // Verify #1 was deleted in state AND deleted in Telegram, and #2 renumbered to #1 in Telegram
+    assert.equal(st.messageQueue.length, 1);
+    assert.equal(st.messageQueue[0].id, secondQueued.id);
+    assert.equal(st.messageQueue[0].queueNumber, 1);
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === firstQueued.queueMessageId),
+      'Expected queued notice message to be deleted in Telegram'
+    );
+    assert.ok(
+      mockTg.deletedMessages.some((d) => d.messageId === firstQueued.userMessageId),
+      'Expected original queued user message to be deleted in Telegram'
+    );
+    const renumberedEdit = mockTg.editedMessages.find((e) => e.message_id === secondQueued.queueMessageId);
+    assert.ok(renumberedEdit, 'Remaining queued message must be updated to #1 in Telegram');
+    assert.match(renumberedEdit.text, /Message queued \(#1\)/);
+
+    // 5) Simulate Work History Edit button writing queue-actions file for remaining #1
+    mockTg.clearSent();
+    await fsp.writeFile(
+      path.join(actionsDir, '1002-edit.json'),
+      JSON.stringify({
+        action: 'edit',
+        workspaceId: 'payments',
+        itemId: secondQueued.id,
+        text: 'Second queued prompt AFTER Work History edit'
+      })
+    );
+    await controller.processExternalQueueActions();
+
+    assert.equal(st.messageQueue[0].text, 'Second queued prompt AFTER Work History edit');
+    assert.ok(st.messageQueue[0].editedAt);
+    const tgEditedCard = mockTg.editedMessages.find((e) => e.message_id === secondQueued.queueMessageId);
+    assert.ok(tgEditedCard, 'Edited queued message must update in Telegram');
+    assert.match(tgEditedCard.text, /\(edited\)/);
+    assert.match(tgEditedCard.text, /Second queued prompt AFTER Work History edit/);
+
+    // 6) Finish Turn 1 (no changes) -> automatically executes edited queued message (NOT deleted one!)
+    turn1Resolver();
+    await controller.waitForBackgroundTasks();
+
+    assert.deepEqual(executedPrompts, [
+      'Active turn 1',
+      'Second queued prompt AFTER Work History edit'
+    ]);
+    assert.equal(st.messageQueue.length, 0);
+  });
 });

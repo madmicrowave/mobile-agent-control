@@ -13,10 +13,65 @@ public final class WorkspaceTimelineVM: ObservableObject {
     @Published public var expandedFileItemIds: Set<String> = []
     @Published public var previewingFile: FilePreviewItem?
     @Published public var historyLimit: Int
+    @Published public var editingItemId: String?
+    @Published public var editingDraftText: String = ""
 
     public init() {
         let stored = UserDefaults.standard.integer(forKey: "MACWorkHistoryLimit")
         self.historyLimit = Self.allowedLimits.contains(stored) ? stored : Self.defaultHistoryLimit
+    }
+
+    public func beginEditingQueuedItem(_ item: MACTimelineItem) {
+        guard item.isQueued else { return }
+        editingItemId = item.id
+        editingDraftText = item.message
+    }
+
+    public func cancelEditingQueuedItem() {
+        editingItemId = nil
+        editingDraftText = ""
+    }
+
+    @discardableResult
+    public func saveEditedQueuedItem(
+        workspace: MACWorkspace,
+        dataDir: URL,
+        syncTelegramWhenBotStopped: Bool = true
+    ) -> Bool {
+        guard let itemId = editingItemId else { return false }
+        let updated = MACWorkspaceTimelineQueueManager.editQueuedMessage(
+            workspace: workspace,
+            dataDir: dataDir,
+            itemId: itemId,
+            newText: editingDraftText,
+            syncTelegramWhenBotStopped: syncTelegramWhenBotStopped
+        )
+        editingItemId = nil
+        editingDraftText = ""
+        items = MACWorkspaceTimelineReader.loadTimeline(workspace: workspace, dataDir: dataDir, limit: historyLimit)
+        return updated
+    }
+
+    @discardableResult
+    public func deleteQueuedItem(
+        _ item: MACTimelineItem,
+        workspace: MACWorkspace,
+        dataDir: URL,
+        syncTelegramWhenBotStopped: Bool = true
+    ) -> Bool {
+        guard item.isQueued else { return false }
+        if editingItemId == item.id {
+            editingItemId = nil
+            editingDraftText = ""
+        }
+        let deleted = MACWorkspaceTimelineQueueManager.deleteQueuedMessage(
+            workspace: workspace,
+            dataDir: dataDir,
+            itemId: item.id,
+            syncTelegramWhenBotStopped: syncTelegramWhenBotStopped
+        )
+        items = MACWorkspaceTimelineReader.loadTimeline(workspace: workspace, dataDir: dataDir, limit: historyLimit)
+        return deleted
     }
 
     public func setHistoryLimit(_ newLimit: Int) {
@@ -202,6 +257,8 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                                 isLast: index == filteredItems.count - 1,
                                 isMessageExpanded: vm.expandedItemIds.contains(item.id),
                                 isFilesExpanded: vm.expandedFileItemIds.contains(item.id),
+                                isEditing: item.isQueued && vm.editingItemId == item.id,
+                                editingText: $vm.editingDraftText,
                                 onToggleMessageExpand: {
                                     vm.toggleMessageExpand(item.id)
                                 },
@@ -213,6 +270,18 @@ public struct WorkspaceWorkHistoryTimelineView: View {
                                 },
                                 onViewAllFiles: {
                                     vm.openMessageFilesPreview(item: item, workspace: workspace, initialPath: nil)
+                                },
+                                onStartEditQueued: {
+                                    vm.beginEditingQueuedItem(item)
+                                },
+                                onCancelEditQueued: {
+                                    vm.cancelEditingQueuedItem()
+                                },
+                                onSaveEditQueued: {
+                                    vm.saveEditedQueuedItem(workspace: workspace, dataDir: dataDir)
+                                },
+                                onDeleteQueued: {
+                                    vm.deleteQueuedItem(item, workspace: workspace, dataDir: dataDir)
                                 }
                             )
                         }
@@ -235,6 +304,7 @@ public struct WorkspaceWorkHistoryTimelineView: View {
             vm.stopAutoRefresh()
         }
         .onChange(of: workspace.id) { _, _ in
+            vm.cancelEditingQueuedItem()
             vm.resetCountdown()
             reloadTimeline()
         }
@@ -436,6 +506,10 @@ public struct WorkspaceWorkHistoryTimelineView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let loaded = MACWorkspaceTimelineReader.loadTimeline(workspace: workspace, dataDir: dataDir, limit: limit)
             DispatchQueue.main.async {
+                if let activeEditId = self.vm.editingItemId,
+                   !loaded.contains(where: { $0.id == activeEditId && $0.isQueued }) {
+                    self.vm.cancelEditingQueuedItem()
+                }
                 self.vm.items = loaded
                 self.vm.isReloading = false
             }
@@ -452,10 +526,16 @@ private struct TimelineItemRow: View {
     let isLast: Bool
     let isMessageExpanded: Bool
     let isFilesExpanded: Bool
+    let isEditing: Bool
+    @Binding var editingText: String
     let onToggleMessageExpand: () -> Void
     let onToggleFilesExpand: () -> Void
     let onViewFile: (String) -> Void
     let onViewAllFiles: () -> Void
+    let onStartEditQueued: () -> Void
+    let onCancelEditQueued: () -> Void
+    let onSaveEditQueued: () -> Void
+    let onDeleteQueued: () -> Void
 
     private var nodeColor: Color {
         switch item.status {
@@ -605,22 +685,38 @@ private struct TimelineItemRow: View {
 
                 // Message Text + Attached Message Files
                 VStack(alignment: .leading, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.message)
+                    if isEditing && item.isQueued {
+                        TextEditor(text: $editingText)
                             .font(.system(size: 12.5))
-                            .lineLimit(isMessageExpanded ? nil : 4)
-                            .textSelection(.enabled)
-                            .foregroundColor(.primary)
+                            .scrollContentBackground(.hidden)
+                            .padding(6)
+                            .frame(minHeight: 58, maxHeight: 160)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color(NSColor.textBackgroundColor))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.55), lineWidth: 1)
+                            )
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.message)
+                                .font(.system(size: 12.5))
+                                .lineLimit(isMessageExpanded ? nil : 4)
+                                .textSelection(.enabled)
+                                .foregroundColor(.primary)
 
-                        if item.message.count > 180 {
-                            Button {
-                                onToggleMessageExpand()
-                            } label: {
-                                Text(isMessageExpanded ? "Show less" : "Show full message...")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.accentColor)
+                            if item.message.count > 180 {
+                                Button {
+                                    onToggleMessageExpand()
+                                } label: {
+                                    Text(isMessageExpanded ? "Show less" : "Show full message...")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.accentColor)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
 
@@ -853,14 +949,24 @@ private struct TimelineItemRow: View {
                     .padding(.vertical, 6)
                     .background(Color.primary.opacity(0.02))
                     .cornerRadius(6)
-                } else if item.attachments.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 9))
-                        Text("Files: None modified")
-                            .font(.system(size: 10.5))
+                } else if item.attachments.isEmpty || item.isQueued {
+                    HStack(alignment: .center, spacing: 8) {
+                        if item.attachments.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 9))
+                                Text("Files: None modified")
+                                    .font(.system(size: 10.5))
+                            }
+                            .foregroundColor(.secondary.opacity(0.7))
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if item.isQueued {
+                            queuedBottomRightButtons
+                        }
                     }
-                    .foregroundColor(.secondary.opacity(0.7))
                 }
 
                 // Commits section (if present)
@@ -891,6 +997,13 @@ private struct TimelineItemRow: View {
                         }
                     }
                 }
+
+                if !item.files.isEmpty && item.isQueued {
+                    HStack(spacing: 6) {
+                        Spacer(minLength: 0)
+                        queuedBottomRightButtons
+                    }
+                }
             }
             .padding(12)
             .background(
@@ -902,6 +1015,94 @@ private struct TimelineItemRow: View {
                     .stroke(nodeColor.opacity(0.2), lineWidth: 1)
             )
             .padding(.bottom, 12)
+        }
+    }
+
+    private var canSaveEditedQueuedText: Bool {
+        let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty || !item.attachments.isEmpty
+    }
+
+    private var queuedBottomRightButtons: some View {
+        HStack(spacing: 6) {
+            if isEditing {
+                Button {
+                    onCancelEditQueued()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Cancel editing")
+
+                Button {
+                    onSaveEditQueued()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(canSaveEditedQueuedText ? Color.accentColor : Color.secondary.opacity(0.35))
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSaveEditedQueuedText)
+                .help("Save edited message and update in Telegram")
+            } else {
+                Button {
+                    onStartEditQueued()
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primary.opacity(0.82))
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Edit queued message")
+
+                Button {
+                    onDeleteQueued()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.red)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.red.opacity(0.10))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.red.opacity(0.24), lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Delete queued message")
+            }
         }
     }
 

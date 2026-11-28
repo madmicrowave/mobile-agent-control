@@ -235,6 +235,7 @@ export class BotController {
     this.agyUsageSummaryProvider = null;
     this.agyQuotaCache = { timestamp: 0, data: null };
     this.isShuttingDown = false;
+    this.queueActionDrainPromise = Promise.resolve();
   }
 
   prepareShutdown() {
@@ -1456,7 +1457,253 @@ export class BotController {
     };
   }
 
+  #findQueuedMessageTarget(wsId, itemId) {
+    if (!itemId) return null;
+    if (wsId) {
+      const ws = this.getWorkspace(wsId);
+      if (ws) {
+        const st = this.configStore.getWorkspaceState(ws.id);
+        const queueIndex = Array.isArray(st.messageQueue)
+          ? st.messageQueue.findIndex((entry) => entry && entry.id === itemId)
+          : -1;
+        if (queueIndex !== -1) {
+          return { ws, st, queueIndex, item: st.messageQueue[queueIndex] };
+        }
+      }
+    }
+
+    const workspacesMap = this.configStore.state?.workspaces || {};
+    const configuredWorkspaces = this.configStore.config?.workspaces || [];
+    for (const [stateKey, wsState] of Object.entries(workspacesMap)) {
+      if (!Array.isArray(wsState?.messageQueue)) continue;
+      const queueIndex = wsState.messageQueue.findIndex((entry) => entry && entry.id === itemId);
+      if (queueIndex !== -1) {
+        const lowerKey = stateKey.toLowerCase();
+        const ws =
+          this.getWorkspace(stateKey) ||
+          configuredWorkspaces.find(
+            (w) =>
+              w?.id?.toLowerCase() === lowerKey ||
+              w?.path?.toLowerCase().endsWith('/' + lowerKey)
+          ) || { id: stateKey, label: stateKey };
+        return { ws, st: wsState, queueIndex, item: wsState.messageQueue[queueIndex] };
+      }
+    }
+    return null;
+  }
+
+  #buildQueuedMessageTelegramCard(ws, st, item) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const queuePos = item.queueNumber || 1;
+    const maxPreviewLen = item.editedAt ? 280 : 140;
+    const rawText = String(item.text || '');
+    const preview = rawText
+      ? (rawText.length > maxPreviewLen ? rawText.slice(0, maxPreviewLen - 3) + '…' : rawText)
+      : (item.photos?.length ? `[${item.photos.length} file(s)]` : '(Message)');
+    const editedBadge = item.editedAt ? ' <i>(edited)</i>' : '';
+    const isAgentActive = Boolean(this.runtime.get(ws.id)?.abortAgent || st.phase === 'RUNNING_AGENT');
+
+    if (isAgentActive) {
+      return {
+        preview,
+        text:
+          `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}${editedBadge}:</b>\n` +
+          `<i>"${escapeHtml(preview)}"</i>\n\n` +
+          `It will be executed before Jenkins deployment once the current agent finishes.`,
+        replyMarkup: {
+          inline_keyboard: [[{ text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${item.id}` }]]
+        }
+      };
+    }
+
+    const queueBtns = [];
+    if (st.phase === 'AWAITING_COMMIT_CHOICE' || st.phase === 'AWAITING_FIX_PROMPT') {
+      queueBtns.push([
+        { text: '🔧 Run as Fix Now', callback_data: `agent:runfix:${ws.id}:${item.id}` }
+      ]);
+    }
+    queueBtns.push([
+      { text: '🗑 Remove from Queue', callback_data: `agent:dequeue:${ws.id}:${item.id}` }
+    ]);
+
+    return {
+      preview,
+      text:
+        `📥 <b>Message queued (#${queuePos}) for ${escapeHtml(wsLabel)}${editedBadge}:</b>\n` +
+        `<i>"${escapeHtml(preview)}"</i>\n\n` +
+        `It will be executed once you complete or skip the current step.`,
+      replyMarkup: {
+        inline_keyboard: queueBtns
+      }
+    };
+  }
+
+  async editQueuedMessage(wsId, itemId, newText) {
+    const target = this.#findQueuedMessageTarget(wsId, itemId);
+    if (!target) {
+      return { ok: false, reason: 'not_found' };
+    }
+    const { ws, st, item } = target;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const cleaned = String(newText ?? '').trim();
+    if (!cleaned && (!Array.isArray(item.photos) || item.photos.length === 0)) {
+      return { ok: false, reason: 'empty_text' };
+    }
+
+    item.text = cleaned;
+    item.editedAt = this.nowProvider().toISOString();
+    await this.configStore.saveState();
+
+    const card = this.#buildQueuedMessageTelegramCard(ws, st, item);
+    if (item.chatId && item.queueMessageId) {
+      await this.telegram
+        .editMessageText({
+          chatId: item.chatId,
+          messageId: item.queueMessageId,
+          text: card.text,
+          replyMarkup: card.replyMarkup
+        })
+        .catch(() => {});
+    }
+
+    this.log(
+      'agent',
+      `Edited queued message (#${item.queueNumber || 1}) for workspace "${wsLabel}": ${card.preview}`,
+      wsLabel
+    );
+    return { ok: true, item };
+  }
+
+  async deleteQueuedMessage(wsId, itemId, fallbackMeta = {}) {
+    const target = this.#findQueuedMessageTarget(wsId, itemId);
+    if (!target) {
+      if (fallbackMeta?.chatId && fallbackMeta?.queueMessageId) {
+        await this.telegram.deleteMessage(fallbackMeta.chatId, fallbackMeta.queueMessageId).catch(() => {});
+        if (fallbackMeta.userMessageId) {
+          await this.telegram.deleteMessage(fallbackMeta.chatId, fallbackMeta.userMessageId).catch(() => {});
+        }
+      }
+      return { ok: false, reason: 'not_found' };
+    }
+
+    const { ws, st, queueIndex } = target;
+    const wsLabel = this.getWorkspaceLabel(ws);
+    const [removedItem] = st.messageQueue.splice(queueIndex, 1);
+    st.messageQueue.forEach((qItem, idx) => {
+      qItem.queueNumber = idx + 1;
+    });
+    await this.configStore.saveState();
+
+    const preview = removedItem.text
+      ? (removedItem.text.length > 70 ? removedItem.text.slice(0, 67) + '…' : removedItem.text)
+      : (removedItem.photos?.length ? `[${removedItem.photos.length} file(s)]` : '(Message)');
+
+    const targetChatId = removedItem.chatId || fallbackMeta?.chatId;
+    const targetQueueMessageId = removedItem.queueMessageId || fallbackMeta?.queueMessageId;
+    const targetUserMessageId = removedItem.userMessageId || fallbackMeta?.userMessageId;
+
+    if (targetChatId && targetQueueMessageId) {
+      const deleted = await this.telegram.deleteMessage(targetChatId, targetQueueMessageId).catch(() => false);
+      if (!deleted) {
+        await this.telegram
+          .editMessageText({
+            chatId: targetChatId,
+            messageId: targetQueueMessageId,
+            text:
+              `🗑 <b>Removed from queue for ${escapeHtml(wsLabel)}:</b>\n` +
+              `<i>"${escapeHtml(preview)}"</i>\n\n` +
+              `This message was removed and will not be executed.`,
+            replyMarkup: { inline_keyboard: [] }
+          })
+          .catch(() => {});
+      }
+    }
+    if (targetChatId && targetUserMessageId) {
+      await this.telegram.deleteMessage(targetChatId, targetUserMessageId).catch(() => {});
+    }
+
+    for (const remaining of st.messageQueue) {
+      if (remaining?.chatId && remaining?.queueMessageId) {
+        const card = this.#buildQueuedMessageTelegramCard(ws, st, remaining);
+        await this.telegram
+          .editMessageText({
+            chatId: remaining.chatId,
+            messageId: remaining.queueMessageId,
+            text: card.text,
+            replyMarkup: card.replyMarkup
+          })
+          .catch(() => {});
+      }
+    }
+
+    this.log('agent', `Deleted queued message from workspace "${wsLabel}": ${preview}`, wsLabel);
+    return { ok: true, removedItem };
+  }
+
+  async processExternalQueueActions() {
+    const dataDir = this.configStore?.dataDir;
+    if (!dataDir) return 0;
+
+    const runDrain = async () => {
+      const actionsDir = path.join(dataDir, 'queue-actions');
+      let entries;
+      try {
+        entries = await fsp.readdir(actionsDir);
+      } catch {
+        return 0;
+      }
+
+      const jsonFiles = entries
+        .filter((name) => name.endsWith('.json') && !name.startsWith('.'))
+        .sort();
+      if (jsonFiles.length === 0) return 0;
+
+      let processed = 0;
+      for (const fileName of jsonFiles) {
+        const fullPath = path.join(actionsDir, fileName);
+        let raw;
+        try {
+          raw = await fsp.readFile(fullPath, 'utf8');
+        } catch {
+          continue;
+        }
+        await fsp.unlink(fullPath).catch(() => {});
+
+        let payload;
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        if (!payload || typeof payload !== 'object') continue;
+
+        const action = String(payload.action || '').toLowerCase();
+        const wsId = payload.workspaceId || '';
+        const itemId = payload.itemId || '';
+        if (!itemId) continue;
+
+        if (action === 'edit') {
+          await this.editQueuedMessage(wsId, itemId, payload.text ?? '');
+          processed += 1;
+        } else if (action === 'delete') {
+          await this.deleteQueuedMessage(wsId, itemId, {
+            chatId: payload.chatId ?? null,
+            queueMessageId: payload.queueMessageId ?? null,
+            userMessageId: payload.userMessageId ?? null
+          });
+          processed += 1;
+        }
+      }
+      return processed;
+    };
+
+    const next = this.queueActionDrainPromise.then(runDrain, runDrain);
+    this.queueActionDrainPromise = next.then(() => 0, () => 0);
+    return next;
+  }
+
   async #executeNextQueuedMessage(chatId, ws, st, { reason = 'skipping_jenkins' } = {}) {
+    await this.processExternalQueueActions();
     if (!st.messageQueue || st.messageQueue.length === 0) return false;
     const wsLabel = this.getWorkspaceLabel(ws);
     const nextItem = st.messageQueue.shift();
@@ -1536,6 +1783,7 @@ export class BotController {
    */
   async resumeQueuedMessagesOnStartup(fallbackChatId = null) {
     if (this.isShuttingDown) return [];
+    await this.processExternalQueueActions();
     const workspaces = this.configStore.config?.workspaces || [];
     const startedWorkspaceIds = [];
 
@@ -2445,6 +2693,7 @@ export class BotController {
       }
 
       if (data.startsWith('agent:runfix:')) {
+        await this.processExternalQueueActions();
         const parts = data.split(':');
         const wsId = parts[2];
         const candidateId = parts[3];
@@ -2501,6 +2750,7 @@ export class BotController {
       }
 
       if (data.startsWith('agent:dequeue:')) {
+        await this.processExternalQueueActions();
         const parts = data.split(':');
         const wsId = parts[2];
         const candidateId = parts[3];
