@@ -606,6 +606,7 @@ private struct TimelineItemRow: View {
                         Text(item.user)
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.primary)
+                            .lineLimit(1)
                     }
 
                     Text("•")
@@ -617,35 +618,13 @@ private struct TimelineItemRow: View {
                             .font(.system(size: 10))
                         Text(item.formattedDate)
                             .font(.system(size: 11))
+                            .lineLimit(1)
                     }
                     .foregroundColor(.secondary)
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
-                    // Attached files indicator + View Files button right next to message
-                    if !item.attachments.isEmpty {
-                        Button {
-                            if let firstAtt = item.attachments.first {
-                                onViewFile(firstAtt.path)
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "paperclip")
-                                    .font(.system(size: 9, weight: .semibold))
-                                Text("\(item.attachments.count)")
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(5)
-                            .foregroundColor(.accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("View \(item.attachments.count) file(s) attached with this message")
-                    }
-
-                    // Modified files count pill + View Files button
+                    // Files (x) button (single button for all saved files on this message, never wraps)
                     if item.totalFileCount > 0 {
                         Button {
                             onViewAllFiles()
@@ -653,9 +632,12 @@ private struct TimelineItemRow: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "eye")
                                     .font(.system(size: 9.5, weight: .semibold))
-                                Text("View Files (\(item.totalFileCount))")
+                                Text("Files (\(item.totalFileCount))")
                                     .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
                             }
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(Color.accentColor.opacity(0.12))
@@ -663,6 +645,7 @@ private struct TimelineItemRow: View {
                             .foregroundColor(.accentColor)
                         }
                         .buttonStyle(.plain)
+                        .fixedSize(horizontal: true, vertical: false)
                         .help("Open viewer for all files saved with this message")
                     }
 
@@ -675,7 +658,10 @@ private struct TimelineItemRow: View {
                             .font(.system(size: 9))
                         Text(item.elapsedTime)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
                     }
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(Color.primary.opacity(0.06))
@@ -713,9 +699,11 @@ private struct TimelineItemRow: View {
                                 } label: {
                                     Text(isMessageExpanded ? "Show less" : "Show full message...")
                                         .font(.system(size: 11, weight: .medium))
+                                        .lineLimit(1)
                                         .foregroundColor(.accentColor)
                                 }
                                 .buttonStyle(.plain)
+                                .fixedSize(horizontal: true, vertical: false)
                             }
                         }
                     }
@@ -779,10 +767,14 @@ private struct TimelineItemRow: View {
                                                                 .font(.system(size: 9))
                                                             Text("View")
                                                                 .font(.system(size: 10, weight: .semibold))
+                                                                .lineLimit(1)
                                                         }
+                                                        .lineLimit(1)
+                                                        .fixedSize(horizontal: true, vertical: false)
                                                         .foregroundColor(.accentColor)
                                                     }
                                                     .buttonStyle(.plain)
+                                                    .fixedSize(horizontal: true, vertical: false)
                                                     .help("View attached file")
 
                                                     Button {
@@ -856,10 +848,14 @@ private struct TimelineItemRow: View {
                                         .font(.system(size: 9.5))
                                     Text("View All")
                                         .font(.system(size: 10.5, weight: .medium))
+                                        .lineLimit(1)
                                 }
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .foregroundColor(.accentColor)
                             }
                             .buttonStyle(.plain)
+                            .fixedSize(horizontal: true, vertical: false)
                             .help("Browse all modified files in viewer")
 
                             if item.files.count > 3 {
@@ -871,9 +867,11 @@ private struct TimelineItemRow: View {
                                 } label: {
                                     Text(isFilesExpanded ? "Show fewer" : "Show all \(item.files.count) files")
                                         .font(.system(size: 10.5, weight: .medium))
+                                        .lineLimit(1)
                                         .foregroundColor(.accentColor)
                                 }
                                 .buttonStyle(.plain)
+                                .fixedSize(horizontal: true, vertical: false)
                             }
                         }
 
@@ -907,13 +905,17 @@ private struct TimelineItemRow: View {
                                                 .font(.system(size: 9.5))
                                             Text("View")
                                                 .font(.system(size: 10.5, weight: .medium))
+                                                .lineLimit(1)
                                         }
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2.5)
                                         .background(Color.primary.opacity(0.06))
                                         .cornerRadius(4)
                                     }
                                     .buttonStyle(.plain)
+                                    .fixedSize(horizontal: true, vertical: false)
                                     .help("View file content and diff right here")
 
                                     // Open in Default App
@@ -1112,7 +1114,10 @@ private struct TimelineItemRow: View {
                 .font(.system(size: 10, weight: .bold))
             Text(item.resultLabel)
                 .font(.system(size: 11, weight: .bold))
+                .lineLimit(1)
         }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(nodeColor.opacity(0.12))
@@ -1455,11 +1460,14 @@ public struct MACFilePreviewSheet: View {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.right.square")
                             Text("Open in App")
+                                .lineLimit(1)
                         }
                         .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Open with default editor or viewer")
 
                     Button {
@@ -1468,11 +1476,14 @@ public struct MACFilePreviewSheet: View {
                         HStack(spacing: 4) {
                             Image(systemName: "folder")
                             Text("Finder")
+                                .lineLimit(1)
                         }
                         .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Show file in Finder")
                 }
 
@@ -1482,11 +1493,14 @@ public struct MACFilePreviewSheet: View {
                     HStack(spacing: 3) {
                         Image(systemName: sheetState.copiedPath ? "checkmark" : "doc.on.doc")
                         Text(sheetState.copiedPath ? "Copied" : "Copy Path")
+                            .lineLimit(1)
                     }
                     .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
 
                 if let textToCopy = displayedText, !textToCopy.isEmpty {
                     Button {
@@ -1495,11 +1509,14 @@ public struct MACFilePreviewSheet: View {
                         HStack(spacing: 3) {
                             Image(systemName: sheetState.copiedContent ? "checkmark" : "doc.on.clipboard")
                             Text(sheetState.copiedContent ? "Copied" : "Copy Content")
+                                .lineLimit(1)
                         }
                         .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
                 Divider().frame(height: 18)
@@ -1510,6 +1527,7 @@ public struct MACFilePreviewSheet: View {
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
