@@ -58,6 +58,9 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
             return event
         }
 
+        // Unfocus any focused text input when clicking outside of inputs
+        MACOutsideClickUnfocusMonitor.installIfNeeded()
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleScreenParametersChanged),

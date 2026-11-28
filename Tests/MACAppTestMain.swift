@@ -753,10 +753,19 @@ private func testWorkspaceDetailTabsAndTimelineHistory() throws {
 
     timelineVM.resetCountdown()
     expect(timelineVM.autoRefreshSecondsRemaining == 60, "resetCountdown resets back to 60s")
+    expect(timelineVM.formattedAutoRefreshCountdown == "60", "60s formatted as 60")
 
+    timelineVM.autoRefreshSecondsRemaining = 9
+    expect(timelineVM.formattedAutoRefreshCountdown == "09", "9s zero-padded as 09")
+    timelineVM.autoRefreshSecondsRemaining = 3
+    expect(timelineVM.formattedAutoRefreshCountdown == "03", "3s zero-padded as 03")
+    timelineVM.autoRefreshSecondsRemaining = 2
+    expect(timelineVM.formattedAutoRefreshCountdown == "02", "2s zero-padded as 02")
     timelineVM.autoRefreshSecondsRemaining = 1
+    expect(timelineVM.formattedAutoRefreshCountdown == "01", "1s zero-padded as 01")
     timelineVM.tick { refreshTriggered = true }
     expect(timelineVM.autoRefreshSecondsRemaining == 60, "Tick from 1 resets countdown to 60s")
+    expect(timelineVM.formattedAutoRefreshCountdown == "60", "Reset countdown formatted as 60")
     expect(refreshTriggered, "Automatic refresh triggered when counter reaches 0")
 
     timelineVM.startAutoRefresh {}
@@ -967,6 +976,92 @@ private func testAutoStartPersistenceAndBotWatchdogRecovery() throws {
     print("✓ Auto-start persistence & watchdog crash recovery passed")
 }
 
+@MainActor
+private func testFilterPlaceholderStabilityAndClickOutsideUnfocus() throws {
+    let win = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+        styleMask: [.titled, .closable],
+        backing: .buffered,
+        defer: false
+    )
+    let root = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+    win.contentView = root
+
+    let filterView = MACSearchFilterContainerView(placeholder: "Search messages, files, users...")
+    filterView.translatesAutoresizingMaskIntoConstraints = true
+    filterView.frame = NSRect(x: 20, y: 240, width: 215, height: 26)
+    root.addSubview(filterView)
+
+    let normalInput = NSTextField(frame: NSRect(x: 20, y: 180, width: 200, height: 24))
+    normalInput.isEditable = true
+    root.addSubview(normalInput)
+
+    root.layoutSubtreeIfNeeded()
+    let placeholderFrameBeforeFocus = filterView.placeholderLabel.frame
+    expect(!filterView.placeholderLabel.isHidden, "Placeholder visible when empty")
+    expect(filterView.clearButton.isHidden, "Clear button hidden when empty")
+
+    // Focus filter input -> placeholder must NOT move by even 0.01pt
+    _ = win.makeFirstResponder(filterView.inputField)
+    root.layoutSubtreeIfNeeded()
+    let placeholderFrameDuringFocus = filterView.placeholderLabel.frame
+    expect(
+        placeholderFrameBeforeFocus == placeholderFrameDuringFocus,
+        "Filter placeholder frame must remain identical on focus (before: \(placeholderFrameBeforeFocus), after: \(placeholderFrameDuringFocus))"
+    )
+    expect(!filterView.placeholderLabel.isHidden, "Placeholder stays visible while focused and empty")
+
+    // Typing hides placeholder cleanly and shows clear button without shifting input frame
+    let inputFrameBeforeType = filterView.inputField.frame
+    filterView.updateText("deploy")
+    root.layoutSubtreeIfNeeded()
+    expect(filterView.placeholderLabel.isHidden, "Placeholder hidden when filter text is non-empty")
+    expect(!filterView.clearButton.isHidden, "Clear button visible when filter text is non-empty")
+    expect(filterView.inputField.frame == inputFrameBeforeType, "Input frame stays fixed when clear button appears")
+
+    // Clicking inside focused filter field or normal editable text field must NOT unfocus
+    expect(
+        !MACOutsideClickUnfocusMonitor.shouldUnfocusFirstResponder(
+            in: win,
+            clickLocationInWindow: NSPoint(x: 80, y: 252)
+        ),
+        "Clicking inside focused filter must keep focus"
+    )
+    expect(
+        !MACOutsideClickUnfocusMonitor.shouldUnfocusFirstResponder(
+            in: win,
+            clickLocationInWindow: NSPoint(x: 80, y: 192)
+        ),
+        "Clicking into another editable text field must allow direct focus transition"
+    )
+
+    // Clicking outside on empty background must unfocus the focused field
+    expect(
+        MACOutsideClickUnfocusMonitor.shouldUnfocusFirstResponder(
+            in: win,
+            clickLocationInWindow: NSPoint(x: 400, y: 50)
+        ),
+        "Clicking outside inputs must unfocus focused field"
+    )
+    win.makeFirstResponder(nil)
+    expect(filterView.inputField.currentEditor() == nil, "Filter input unfocused after outside click")
+
+    // Also test focusing normalInput and clicking outside
+    _ = win.makeFirstResponder(normalInput)
+    expect(normalInput.currentEditor() != nil, "normalInput focused")
+    expect(
+        MACOutsideClickUnfocusMonitor.shouldUnfocusFirstResponder(
+            in: win,
+            clickLocationInWindow: NSPoint(x: 420, y: 60)
+        ),
+        "Clicking outside normalInput must unfocus it"
+    )
+    win.makeFirstResponder(nil)
+    expect(normalInput.currentEditor() == nil, "normalInput unfocused after outside click")
+
+    print("✓ Refresh 2-digit counter, zero-jump Filter placeholder & click-outside unfocus passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -987,6 +1082,7 @@ struct MACAppTests {
                 try testMenuBarControllerAndBotLifecycle()
                 try testAutoStartPersistenceAndBotWatchdogRecovery()
                 try testResourceMonitorAndMetrics()
+                try testFilterPlaceholderStabilityAndClickOutsideUnfocus()
             }
             print("✅ All MAC macOS native app tests passed!")
         } catch {

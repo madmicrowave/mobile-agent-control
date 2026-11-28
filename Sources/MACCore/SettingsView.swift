@@ -386,6 +386,9 @@ public struct MACSettingsRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 800, minHeight: 640)
+        .onAppear {
+            MACOutsideClickUnfocusMonitor.installIfNeeded()
+        }
     }
 
     private var tabNavigationBar: some View {
@@ -4733,30 +4736,16 @@ private struct LiveActivityTabView: View {
 
             Spacer(minLength: 6)
 
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 11))
-                TextField("Filter logs...", text: $vm.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
-                    .frame(maxWidth: .infinity)
-                Button {
-                    vm.searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .opacity(vm.searchText.isEmpty ? 0 : 1)
-                .disabled(vm.searchText.isEmpty)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.primary.opacity(0.04))
-            .cornerRadius(6)
-            .frame(width: 150)
+            MACSearchFilterField("Filter logs...", text: $vm.searchText)
+                .frame(width: 160, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                )
 
             Toggle(isOn: $vm.autoScroll) {
                 Text("Auto-scroll")

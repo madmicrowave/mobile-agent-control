@@ -78,6 +78,10 @@ public final class WorkspaceTimelineVM: ObservableObject {
     @Published public var autoRefreshSecondsRemaining: Int = 60
     private var timer: Timer?
 
+    public var formattedAutoRefreshCountdown: String {
+        String(format: "%02d", max(0, autoRefreshSecondsRemaining))
+    }
+
     public func resetCountdown() {
         autoRefreshSecondsRemaining = 60
     }
@@ -258,21 +262,35 @@ public struct WorkspaceWorkHistoryTimelineView: View {
 
             Spacer()
 
-            // Refresh button (same height: 26 as filter input)
+            // Refresh button (fixed width + 2-digit 01, 02, 03...60 counter, same height: 26 as filter input)
             Button {
                 vm.resetCountdown()
                 reloadTimeline()
             } label: {
-                HStack(spacing: 4) {
-                    if vm.isReloading {
-                        ProgressView().controlSize(.mini)
-                        Text("Refreshing...")
-                    } else {
+                ZStack {
+                    // Hidden template anchors width so counter ticks (60 -> 09 -> 01) and Refreshing... never change button width
+                    HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
-                        Text("Refresh (\(vm.autoRefreshSecondsRemaining)s)")
+                        Text("Refresh (00s)")
+                            .monospacedDigit()
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+
+                    HStack(spacing: 4) {
+                        if vm.isReloading {
+                            ProgressView().controlSize(.mini)
+                            Text("Refreshing…")
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Refresh (\(vm.formattedAutoRefreshCountdown)s)")
+                                .monospacedDigit()
+                        }
                     }
                 }
                 .font(.system(size: 11.5, weight: .medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 8)
                 .frame(height: 26)
                 .background(
@@ -286,38 +304,21 @@ public struct WorkspaceWorkHistoryTimelineView: View {
             }
             .buttonStyle(.plain)
             .frame(height: 26)
+            .fixedSize(horizontal: true, vertical: false)
             .disabled(vm.isReloading)
-            .help("Refresh work history now (auto-refreshes in \(vm.autoRefreshSecondsRemaining)s)")
+            .help("Refresh work history now (auto-refreshes in \(vm.formattedAutoRefreshCountdown)s)")
 
-            // Search filter field (same height: 26 as refresh button)
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 11))
-                TextField("Search messages, files, users...", text: $vm.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
-                if !vm.searchText.isEmpty {
-                    Button {
-                        vm.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(width: 200, height: 26)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-            )
+            // Search filter field (zero-jump placeholder on focus, same height: 26 as refresh button)
+            MACSearchFilterField("Search messages, files, users...", text: $vm.searchText)
+                .frame(width: 215, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                )
         }
         .padding(.horizontal, 14)
         .padding(.top, 4)
