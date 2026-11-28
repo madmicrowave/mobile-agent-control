@@ -1097,6 +1097,86 @@ private func testFilterPlaceholderStabilityAndClickOutsideUnfocus() throws {
     print("✓ Refresh 2-digit counter, zero-jump Filter placeholder & click-outside unfocus passed")
 }
 
+@MainActor
+private func testLogbookMultiRowSelectionAndSmartAutoScroll() throws {
+    let win = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 700, height: 140),
+        styleMask: [.titled],
+        backing: .buffered,
+        defer: false
+    )
+    let console = MACLogbookConsoleContainerView(frame: NSRect(x: 0, y: 0, width: 700, height: 140))
+    win.contentView = console
+    console.layoutSubtreeIfNeeded()
+
+    var entries: [MACLogbookConsoleEntry] = (1...30).map { i in
+        MACLogbookConsoleEntry(
+            id: UInt64(i),
+            badgeLabel: "AGENT",
+            badgeColor: .systemPurple,
+            lineNumber: String(format: "%03d", i),
+            workspaceName: "MAC OS",
+            messageText: "Log row number \(i) — detailed telemetry output line",
+            messageColor: .white
+        )
+    }
+
+    var observedAutoScroll: Bool = true
+    console.onAutoScrollChanged = { val in
+        observedAutoScroll = val
+    }
+
+    console.updateContent(entries: entries, emptyMessage: "Empty", scrollTrigger: 0)
+    console.layoutSubtreeIfNeeded()
+
+    expect(console.textView.isSelectable && !console.textView.isEditable, "Logbook textView must be selectable and read-only")
+    expect(console.isAutoScrollEnabled && observedAutoScroll, "Auto-scroll initially enabled at bottom")
+    expect(console.isScrolledToBottom(), "Console initially scrolled to latest log at bottom")
+
+    // Multi-row selection across multiple log rows
+    let fullStr = console.textView.string as NSString
+    let row1Range = fullStr.range(of: "Log row number 1")
+    let row4Range = fullStr.range(of: "Log row number 4")
+    expect(row1Range.location != NSNotFound && row4Range.location != NSNotFound, "Expected multiple rows rendered in single NSTextView")
+    let multiRowSelection = NSRange(
+        location: row1Range.location,
+        length: (row4Range.location + row4Range.length) - row1Range.location
+    )
+    console.textView.setSelectedRange(multiRowSelection)
+    let selectedSubstring = fullStr.substring(with: console.textView.selectedRange())
+    expect(selectedSubstring.contains("Log row number 1") && selectedSubstring.contains("Log row number 4"), "Multi-row selection spans rows 1 through 4")
+
+    // Simulate user scrolling UP -> autoScroll must disable immediately
+    console.scrollView.contentView.scroll(to: NSPoint(x: 0, y: 0))
+    console.scrollView.reflectScrolledClipView(console.scrollView.contentView)
+    console.handleUserScroll(scrollingDeltaY: 24.0)
+
+    expect(!console.isAutoScrollEnabled && !observedAutoScroll, "Scrolling up must disable autoScroll")
+    expect(!console.isScrolledToBottom(), "Console is no longer at bottom after scrolling up")
+
+    // Append new logs while scrolled up -> must NOT auto-scroll to end, and must preserve multi-row selection
+    entries.append(MACLogbookConsoleEntry(
+        id: 31,
+        badgeLabel: "TG",
+        badgeColor: .systemCyan,
+        lineNumber: "031",
+        workspaceName: "MAC OS",
+        messageText: "Newly arrived log line 31 while user is scrolled up",
+        messageColor: .white
+    ))
+    console.updateContent(entries: entries, emptyMessage: "Empty", scrollTrigger: 0)
+    expect(!console.isScrolledToBottom(), "Appending logs while scrolled up must NOT jump to bottom")
+    expect(console.scrollView.contentView.bounds.origin.y == 0, "Scroll offset stays locked at top while scrolled up")
+    expect(console.textView.selectedRange() == multiRowSelection, "Active multi-row selection preserved when new logs arrive")
+
+    // Clicking "Latest" (incrementing scrollTrigger) -> enables autoScroll and scrolls to latest log
+    console.updateContent(entries: entries, emptyMessage: "Empty", scrollTrigger: 1)
+    expect(console.isAutoScrollEnabled && observedAutoScroll, "Clicking Latest re-enables autoScroll")
+    expect(console.isScrolledToBottom(), "Clicking Latest scrolls console to latest log at bottom")
+
+    print("✓ Logbook multi-row selection & smart auto-scroll behavior passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -1118,6 +1198,7 @@ struct MACAppTests {
                 try testAutoStartPersistenceAndBotWatchdogRecovery()
                 try testResourceMonitorAndMetrics()
                 try testFilterPlaceholderStabilityAndClickOutsideUnfocus()
+                try testLogbookMultiRowSelectionAndSmartAutoScroll()
             }
             print("✅ All MAC macOS native app tests passed!")
         } catch {

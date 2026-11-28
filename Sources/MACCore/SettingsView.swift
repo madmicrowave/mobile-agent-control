@@ -4809,8 +4809,47 @@ private struct LiveActivityTabView: View {
 
             Spacer(minLength: 6)
 
-            MACSearchFilterField("Filter logs...", text: $vm.searchText)
-                .frame(width: 160, height: 26)
+            Button {
+                vm.autoScroll = true
+                vm.scrollTrigger &+= 1
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text("Latest")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundColor(!vm.autoScroll && !filteredLines.isEmpty ? .accentColor : .primary)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(!vm.autoScroll && !filteredLines.isEmpty ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(!vm.autoScroll && !filteredLines.isEmpty ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Scroll to latest log and resume auto-scroll")
+            .disabled(filteredLines.isEmpty)
+            .fixedSize()
+
+            Button {
+                appState.clearLogs()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text(appState.logLines.isEmpty ? "Clear" : "Clear (\(formattedLogCount))")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.primary.opacity(0.06))
@@ -4819,125 +4858,60 @@ private struct LiveActivityTabView: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                 )
-
-            Toggle(isOn: $vm.autoScroll) {
-                Text("Auto-scroll")
-                    .font(.system(size: 11.5))
-                    .lineLimit(1)
-                    .fixedSize()
             }
-            .toggleStyle(.checkbox)
-            .fixedSize()
-
-            Button {
-                vm.autoScroll = true
-                vm.scrollTrigger &+= 1
-            } label: {
-                Label("Latest", systemImage: "arrow.down.to.line")
-                    .lineLimit(1)
-            }
-            .controlSize(.small)
-            .help("Scroll to latest log")
-            .disabled(filteredLines.isEmpty)
-            .fixedSize()
-
-            Button {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                let textToCopy = filteredLines.map(\.rawText).joined(separator: "\n")
-                pb.setString(textToCopy, forType: .string)
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-                    .lineLimit(1)
-            }
-            .controlSize(.small)
-            .disabled(filteredLines.isEmpty)
-            .fixedSize()
-
-            Button {
-                appState.clearLogs()
-            } label: {
-                Label(appState.logLines.isEmpty ? "Clear" : "Clear (\(formattedLogCount))", systemImage: "trash")
-                    .lineLimit(1)
-            }
-            .controlSize(.small)
+            .buttonStyle(.plain)
             .help(appState.logLines.isEmpty ? "Clear log buffer" : "Clear \(formattedLogCount) log lines from buffer")
             .disabled(appState.logLines.isEmpty)
             .fixedSize()
+
+            // Filter logs input placed last on the right
+            MACSearchFilterField("Filter logs...", text: $vm.searchText)
+                .frame(width: 175, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                )
         }
     }
 
-    private var logConsoleBox: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    if appState.logLines.isEmpty {
-                        VStack(spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "info.circle")
-                                    .foregroundColor(.secondary)
-                                if appState.status.isRunningOrStarting {
-                                    Text("No logs currently.")
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram, AI turns & CI/CD logs.")
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if filteredLines.isEmpty {
-                        let catLabel = vm.selectedCategories.contains(.all) ? "All" : vm.selectedCategories.map(\.rawValue).sorted().joined(separator: ", ")
-                        Text("No logs matching '\(catLabel)' or search filter '\(vm.searchText)'.")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 8)
-                    } else {
-                        ForEach(filteredLines) { item in
-                            logRow(for: item)
-                                .id(item.id)
-                        }
-                    }
-
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .id("LOG_BOTTOM_SENTINEL")
-                }
-                .padding(10)
-            }
-            .onAppear {
-                scrollToLatest(proxy: proxy, animated: false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                    scrollToLatest(proxy: proxy, animated: false)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    scrollToLatest(proxy: proxy, animated: false)
-                }
-            }
-            .onChange(of: appState.logRevision) { _, _ in
-                scrollToLatest(proxy: proxy, animated: false)
-            }
-            .onChange(of: appState.logLines.count) { _, _ in
-                scrollToLatest(proxy: proxy, animated: false)
-            }
-            .onChange(of: vm.autoScroll) { _, isAuto in
-                if isAuto {
-                    scrollToLatest(proxy: proxy, animated: true)
-                }
-            }
-            .onChange(of: vm.scrollTrigger) { _, _ in
-                scrollToLatest(proxy: proxy, animated: true)
-            }
-            .onChange(of: vm.selectedCategories) { _, _ in
-                scrollToLatest(proxy: proxy, animated: false)
-            }
-            .onChange(of: vm.searchText) { _, _ in
-                scrollToLatest(proxy: proxy, animated: false)
-            }
+    private var consoleEntries: [MACLogbookConsoleEntry] {
+        filteredLines.map { item in
+            MACLogbookConsoleEntry(
+                id: item.id,
+                badgeLabel: item.badgeLabel,
+                badgeColor: NSColor(item.badgeColor),
+                lineNumber: item.lineNumber,
+                workspaceName: item.workspaceName,
+                messageText: item.messageText,
+                messageColor: NSColor(item.messageColor)
+            )
         }
+    }
+
+    private var emptyConsoleMessage: String {
+        if appState.logLines.isEmpty {
+            if appState.status.isRunningOrStarting {
+                return "No logs currently."
+            }
+            return "Bot is currently stopped. Click 'Start...' in the MAC menu bar icon (or top-right) and enter a session password to begin streaming live Telegram, AI turns & CI/CD logs."
+        }
+        let catLabel = vm.selectedCategories.contains(.all)
+            ? "All"
+            : vm.selectedCategories.map(\.rawValue).sorted().joined(separator: ", ")
+        return "No logs matching '\(catLabel)' or search filter '\(vm.searchText)'."
+    }
+
+    private var logConsoleBox: some View {
+        MACLogbookConsoleView(
+            entries: consoleEntries,
+            emptyMessage: emptyConsoleMessage,
+            autoScroll: $vm.autoScroll,
+            scrollTrigger: vm.scrollTrigger
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -4947,26 +4921,6 @@ private struct LiveActivityTabView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
-    }
-
-    private func scrollToLatest(proxy: ScrollViewProxy, animated: Bool) {
-        guard vm.autoScroll else { return }
-        let targetId = filteredLines.last?.id
-        DispatchQueue.main.async {
-            if let lastId = targetId {
-                if animated {
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo(lastId, anchor: .bottom)
-                        proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
-                    }
-                } else {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                    proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
-                }
-            } else {
-                proxy.scrollTo("LOG_BOTTOM_SENTINEL", anchor: .bottom)
-            }
-        }
     }
 
     private var resourceMetricsFooterBar: some View {
@@ -5172,67 +5126,6 @@ private struct LiveActivityTabView: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .stroke(isRunning ? Color.orange.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: 1)
         )
-    }
-
-    private func logRow(for item: MACParsedLogLine) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            // Source Badge
-            HStack(spacing: 3) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 8.5))
-                Text(item.badgeLabel)
-                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(item.badgeColor.opacity(0.85))
-            .cornerRadius(4)
-            .frame(width: 66, alignment: .center)
-
-            // Index / line number
-            Text(item.lineNumber)
-                .font(.system(size: 10.5, design: .monospaced))
-                .foregroundColor(.secondary.opacity(0.55))
-                .frame(width: 38, alignment: .trailing)
-
-            // Workspace Badge
-            if let ws = item.workspaceName, !ws.isEmpty {
-                Button {
-                    vm.searchText = ws
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 8))
-                        Text(ws)
-                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color(red: 0.18, green: 0.48, blue: 0.88).opacity(0.9))
-                    .cornerRadius(4)
-                }
-                .buttonStyle(.plain)
-                .help("Filter logs by \(ws)")
-            }
-
-            // Message text
-            Text(item.messageText)
-                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                .foregroundColor(item.messageColor)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if item.isLoading {
-                ProgressView()
-                    .controlSize(.mini)
-                    .padding(.trailing, 4)
-            }
-        }
-        .padding(.vertical, 1.5)
-        .padding(.horizontal, 4)
     }
 
     private func countForCategory(_ cat: MACLogCategory) -> Int {

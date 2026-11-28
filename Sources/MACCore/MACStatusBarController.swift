@@ -48,10 +48,17 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
         buildMenuItems()
         refreshUI()
 
-        // Ensure Cmd+V, Cmd+C, Cmd+A work reliably across all text fields
+        // Ensure Cmd+V, Cmd+C, Cmd+A work reliably across all text fields and selectable log consoles
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "v" {
-                if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
+            let cmdOnly = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            if cmdOnly, let ch = event.charactersIgnoringModifiers?.lowercased() {
+                if ch == "v", NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
+                    return nil
+                }
+                if ch == "c", NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
+                    return nil
+                }
+                if ch == "a", NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
                     return nil
                 }
             }
