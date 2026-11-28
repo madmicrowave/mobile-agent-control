@@ -4971,7 +4971,7 @@ private struct LiveActivityTabView: View {
 
     private var resourceMetricsFooterBar: some View {
         HStack(spacing: 8) {
-            // App Usage
+            // App Usage (fixed width across CPU/RAM number changes)
             metricCard(
                 icon: "macwindow",
                 iconColor: .blue,
@@ -4982,7 +4982,7 @@ private struct LiveActivityTabView: View {
                 isActive: true
             )
 
-            // Bot Runtime Usage
+            // Bot Runtime Usage (fixed width across CPU/RAM number changes)
             let isBotRunning = appState.status.isRunningOrStarting
             metricCard(
                 icon: "paperplane.fill",
@@ -4994,12 +4994,29 @@ private struct LiveActivityTabView: View {
                 isActive: isBotRunning
             )
 
-            // Agent in Work Usage
-            agentMetricCard
+            Spacer(minLength: 8)
 
-            Spacer(minLength: 0)
+            // Agent in Work Usage aligned right, hugging content without stretching to fill width
+            agentMetricCard
         }
         .padding(.vertical, 2)
+    }
+
+    private func fixedMetricValue(_ value: String, template: String, isMuted: Bool = false) -> some View {
+        ZStack(alignment: .trailing) {
+            Text(template)
+                .font(.system(size: 10.5, weight: isMuted ? .regular : .semibold, design: .monospaced))
+                .monospacedDigit()
+                .opacity(0)
+                .accessibilityHidden(true)
+
+            Text(value)
+                .font(.system(size: 10.5, weight: isMuted ? .regular : .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundColor(isMuted ? .secondary.opacity(0.8) : .primary)
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func metricCard(
@@ -5025,9 +5042,7 @@ private struct LiveActivityTabView: View {
                     Text("CPU")
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text(cpu)
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.primary)
+                    fixedMetricValue(cpu, template: "000.0%")
 
                     Text("•")
                         .font(.system(size: 9))
@@ -5036,9 +5051,7 @@ private struct LiveActivityTabView: View {
                     Text("RAM")
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text(ram)
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.primary)
+                    fixedMetricValue(ram, template: "0000.0 MB")
                 }
             } else if let status = statusText {
                 Text(status)
@@ -5046,6 +5059,8 @@ private struct LiveActivityTabView: View {
                     .foregroundColor(.secondary)
             }
         }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(
@@ -5062,6 +5077,8 @@ private struct LiveActivityTabView: View {
         let isRunning = appState.isTaskRunning
         let agentCPU = resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedCPU : "0.0%"
         let agentRAM = resourceMonitor.activeAgentProcessCount > 0 ? resourceMonitor.agentMetrics.formattedMemory : "0.0 MB"
+        let trimmedStage = appState.activeStage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cappedStage = trimmedStage.count > 28 ? String(trimmedStage.prefix(27)) + "…" : trimmedStage
 
         return HStack(spacing: 6) {
             Image(systemName: "brain.head.profile")
@@ -5077,12 +5094,11 @@ private struct LiveActivityTabView: View {
                     ProgressView()
                         .controlSize(.mini)
 
-                    if !appState.activeStage.isEmpty && appState.activeStage != "Idle" {
-                        Text(appState.activeStage)
+                    if !cappedStage.isEmpty && cappedStage != "Idle" {
+                        Text(cappedStage)
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundColor(.orange)
                             .lineLimit(1)
-                            .frame(maxWidth: 220, alignment: .leading)
                     }
 
                     Text("•")
@@ -5092,9 +5108,7 @@ private struct LiveActivityTabView: View {
                     Text("CPU")
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text(agentCPU)
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.primary)
+                    fixedMetricValue(agentCPU, template: "000.0%")
 
                     Text("•")
                         .font(.system(size: 9))
@@ -5103,14 +5117,22 @@ private struct LiveActivityTabView: View {
                     Text("RAM")
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text(agentRAM)
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.primary)
+                    fixedMetricValue(agentRAM, template: "0000.0 MB")
 
                     if resourceMonitor.activeAgentProcessCount > 1 {
-                        Text("(\(resourceMonitor.activeAgentProcessCount) procs)")
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundColor(.secondary)
+                        ZStack(alignment: .trailing) {
+                            Text("(00 procs)")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .monospacedDigit()
+                                .opacity(0)
+                                .accessibilityHidden(true)
+
+                            Text("(\(resourceMonitor.activeAgentProcessCount) procs)")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                 }
             } else {
@@ -5124,12 +5146,22 @@ private struct LiveActivityTabView: View {
                     Text("•")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary.opacity(0.6))
-                    Text("CPU 0.0% • RAM 0.0 MB")
-                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary.opacity(0.8))
+                    Text("CPU")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    fixedMetricValue("0.0%", template: "000.0%", isMuted: true)
+                    Text("•")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Text("RAM")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                    fixedMetricValue("0.0 MB", template: "0000.0 MB", isMuted: true)
                 }
             }
         }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(
