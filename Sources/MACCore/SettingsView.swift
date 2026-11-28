@@ -3343,28 +3343,30 @@ private struct WorkspaceEditorFormView: View {
                                                 .frame(width: 140)
                                         }
 
-                                        Toggle("No Origin", isOn: $repo.noOrigin)
+                                        Toggle("No origin", isOn: $repo.noOrigin)
                                             .toggleStyle(.checkbox)
                                             .font(.system(size: 11.5))
                                             .help("If enabled, commits changes locally without pushing (no git remote origin).")
 
-                                        Button {
-                                            if let url = MACPathUtils.getGitRemoteWebURL(repoPath: repo.path) {
-                                                NSWorkspace.shared.open(url)
-                                            } else {
-                                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path)
+                                        if !repo.noOrigin {
+                                            Button {
+                                                if let url = MACPathUtils.getGitRemoteWebURL(repoPath: repo.path) {
+                                                    NSWorkspace.shared.open(url)
+                                                } else {
+                                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path)
+                                                }
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "arrow.up.right.square")
+                                                        .font(.system(size: 11))
+                                                    Text("Open Repository")
+                                                        .font(.system(size: 11.5, weight: .medium))
+                                                }
                                             }
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "arrow.up.right.square")
-                                                    .font(.system(size: 11))
-                                                Text("Open Repository")
-                                                    .font(.system(size: 11.5, weight: .medium))
-                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.small)
+                                            .help("Open remote Git repository in browser (GitHub, GitLab, Bitbucket)")
                                         }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
-                                        .help("Open remote Git repository in browser (GitHub, GitLab, Bitbucket)")
 
                                         Spacer()
                                     }

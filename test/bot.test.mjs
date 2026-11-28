@@ -3833,6 +3833,53 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     gateRepo.prodCommand = '';
   });
 
+  it('skips repository CLI commands when Deploy checkbox is unchecked (deployEnabled: false)', async () => {
+    await controller.handleUpdate(makeCallback('ide:sel:payments'));
+    await controller.handleUpdate(makeCallback('chat:new:payments'));
+    mockTg.clearSent();
+
+    const ws = controller.getWorkspace('payments');
+    const gateRepo = ws.repos.find((r) => r.name === 'payments_gate');
+    assert.ok(gateRepo);
+
+    const stagingMarker = path.join(gateRepo.path, 'staging_cli_disabled.marker');
+    await fsp.rm(stagingMarker, { force: true });
+
+    const originalDeployEnabled = gateRepo.deployEnabled;
+    gateRepo.deployEnabled = false;
+    gateRepo.stagingCommand = `echo "staging: $(pwd)" > "${stagingMarker}"`;
+
+    nextAgentBehavior = async () => {
+      await fsp.writeFile(path.join(gateRepo.path, 'disabled_deploy_test.txt'), 'testing disabled deploy\n');
+      return {
+        conversationId: 'conv-disabled-deploy',
+        response: 'Disabled deploy test change'
+      };
+    };
+
+    mockJenkins.triggeredBuilds.length = 0;
+    mockTg.clearSent();
+    await controller.handleUpdate(makeUserMsg('Change for disabled deploy test'));
+    await controller.waitForBackgroundTasks();
+
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_COMMIT_CHOICE');
+    await controller.handleUpdate(makeCallback('cmt:yes:payments'));
+
+    // Because deployEnabled is false, neither Jenkins nor CLI commands run, so it moves to AWAITING_OK_OR_REVERT
+    assert.equal(configStore.getWorkspaceState('payments').phase, 'AWAITING_OK_OR_REVERT');
+    assert.equal(fs.existsSync(stagingMarker), false, 'Staging command should NOT execute when deployEnabled is false');
+
+    // Confirm prompt says no Jenkins/deploy mapped
+    assert.ok(mockTg.sentMessages.some((m) => /No Jenkins job is mapped/i.test(m.text)));
+
+    // Cleanup
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    await controller.waitForBackgroundTasks();
+    gateRepo.deployEnabled = originalDeployEnabled;
+    gateRepo.stagingCommand = '';
+    await fsp.rm(stagingMarker, { force: true });
+  });
+
   it('stops agent, discards uncommitted changes, and runs new message from clean state without finalizing stopped turn', async () => {
     await controller.handleUpdate(makeCallback('ide:sel:payments'));
     await controller.handleUpdate(makeCallback('chat:new:payments'));
@@ -3882,7 +3929,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.deepEqual(stAfterStop.pendingDeltas, []);
 
     // Verify stop message was sent and NO commit prompt was sent
-    assert.ok(mockTg.sentMessages.some((m) => /Agent stopped.*Changes from the stopped request were discarded/i.test(m.text)));
+    assert.ok(mockTg.sentMessages.some((m) => /Agent stopped[\s\S]*Changes from the stopped request were discarded/i.test(m.text)));
     assert.ok(!mockTg.sentMessages.some((m) => /Awaiting commit choice|Commit changes|Changes made in Payments/i.test(m.text)));
 
     // 3) User sends fixed message 2
@@ -3909,6 +3956,11 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.handleUpdate(makeCallback('cmt:yes:payments'));
     await controller.waitForBackgroundTasks();
 
+    // Skip Jenkins and confirm OK to finalize Turn 2 into history and return workspace to IDLE
+    await controller.handleUpdate(makeCallback('rjnk:no:payments'));
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    await controller.waitForBackgroundTasks();
+
     // 5) Verify work history only contains Turn 2, NOT Turn 1
     const finalSt = configStore.getWorkspaceState('payments');
     const historyEntries = finalSt.history || [];
@@ -3921,8 +3973,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
   });
 
   it('commits changes locally without pushing to git origin when repo has noOrigin: true', async () => {
-    const ws = configStore.getWorkspace('payments');
-    const targetRepo = ws.repos.find((r) => r.name === 'core');
+    const ws = controller.getWorkspace('payments');
+    const targetRepo = ws.repos.find((r) => r.name === 'payments_gate') || ws.repos[0];
     assert.ok(targetRepo);
     const prevNoOrigin = targetRepo.noOrigin;
     targetRepo.noOrigin = true;
@@ -3963,12 +4015,15 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
 
     // Cleanup
     targetRepo.noOrigin = prevNoOrigin;
+    await controller.handleUpdate(makeCallback('rjnk:no:payments'));
+    await controller.handleUpdate(makeCallback('ok:yes:payments'));
+    await controller.waitForBackgroundTasks();
     await fsp.rm(testFile, { force: true });
   });
 
   it('runs fix message before queued messages, claims commit after fix, and then continues with queued messages', async () => {
-    const ws = configStore.getWorkspace('payments');
-    const targetRepo = ws.repos.find((r) => r.name === 'core');
+    const ws = controller.getWorkspace('payments');
+    const targetRepo = ws.repos.find((r) => r.name === 'payments_gate') || ws.repos[0];
     assert.ok(targetRepo);
 
     const testFile = path.join(targetRepo.path, 'turn-and-fix.txt');
@@ -3996,7 +4051,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.ok(queuePromptMsg, 'Should prompt with Apply as Fix vs Queue Message options');
 
     // Extract candidate ID from queue button
-    const queueBtn = queuePromptMsg.replyMarkup?.inline_keyboard?.[1]?.[0];
+    const queueBtn = queuePromptMsg.reply_markup?.inline_keyboard?.[1]?.[0];
     assert.ok(queueBtn && queueBtn.callback_data?.startsWith('agent:queue:'));
     await controller.handleUpdate(makeCallback(queueBtn.callback_data));
 
@@ -4011,7 +4066,7 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     const fixPromptMsg = mockTg.sentMessages.find((m) => /waiting for your commit choice/i.test(m.text));
     assert.ok(fixPromptMsg);
 
-    const fixBtn = fixPromptMsg.replyMarkup?.inline_keyboard?.[0]?.[0];
+    const fixBtn = fixPromptMsg.reply_markup?.inline_keyboard?.[0]?.[0];
     assert.ok(fixBtn && fixBtn.callback_data?.startsWith('agent:fix:'));
 
     // Fix agent modifies the file before queued messages run
@@ -4059,6 +4114,8 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     assert.equal(st.messageQueue?.length, 0, 'Queue should now be empty');
 
     // Cleanup
+    await controller.handleUpdate(makeCallback('cmt:no:payments'));
+    await controller.waitForBackgroundTasks();
     await fsp.rm(testFile, { force: true });
   });
 });

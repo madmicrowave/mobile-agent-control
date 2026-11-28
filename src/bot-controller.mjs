@@ -375,13 +375,15 @@ export class BotController {
   hasWorkspaceProdDeploy(ws) {
     if (this.hasWorkspaceProdJenkins(ws)) return true;
     if (Array.isArray(ws?.repos)) {
-      return ws.repos.some((r) => Boolean(r.prodCommand && String(r.prodCommand).trim()));
+      return ws.repos.some((r) => r.deployEnabled !== false && Boolean(r.prodCommand && String(r.prodCommand).trim()));
     }
     return false;
   }
 
   resolveDeployedRepos(ws, st, { isAfterRevert = false, mode = 'matched' } = {}) {
-    const repos = Array.isArray(ws?.repos) ? ws.repos : [];
+    const repos = (Array.isArray(ws?.repos) ? ws.repos : []).filter(
+      (r) => r.deployEnabled !== false
+    );
     if (repos.length === 0) return [];
     if (mode === 'all') return repos;
 
@@ -3657,7 +3659,6 @@ export class BotController {
     st.phase = 'RUNNING_AGENT';
     st.lastError = null;
     st.pendingDeltas = [];
-    let isAbortedByUser = false;
 
     if (isAddFix && st.activeTurn) {
       st.activeTurn.fixPrompt = promptText;
@@ -3776,6 +3777,7 @@ export class BotController {
     { promptOverride = '', isAutoCommitFix = false, isAddFix = false, originalErrorLog = '' } = {}
   ) {
     let lastProgressEditMs = 0;
+    let isAbortedByUser = false;
 
     const wsLabel = this.getWorkspaceLabel(ws);
     const effectiveModel = this.resolveWorkspaceModel(ws);
