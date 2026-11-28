@@ -4134,7 +4134,7 @@ private struct TutorialTabView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick Setup & Telegram Workspace Control Guide")
                         .font(.system(size: 15.5, weight: .bold))
-                    Text("Follow these 5 quick steps to control your local macOS Workspaces, Git branches, and Staging → Prod Jenkins builds from Telegram.")
+                    Text("Follow these 5 steps to configure Settings, modular Workspaces, CI/CD pipelines, and Logbook monitoring for remote control from Telegram.")
                         .font(.system(size: 12.5))
                         .foregroundColor(.secondary)
                 }
@@ -4146,14 +4146,15 @@ private struct TutorialTabView: View {
                     icon: "paperplane.circle.fill",
                     accent: .blue,
                     bullets: [
-                        "Open @BotFather in Telegram and send /newbot.",
-                        "Pick any display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
-                        "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into Settings → Telegram.",
-                        "Click 'Verify Token' (settings auto-save automatically)."
+                        "Open @BotFather in Telegram and send /newbot to create your personal bot.",
+                        "Pick a display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
+                        "Copy the HTTP API Token (123456789:ABC-DEF...), paste it into Settings → Telegram, and click 'Verify Token' (all changes auto-save).",
+                        "Optional in Settings → General: enable macOS Autostart and use Backup & Restore (Export... / Import...) for encrypted JSON config backups."
                     ],
-                    actionTitle: "Open @BotFather",
+                    actionTitle: "@BotFather",
                     actionURL: "https://t.me/BotFather",
-                    secondaryTitle: "Settings →",
+                    secondaryTitle: "Settings",
+                    secondaryIcon: "gearshape.2.fill",
                     secondaryAction: { appState.selectedTab = .general }
                 )
 
@@ -4165,75 +4166,67 @@ private struct TutorialTabView: View {
                     bullets: [
                         "Open @userinfobot in Telegram and tap Start — it replies with your numeric Telegram User ID (e.g. 652545688).",
                         "Paste your numeric ID into 'Allowed Telegram User IDs' inside Settings → Telegram (comma-separate multiple IDs if needed).",
-                        "Even if someone guesses your bot's @username, unauthorized User IDs are silently ignored."
+                        "Even if someone discovers your bot's @username, unauthorized User IDs are silently ignored."
                     ],
-                    actionTitle: "Open @userinfobot",
+                    actionTitle: "@userinfobot",
                     actionURL: "https://t.me/userinfobot",
-                    secondaryTitle: nil,
-                    secondaryAction: nil
+                    secondaryTitle: "Settings",
+                    secondaryIcon: "gearshape.2.fill",
+                    secondaryAction: { appState.selectedTab = .general }
                 )
 
                 tutorialStepCard(
                     stepNumber: "3",
-                    title: "Configure AI Engines (Tabs & Checkmarks) & Workspaces",
+                    title: "Configure AI Engines, CI/CD & Modular Workspaces",
                     icon: "folder.fill.badge.gearshape",
                     accent: .purple,
                     bullets: [
-                        "In Settings → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom / Local). Each tab displays a live configured indicator.",
-                        "Connect Personal Local Models: Under Direct API → Custom / Local, connect private local models (Ollama, LM Studio, vLLM, LocalAI, Jan) via http://localhost:11434/v1 — 100% offline and air-gapped with zero API keys required!",
-                        "Open the 'Workspaces' tab, click '+' in the left sidebar to add a Workspace, enter a Label, and click 'Browse...' to select your project folder.",
-                        "Select your Workspace's AI Engine (AGY CLI [default], Aider CLI, or Direct API), 1-click 'Scan Git Repos', and pick your AI Model (Gemini, Claude, DeepSeek, OpenAI, Qwen, or Local).",
-                        "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in Settings → Jenkins."
+                        "In Settings → AI Engines & Models, configure AGY CLI, Cloud Code, Codex CLI, Direct API (DeepSeek, OpenAI, Anthropic, Qwen, or offline Custom / Local for Ollama, LM Studio & vLLM), or Aider CLI — each tab shows a live configured checkmark.",
+                        "In Settings → CI/CD Deployment, connect Jenkins, GitHub, or Google Cloud credentials and verify with 1-click connection tests.",
+                        "Open Workspaces (sidebar green/gray dots show live active agents in real time) and click '+' to create a Workspace.",
+                        "Configure each Workspace across 5 tabs: General (Name, Paths & Delete), AI Engine & Model, CI/CD (Git-only or Single / Multi Staging → Production), Repositories (Scan Git Repos, Branch, 'No origin' local-only commits, Deploy toggle & CLI commands), and Work History (saved attachments, modified files & in-app diff viewer)."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Workspaces →",
+                    secondaryTitle: "Workspaces",
+                    secondaryIcon: "folder.badge.gearshape",
                     secondaryAction: { appState.selectedTab = .workspaces }
                 )
 
                 tutorialStepCard(
                     stepNumber: "4",
-                    title: "Click MAC in Menu Bar → Start... + Session Password",
+                    title: "Start AI MAC & Monitor Live Telemetry in Logbook",
                     icon: "menubar.rectangle",
                     accent: .green,
                     bullets: [
-                        "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Open App' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
-                        "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
-                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Logbook' tab."
+                        "Click 'Start...' in the top-right header or from the 'AI MAC' menu bar icon ('Open App' opens this window in the Dock; closing ✕ returns cleanly to the menu bar).",
+                        "Set a session password for the run — while active, mac.app prevents Mac sleep and automatically restores your running bot session if restarted.",
+                        "Open Logbook to inspect colored category streams (Telegram, AI Agent, CI/CD, Git, MAC, Errors), filter logs, mouse-select & copy multi-row output, use smart scroll-aware 'Latest' following, and track live App / Bot / Agent in Work CPU & RAM."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Logbook →",
+                    secondaryTitle: "Logbook",
+                    secondaryIcon: "terminal.fill",
                     secondaryAction: { appState.selectedTab = .liveActivity }
                 )
 
                 tutorialStepCard(
                     stepNumber: "5",
-                    title: "Control Your Workspaces From Telegram on Your Phone",
+                    title: "Control Workspaces Remotely From Telegram",
                     icon: "iphone.radiowaves.left.and.right",
                     accent: .teal,
                     bullets: [
-                        "Open your bot in Telegram, send /start, and reply once with your current session password (your password message is auto-deleted immediately from chat).",
-                        "Tap a Workspace ('•' marks your active Workspace and 'Same Chat •' continues your active Antigravity Desktop conversation automatically).",
-                        "Type coding instructions or attach up to 5 UI screenshots at once — Antigravity (agy) edits your local code and sends back a formatted summary + modified files (M / A / D).",
-                        "Tap ✅ Yes or 🌿 Custom Branch to commit & push (or ❌ No to discard changes), run Staging Jenkins, verify your live preview URL, and tap 🚀 Yes, deploy on prod, ✅ Yes (skip prod deploy), or ↩️ Revert (Bad Commit)."
+                        "Send /start to your bot in Telegram and enter your session password once (the password message is immediately auto-deleted from chat).",
+                        "Select a Workspace ('Same Chat •' continues your active Desktop conversation; '🆕 New Chat' starts fresh) and adjust model or effort anytime from ⚙️ Settings.",
+                        "Send prompts or attach up to 5 screenshots/files — queue follow-up tasks while agents or builds are running, or tap 🛠️ Add Fix to prioritize urgent fixes.",
+                        "Review modified files, commit & push (or local commit with 'No origin' / 🌿 Custom Branch), promote Staging → Production deployments, or tap ↩️ Revert (Bad Commit)."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
                     secondaryTitle: nil,
+                    secondaryIcon: nil,
                     secondaryAction: nil
                 )
-
-                MACSectionCard(title: "Telegram Controls & Slash Commands Cheat Sheet", systemImage: "command.square.fill") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        commandRow("/start", "Authenticate your session and open the Workspace selector")
-                        commandRow("🔀 Workspace  (/workspaces)", "Switch between your configured Workspaces without losing pending state")
-                        commandRow("⚙️ Settings  (/settings, /model)", "Switch AI Model, effort level (low/medium/high), or view 📜 Last Messages")
-                        commandRow("🆕 New Chat  (/newchat)", "Start a brand-new Antigravity conversation in the active Workspace")
-                        commandRow("/history", "Read the latest X user & agent messages from the active conversation")
-                        commandRow("/lock", "Lock your Telegram session immediately until you re-enter the password")
-                    }
-                }
             }
             .padding(.trailing, 8)
             .padding(.bottom, 10)
@@ -4249,6 +4242,7 @@ private struct TutorialTabView: View {
         actionTitle: String?,
         actionURL: String?,
         secondaryTitle: String?,
+        secondaryIcon: String?,
         secondaryAction: (() -> Void)?
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -4279,8 +4273,17 @@ private struct TutorialTabView: View {
                     .fixedSize()
                 }
                 if let secondaryTitle = secondaryTitle, let secondaryAction = secondaryAction {
-                    Button(secondaryTitle) {
+                    Button {
                         secondaryAction()
+                    } label: {
+                        HStack(spacing: 5) {
+                            if let secondaryIcon = secondaryIcon {
+                                Image(systemName: secondaryIcon)
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            Text(secondaryTitle)
+                                .font(.system(size: 12, weight: .medium))
+                        }
                     }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
@@ -4315,18 +4318,6 @@ private struct TutorialTabView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.10), lineWidth: 1)
         )
-    }
-
-    private func commandRow(_ cmd: String, _ desc: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(cmd)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .frame(width: 265, alignment: .leading)
-            Text(desc)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-            Spacer()
-        }
     }
 }
 
