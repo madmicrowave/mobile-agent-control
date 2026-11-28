@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 private func expect(_ condition: @autoclosure () -> Bool, _ message: String, file: StaticString = #file, line: UInt = #line) {
     if !condition() {
@@ -1300,6 +1301,54 @@ private func testWorkHistoryQueuedMessageEditAndDelete() throws {
     print("✓ Work History queued-only edit & delete with Telegram queue-actions sync passed")
 }
 
+@MainActor
+private func testAutoSaveStatusPillAndAutoApproveCommitsPersistence() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("mac-autosave-autoapprove-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // 1. Verify MACWorkspace.autoApproveCommits defaults to false and persists round-trip in config.json
+    let defaultWs = MACWorkspace(id: "ws-default", label: "Default WS", path: "/tmp/ws-default")
+    expect(defaultWs.autoApproveCommits == false, "autoApproveCommits must default to false")
+
+    var autoWs = MACWorkspace(
+        id: "ws-auto",
+        label: "Auto WS",
+        path: "/tmp/ws-auto",
+        ciProvider: "jenkins",
+        autoApproveCommits: true
+    )
+    expect(autoWs.autoApproveCommits == true, "autoApproveCommits initialized to true")
+
+    let store = MACConfigFileStore(dataDir: tempDir)
+    var cfg = store.load()
+    cfg.workspaces = [defaultWs, autoWs]
+    try store.save(cfg)
+
+    let reloaded = store.load()
+    expect(reloaded.workspaces.count == 2, "Expected 2 persisted workspaces")
+    expect(reloaded.workspaces[0].autoApproveCommits == false, "First workspace autoApproveCommits == false")
+    expect(reloaded.workspaces[1].autoApproveCommits == true, "Second workspace autoApproveCommits == true")
+
+    autoWs.autoApproveCommits = false
+    cfg.workspaces = [defaultWs, autoWs]
+    try store.save(cfg)
+    expect(store.load().workspaces[1].autoApproveCommits == false, "Toggling autoApproveCommits back to false persists")
+
+    // 2. Verify MACAutoSaveStatusPill maintains constant width between .saving loader and .saved OK state
+    let savingHost = NSHostingView(rootView: MACAutoSaveStatusPill(state: .saving))
+    let savedHost = NSHostingView(rootView: MACAutoSaveStatusPill(state: .saved))
+    let savingWidth = savingHost.fittingSize.width
+    let savedWidth = savedHost.fittingSize.width
+    expect(
+        abs(savingWidth - savedWidth) < 0.5,
+        "MACAutoSaveStatusPill width must not jump between .saving (\(savingWidth)) and .saved (\(savedWidth))"
+    )
+
+    print("✓ Auto-save loader-to-OK status pill & autoApproveCommits persistence passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -1323,6 +1372,7 @@ struct MACAppTests {
                 try testFilterPlaceholderStabilityAndClickOutsideUnfocus()
                 try testLogbookMultiRowSelectionAndSmartAutoScroll()
                 try testWorkHistoryQueuedMessageEditAndDelete()
+                try testAutoSaveStatusPillAndAutoApproveCommitsPersistence()
             }
             print("✅ All MAC macOS native app tests passed!")
         } catch {

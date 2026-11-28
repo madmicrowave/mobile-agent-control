@@ -489,6 +489,7 @@ export class ConfigStore {
         const normCi = ws.ciProvider.trim().toLowerCase();
         ws.ciProvider = ['jenkins', 'github', 'google', 'none'].includes(normCi) ? normCi : 'none';
       }
+      ws.autoApproveCommits = Boolean(ws.autoApproveCommits);
       ws.githubRepo = String(ws.githubRepo || '').trim();
       ws.githubWorkflow = String(ws.githubWorkflow || '').trim();
       ws.prodGithubWorkflow = String(ws.prodGithubWorkflow || '').trim();

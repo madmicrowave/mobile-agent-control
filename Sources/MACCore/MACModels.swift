@@ -266,6 +266,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
     public var engine: String // "agy", "aider", "direct-api"
     public var environmentMode: String // "single" or "multi"
     public var ciProvider: String // "none", "jenkins", "github", "google"
+    public var autoApproveCommits: Bool
     public var githubRepo: String
     public var githubWorkflow: String
     public var prodGithubWorkflow: String
@@ -287,6 +288,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         engine: String = "agy",
         environmentMode: String = "single",
         ciProvider: String = "",
+        autoApproveCommits: Bool = false,
         githubRepo: String = "",
         githubWorkflow: String = "",
         prodGithubWorkflow: String = "",
@@ -319,6 +321,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
             resolvedCi = "none"
         }
         self.ciProvider = resolvedCi
+        self.autoApproveCommits = autoApproveCommits
         self.githubRepo = githubRepo
         self.githubWorkflow = githubWorkflow
         self.prodGithubWorkflow = prodGithubWorkflow
@@ -331,7 +334,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, label, name, path, extraDirs, liveUrl, prodLiveUrl, prodUrl, productionUrl, model, modelLevel, engine, environmentMode
-        case ciProvider, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
+        case ciProvider, autoApproveCommits, githubRepo, githubWorkflow, prodGithubWorkflow, gcpTrigger, prodGcpTrigger
         case jenkinsJobs, prodJenkinsJobs, repos
     }
 
@@ -363,6 +366,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         self.modelLevel = try c.decodeIfPresent(String.self, forKey: .modelLevel) ?? "high"
         let decodedEngine = (try c.decodeIfPresent(String.self, forKey: .engine) ?? "agy").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.engine = decodedEngine.isEmpty || decodedEngine == "auto" ? "agy" : decodedEngine
+        self.autoApproveCommits = try c.decodeIfPresent(Bool.self, forKey: .autoApproveCommits) ?? false
         self.githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? ""
         self.githubWorkflow = try c.decodeIfPresent(String.self, forKey: .githubWorkflow) ?? ""
         self.prodGithubWorkflow = try c.decodeIfPresent(String.self, forKey: .prodGithubWorkflow) ?? ""
@@ -410,6 +414,7 @@ public struct MACWorkspace: Identifiable, Codable, Equatable {
         try c.encode(engine, forKey: .engine)
         try c.encode(environmentMode, forKey: .environmentMode)
         try c.encode(ciProvider, forKey: .ciProvider)
+        try c.encode(autoApproveCommits, forKey: .autoApproveCommits)
         try c.encode(githubRepo, forKey: .githubRepo)
         try c.encode(githubWorkflow, forKey: .githubWorkflow)
         try c.encode(prodGithubWorkflow, forKey: .prodGithubWorkflow)

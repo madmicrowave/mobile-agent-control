@@ -4493,4 +4493,117 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     ]);
     assert.equal(st.messageQueue.length, 0);
   });
+
+  it('auto-approves commits, chains queued messages, auto-starts Jenkins, and stops only on failure when autoApproveCommits is enabled', async () => {
+    const ws = controller.getWorkspace('payments');
+    const st = configStore.getWorkspaceState('payments');
+    const prevAutoApprove = ws.autoApproveCommits;
+    const prevEnvMode = ws.environmentMode;
+    const prevCiProvider = ws.ciProvider;
+
+    ws.autoApproveCommits = true;
+    ws.environmentMode = 'single';
+    ws.ciProvider = 'jenkins';
+    st.phase = 'IDLE';
+    st.runningJenkins = null;
+    st.activeTurn = null;
+    st.messageQueue = [];
+    st.accumulatedCommits = [];
+    await configStore.saveConfig();
+    await configStore.saveState();
+
+    try {
+      await controller.handleUpdate(makeCallback('ide:sel:payments'));
+      await controller.handleUpdate(makeCallback('chat:new:payments'));
+      mockTg.clearSent();
+      mockJenkins.triggeredBuilds.length = 0;
+      mockJenkins.setNextOutcome('SUCCESS', 'Auto build succeeded!\nFinished: SUCCESS');
+
+      let releaseTurn1;
+      const turn1Gate = new Promise((resolve) => {
+        releaseTurn1 = resolve;
+      });
+      let turnCounter = 0;
+
+      nextAgentBehavior = async (opts) => {
+        turnCounter += 1;
+        const currentTurn = turnCounter;
+        if (currentTurn === 1) {
+          await turn1Gate;
+        }
+        await fsp.writeFile(
+          path.join(coreRepo.cloneDir, `auto-approve-${currentTurn}.txt`),
+          `auto content ${currentTurn}: ${opts.prompt}\n`
+        );
+        return {
+          conversationId: 'conv-auto-approve',
+          response: `Edited file in turn ${currentTurn}`
+        };
+      };
+
+      // 1) Start Turn 1 and queue Turn 2 while Turn 1 is running
+      await controller.handleUpdate(makeUserMsg('Auto turn 1 feature'));
+      assert.equal(st.phase, 'RUNNING_AGENT');
+
+      mockTg.clearSent();
+      await controller.handleUpdate(makeUserMsg('Auto turn 2 queued feature'));
+      const queueNotice = mockTg.lastSent();
+      const queueBtn = queueNotice.reply_markup.inline_keyboard[0][0];
+      await controller.handleUpdate(makeCallback(queueBtn.callback_data, queueNotice.message_id));
+      assert.equal(st.messageQueue.length, 1);
+
+      // 2) Release Turn 1 -> without ANY manual click, Turn 1 auto-commits, runs queued Turn 2,
+      //    Turn 2 auto-commits, Jenkins auto-starts, and upon SUCCESS finishes to IDLE!
+      mockTg.clearSent();
+      releaseTurn1();
+      await controller.waitForBackgroundTasks();
+
+      assert.equal(st.messageQueue.length, 0, 'Queued message must be executed automatically');
+      assert.equal(mockJenkins.triggeredBuilds.length, 1, 'Jenkins must start automatically after queue drains');
+      assert.equal(st.phase, 'IDLE', 'Must auto-complete to IDLE when Jenkins succeeds');
+      assert.ok(
+        mockTg.sentMessages.some((m) => /Auto-approved — Committed &amp; pushed/i.test(m.text)),
+        'Expected Auto-approved commit confirmation message'
+      );
+      assert.ok(
+        mockTg.sentMessages.some((m) => /Auto-approved &amp; completed/i.test(m.text)),
+        'Expected Auto-approved completion message after Jenkins success'
+      );
+
+      // 3) Now verify "only if fail then stop for resolve": Jenkins FAILURE stops at AWAITING_OK_OR_REVERT
+      mockTg.clearSent();
+      mockJenkins.triggeredBuilds.length = 0;
+      mockJenkins.setNextOutcome('FAILURE', 'Unit test failure in module X\nFinished: FAILURE');
+
+      await controller.handleUpdate(makeUserMsg('Auto turn 3 with failing build'));
+      await controller.waitForBackgroundTasks();
+
+      assert.equal(mockJenkins.triggeredBuilds.length, 1, 'Jenkins must trigger automatically for Turn 3');
+      assert.equal(st.phase, 'AWAITING_OK_OR_REVERT', 'Must stop for resolve when Jenkins build fails');
+      const failPrompt = mockTg.lastSent();
+      assert.match(failPrompt.text, /Jenkins Build Failed/i);
+      const failBtns = failPrompt.reply_markup?.inline_keyboard?.flat() || [];
+      assert.ok(failBtns.some((b) => b.callback_data === 'ok:rev:payments'));
+      assert.ok(failBtns.some((b) => b.callback_data === 'fix:err:payments'));
+
+      // Clean up failed turn state
+      await controller.handleUpdate(makeCallback('ok:rev:payments', failPrompt.message_id));
+      await controller.waitForBackgroundTasks();
+      if (st.phase === 'AWAITING_REVERT_JENKINS_CHOICE') {
+        await controller.handleUpdate(makeCallback('rjnk:no:payments'));
+        await controller.waitForBackgroundTasks();
+      }
+    } finally {
+      ws.autoApproveCommits = prevAutoApprove;
+      ws.environmentMode = prevEnvMode;
+      ws.ciProvider = prevCiProvider;
+      st.phase = 'IDLE';
+      st.activeTurn = null;
+      st.messageQueue = [];
+      st.accumulatedCommits = [];
+      st.lastError = null;
+      await configStore.saveConfig();
+      await configStore.saveState();
+    }
+  });
 });

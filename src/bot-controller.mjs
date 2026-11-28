@@ -316,7 +316,7 @@ export class BotController {
    * Returns all configured Jenkins job paths for a workspace (combining `ws.jenkinsJobs` and repo mappings).
    */
   getWorkspaceJenkinsJobs(ws) {
-    if (!ws) return [];
+    if (!ws || ws.ciProvider === 'none') return [];
     const seen = new Set();
     const list = [];
     for (const j of ws.jenkinsJobs || []) {
@@ -356,7 +356,7 @@ export class BotController {
    * Returns all configured Production Jenkins job paths for a multi-environment workspace.
    */
   getWorkspaceProdJenkinsJobs(ws) {
-    if (!ws || ws.environmentMode !== 'multi') return [];
+    if (!ws || ws.ciProvider === 'none' || ws.environmentMode !== 'multi') return [];
     const seen = new Set();
     const list = [];
     for (const j of ws.prodJenkinsJobs || []) {
@@ -4817,6 +4817,12 @@ export class BotController {
         });
 
         if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingCmdRepos.length === 0) {
+          await this.configStore.reloadConfigIfChanged().catch(() => {});
+          const liveWs = this.getWorkspace(ws.id) || ws;
+          if (liveWs.autoApproveCommits) {
+            await this.#autoCompleteConfirmedTurn(chatId, liveWs, st);
+            return;
+          }
           st.phase = 'AWAITING_OK_OR_REVERT';
           await this.configStore.saveState();
           await this.sendIsItOkayPrompt(
@@ -4824,6 +4830,16 @@ export class BotController {
             ws,
             'ℹ️ No Jenkins job is mapped for the modified repository.'
           );
+          return;
+        }
+
+        await this.configStore.reloadConfigIfChanged().catch(() => {});
+        const liveWs = this.getWorkspace(ws.id) || ws;
+        if (liveWs.autoApproveCommits && !st.runningJenkins) {
+          await this.handleRunJenkinsChoice(chatId, liveWs.id, true, {
+            isAfterRevert: false,
+            mode: matchedTargets.length > 0 ? 'matched' : 'all'
+          });
           return;
         }
 
@@ -4919,7 +4935,14 @@ export class BotController {
         Boolean(r.stagingCommand && String(r.stagingCommand).trim())
       );
 
+      await this.configStore.reloadConfigIfChanged().catch(() => {});
+      const liveFixWs = this.getWorkspace(ws.id) || ws;
+
       if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingCmdRepos.length === 0) {
+        if (liveFixWs.autoApproveCommits) {
+          await this.#autoCompleteConfirmedTurn(chatId, liveFixWs, st);
+          return;
+        }
         st.phase = 'AWAITING_OK_OR_REVERT';
         await this.configStore.saveState();
         await this.sendIsItOkayPrompt(
@@ -4930,17 +4953,33 @@ export class BotController {
         return;
       }
 
+      if (liveFixWs.autoApproveCommits && !st.runningJenkins) {
+        await this.handleRunJenkinsChoice(chatId, liveFixWs.id, true, {
+          isAfterRevert: false,
+          mode: matchedTargets.length > 0 ? 'matched' : 'all'
+        });
+        return;
+      }
+
       st.phase = 'AWAITING_JENKINS_CHOICE';
       await this.configStore.saveState();
       await this.sendRunJenkinsPrompt(chatId, ws, matchedTargets, { isAfterRevert: false });
       return;
     }
 
+    await this.configStore.reloadConfigIfChanged().catch(() => {});
+    const liveWs = this.getWorkspace(ws.id) || ws;
+
     st.pendingDeltas = deltas;
     st.phase = 'AWAITING_COMMIT_CHOICE';
     await this.configStore.saveState();
 
-    await this.sendCommitPrompt(chatId, ws, deltas);
+    if (liveWs.autoApproveCommits) {
+      await this.handleCommitYes(chatId, liveWs.id, '', { autoApproved: true });
+      return;
+    }
+
+    await this.sendCommitPrompt(chatId, liveWs, deltas);
   }
 
   formatChangedFilesSummary(ws, deltas) {
@@ -5182,7 +5221,8 @@ export class BotController {
     await this.handleCommitYes(chatId, ws.id, branchName);
   }
 
-  async handleCommitYes(chatId, wsId, customBranch = '') {
+  async handleCommitYes(chatId, wsId, customBranch = '', { autoApproved = false } = {}) {
+    await this.configStore.reloadConfigIfChanged().catch(() => {});
     const ws = this.getWorkspace(wsId);
     if (!ws) return;
     await this.clearWorkspacePromptButtons(ws.id);
@@ -5277,9 +5317,10 @@ export class BotController {
     );
 
     const hasPushed = commits.some((c) => c.pushed);
+    const titlePrefix = autoApproved ? '⚡ <b>Auto-approved — ' : '✅ <b>';
     const title = hasPushed
-      ? `✅ <b>Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}:</b>\n\n`
-      : `✅ <b>Committed locally${customBranch ? ` to branch "${escapeHtml(customBranch)}"` : ''} (no origin):</b>\n\n`;
+      ? `${titlePrefix}Committed &amp; pushed${customBranch ? ` to custom branch "${escapeHtml(customBranch)}"` : ''}:</b>\n\n`
+      : `${titlePrefix}Committed locally${customBranch ? ` to branch "${escapeHtml(customBranch)}"` : ''} (no origin):</b>\n\n`;
 
     await this.telegram.sendMessage({
       chatId,
@@ -5305,6 +5346,10 @@ export class BotController {
     );
 
     if (matchedTargets.length === 0 && allWsTargets.length === 0 && stagingReposWithCmd.length === 0) {
+      if (ws.autoApproveCommits) {
+        await this.#autoCompleteConfirmedTurn(chatId, ws, st);
+        return;
+      }
       st.phase = 'AWAITING_OK_OR_REVERT';
       await this.configStore.saveState();
       await this.sendIsItOkayPrompt(
@@ -5327,6 +5372,14 @@ export class BotController {
             [{ text: '⏹ Skip Jenkins', callback_data: `rjnk:skip:${ws.id}` }]
           ]
         }
+      });
+      return;
+    }
+
+    if (ws.autoApproveCommits) {
+      await this.handleRunJenkinsChoice(chatId, ws.id, true, {
+        isAfterRevert: false,
+        mode: matchedTargets.length > 0 ? 'matched' : 'all'
       });
       return;
     }
@@ -5391,7 +5444,47 @@ export class BotController {
     }
   }
 
+  async #autoCompleteConfirmedTurn(chatId, ws, st, { summaryHtml = '', outcome = 'CONFIRMED' } = {}) {
+    const wsLabel = this.getWorkspaceLabel(ws);
+    if (st.activeTurn) {
+      this.#recordHistory(st, {
+        id: st.activeTurn.id,
+        createdAt: st.activeTurn.createdAt,
+        finishedAt: this.nowProvider().toISOString(),
+        prompt: st.activeTurn.prompt,
+        user: st.activeTurn.user || 'User',
+        commits: st.activeTurn.commits,
+        builds: st.activeTurn.builds,
+        files: st.activeTurn.files,
+        attachments: st.activeTurn.attachments,
+        outcome
+      });
+    }
+
+    st.phase = 'IDLE';
+    st.activeTurn = null;
+    st.accumulatedCommits = [];
+    st.baselineSnapshots = null;
+    st.pendingDeltas = [];
+    st.lastError = null;
+    await this.configStore.saveState();
+
+    const cleanSummary = String(summaryHtml || '').trim();
+    await this.telegram.sendMessage({
+      chatId,
+      text: cleanSummary
+        ? `${cleanSummary}\n\n✅ <b>Auto-approved &amp; completed in ${escapeHtml(wsLabel)}.</b> Ready for your next message!`
+        : `✅ <b>Auto-approved &amp; completed in ${escapeHtml(wsLabel)}.</b>\n\nReady for your next message!`,
+      replyMarkup: MAIN_REPLY_KEYBOARD
+    });
+
+    if (st.messageQueue && st.messageQueue.length > 0) {
+      await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+    }
+  }
+
   resolveMatchedJenkinsTargets(ws, st, { isAfterRevert = false } = {}) {
+    if (!ws || ws.ciProvider === 'none') return [];
     const mapCommitsWithLiveConfig = (records = []) =>
       records
         .flatMap((c) => {
@@ -6043,19 +6136,38 @@ export class BotController {
       return;
     }
 
+    await this.configStore.reloadConfigIfChanged().catch(() => {});
+    const liveWs = this.getWorkspace(ws.id) || ws;
+
     st.phase = 'AWAITING_OK_OR_REVERT';
     st.lastError = null;
     await this.configStore.saveState();
 
-    const hasProd = this.hasWorkspaceProdDeploy(ws);
+    const hasProd = this.hasWorkspaceProdDeploy(liveWs);
     const deployHeading = hasProd
       ? '✅ <b>Staging Jenkins Deploy Succeeded!</b>'
       : '✅ <b>Jenkins Deploy Succeeded!</b>';
     const liveLinkTitle = hasProd ? '🌐 Staging Live' : '🌐 Live';
-    const liveLinkLine = ws.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(ws.liveUrl)}` : '';
+    const liveLinkLine = liveWs.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(liveWs.liveUrl)}` : '';
+
+    if (liveWs.autoApproveCommits) {
+      if (hasProd) {
+        await this.telegram.sendMessage({
+          chatId,
+          text: `${deployHeading}\n\n${buildSummary}${liveLinkLine}`
+        });
+        await this.handleOkDeployProd(chatId, liveWs.id);
+        return;
+      }
+      await this.#autoCompleteConfirmedTurn(chatId, liveWs, st, {
+        summaryHtml: `${deployHeading}\n\n${buildSummary}${liveLinkLine}`
+      });
+      return;
+    }
+
     await this.sendIsItOkayPrompt(
       chatId,
-      ws,
+      liveWs,
       `${deployHeading}\n\n${buildSummary}${liveLinkLine}`
     );
   }
@@ -6173,16 +6285,35 @@ export class BotController {
       return;
     }
 
+    await this.configStore.reloadConfigIfChanged().catch(() => {});
+    const liveWs = this.getWorkspace(ws.id) || ws;
+
     st.phase = 'AWAITING_OK_OR_REVERT';
     st.lastError = null;
     await this.configStore.saveState();
 
-    const hasProd = this.hasWorkspaceProdDeploy(ws);
+    const hasProd = this.hasWorkspaceProdDeploy(liveWs);
     const liveLinkTitle = hasProd ? '🌐 Staging Live' : '🌐 Live';
-    const liveLinkLine = ws.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(ws.liveUrl)}` : '';
+    const liveLinkLine = liveWs.liveUrl ? `\n\n${liveLinkTitle}: ${escapeHtml(liveWs.liveUrl)}` : '';
+
+    if (liveWs.autoApproveCommits) {
+      if (hasProd) {
+        await this.telegram.sendMessage({
+          chatId,
+          text: `✅ <b>Staging Command Succeeded!</b>\n\n${cmdSummary}${liveLinkLine}`
+        });
+        await this.handleOkDeployProd(chatId, liveWs.id);
+        return;
+      }
+      await this.#autoCompleteConfirmedTurn(chatId, liveWs, st, {
+        summaryHtml: `✅ <b>Staging Command Succeeded!</b>\n\n${cmdSummary}${liveLinkLine}`
+      });
+      return;
+    }
+
     await this.sendIsItOkayPrompt(
       chatId,
-      ws,
+      liveWs,
       `✅ <b>Staging Command Succeeded!</b>\n\n${cmdSummary}${liveLinkLine}`
     );
   }

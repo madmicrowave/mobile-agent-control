@@ -64,6 +64,79 @@ extension MACSectionCard where Trailing == EmptyView {
     }
 }
 
+public enum MACAutoSaveSectionState: Equatable {
+    case saved
+    case saving
+    case incomplete(String)
+    case warning(String)
+}
+
+public struct MACAutoSaveStatusPill: View {
+    public let state: MACAutoSaveSectionState
+
+    public init(state: MACAutoSaveSectionState) {
+        self.state = state
+    }
+
+    public var body: some View {
+        Group {
+            switch state {
+            case .incomplete(let label):
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundColor(.secondary)
+                    Text(label)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            case .warning(let label):
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(label)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundColor(.orange)
+                }
+            case .saving, .saved:
+                ZStack {
+                    // Hidden template keeps constant pill width between "Saving…" loader and "Auto-saved" OK
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Auto-saved")
+                            .font(.system(size: 11.5, weight: .semibold))
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+
+                    if state == .saving {
+                        HStack(spacing: 5) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Saving…")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Auto-saved")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundColor(.green)
+                        }
+                    }
+                }
+            }
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.04))
+        .cornerRadius(6)
+    }
+}
+
 private struct MACSegmentedOption<Value: Equatable>: Identifiable {
     let id: String
     let title: String
@@ -504,16 +577,148 @@ public struct MACSettingsRootView: View {
 private final class GeneralTabVM: ObservableObject {
     private var isSyncing: Bool = false
     private var cancellables = Set<AnyCancellable>()
+    private var resetGeneralSaveWorkItem: DispatchWorkItem?
+    private var resetAiSaveWorkItem: DispatchWorkItem?
+    private var resetTelegramSaveWorkItem: DispatchWorkItem?
+    private var resetCiSaveWorkItem: DispatchWorkItem?
     var onAutoSave: (() -> Void)?
 
+    @Published var isSavingGeneral: Bool = false
+    @Published var isSavingAi: Bool = false
+    @Published var isSavingTelegram: Bool = false
+    @Published var isSavingCi: Bool = false
+
     init() {
-        objectWillChange
-            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
+        let ciStream = Publishers.Merge4(
+            $jenkinsDraft.dropFirst().map { _ in () },
+            $timeoutMinutes.dropFirst().map { _ in () },
+            $githubDraft.dropFirst().map { _ in () },
+            $googleCloudDraft.dropFirst().map { _ in () }
+        )
+
+        ciStream
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.beginSectionSave(.ci)
+            }
+            .store(in: &cancellables)
+
+        ciStream
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self = self, !self.isSyncing else { return }
                 self.onAutoSave?()
+                self.finishSectionSave(.ci)
             }
             .store(in: &cancellables)
+
+        let telegramStream = Publishers.Merge4(
+            $botToken.dropFirst().map { _ in () },
+            $telegramApiBaseUrl.dropFirst().map { _ in () },
+            $allowedUsersText.dropFirst().map { _ in () },
+            $historyCount.dropFirst().map { _ in () }
+        )
+
+        telegramStream
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.beginSectionSave(.telegram)
+            }
+            .store(in: &cancellables)
+
+        telegramStream
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.onAutoSave?()
+                self.finishSectionSave(.telegram)
+            }
+            .store(in: &cancellables)
+
+        let aiStream = Publishers.MergeMany([
+            $agyBinPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $aiderBinPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $codexBinPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $cloudCodeBinPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $agentEngine.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultModelFamily.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultModelLevel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $deepseekApiKey.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $openaiApiKey.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $anthropicApiKey.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $qwenApiKey.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $customApiBaseUrl.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $customApiKey.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        ])
+
+        aiStream
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.beginSectionSave(.ai)
+            }
+            .store(in: &cancellables)
+
+        aiStream
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSyncing else { return }
+                self.onAutoSave?()
+                self.finishSectionSave(.ai)
+            }
+            .store(in: &cancellables)
+    }
+
+    enum SectionKind {
+        case general, ai, telegram, ci
+    }
+
+    func pulseGeneralSave() {
+        beginSectionSave(.general)
+        finishSectionSave(.general)
+    }
+
+    func beginSectionSave(_ kind: SectionKind) {
+        switch kind {
+        case .general:
+            resetGeneralSaveWorkItem?.cancel()
+            if !isSavingGeneral { isSavingGeneral = true }
+        case .ai:
+            resetAiSaveWorkItem?.cancel()
+            if !isSavingAi { isSavingAi = true }
+        case .telegram:
+            resetTelegramSaveWorkItem?.cancel()
+            if !isSavingTelegram { isSavingTelegram = true }
+        case .ci:
+            resetCiSaveWorkItem?.cancel()
+            if !isSavingCi { isSavingCi = true }
+        }
+    }
+
+    func finishSectionSave(_ kind: SectionKind) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            switch kind {
+            case .general: self.isSavingGeneral = false
+            case .ai: self.isSavingAi = false
+            case .telegram: self.isSavingTelegram = false
+            case .ci: self.isSavingCi = false
+            }
+        }
+        switch kind {
+        case .general:
+            resetGeneralSaveWorkItem?.cancel()
+            resetGeneralSaveWorkItem = work
+        case .ai:
+            resetAiSaveWorkItem?.cancel()
+            resetAiSaveWorkItem = work
+        case .telegram:
+            resetTelegramSaveWorkItem?.cancel()
+            resetTelegramSaveWorkItem = work
+        case .ci:
+            resetCiSaveWorkItem?.cancel()
+            resetCiSaveWorkItem = work
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     func performSync(_ block: () -> Void) {
@@ -1015,6 +1220,11 @@ private struct GeneralTabView: View {
                 .background((vm.googleCloudTestSucceeded ? Color.green : Color.red).opacity(0.12))
                 .cornerRadius(6)
             }
+
+            HStack {
+                Spacer()
+                MACAutoSaveStatusPill(state: vm.isSavingCi ? .saving : .saved)
+            }
         }
     }
 
@@ -1203,6 +1413,11 @@ private struct GeneralTabView: View {
                     .padding(.top, 4)
                 }
             }
+
+            HStack {
+                Spacer()
+                MACAutoSaveStatusPill(state: vm.isSavingTelegram ? .saving : .saved)
+            }
         }
     }
 
@@ -1214,7 +1429,10 @@ private struct GeneralTabView: View {
                         "Start application automatically at macOS startup (Autostart)",
                         isOn: Binding(
                             get: { appState.launchAtLogin },
-                            set: { appState.toggleLaunchAtLogin($0) }
+                            set: {
+                                vm.pulseGeneralSave()
+                                appState.toggleLaunchAtLogin($0)
+                            }
                         )
                     )
 
@@ -1262,6 +1480,7 @@ private struct GeneralTabView: View {
 
                         Button {
                             DispatchQueue.main.async {
+                                vm.pulseGeneralSave()
                                 MACConfigExportImportManager.importConfig(appState: appState)
                             }
                         } label: {
@@ -1274,6 +1493,11 @@ private struct GeneralTabView: View {
                         }
                         .controlSize(.regular)
                     }
+                }
+
+                HStack {
+                    Spacer()
+                    MACAutoSaveStatusPill(state: vm.isSavingGeneral ? .saving : .saved)
                 }
             }
         }
@@ -1432,6 +1656,11 @@ private struct GeneralTabView: View {
                 aiderTabContent
             default:
                 agyTabContent
+            }
+
+            HStack {
+                Spacer()
+                MACAutoSaveStatusPill(state: vm.isSavingAi ? .saving : .saved)
             }
         }
     }
@@ -1924,19 +2153,19 @@ private struct GeneralTabView: View {
 
         let cleanAgy = MACPathUtils.expandPath(vm.agyBinPath)
         appState.config.agyBin = cleanAgy
-        vm.agyBinPath = cleanAgy
+        if vm.agyBinPath != cleanAgy { vm.performSync { vm.agyBinPath = cleanAgy } }
 
         let cleanAider = MACPathUtils.expandPath(vm.aiderBinPath)
         appState.config.aiderBin = cleanAider
-        vm.aiderBinPath = cleanAider
+        if vm.aiderBinPath != cleanAider { vm.performSync { vm.aiderBinPath = cleanAider } }
 
         let cleanCodex = MACPathUtils.expandPath(vm.codexBinPath)
         appState.config.codexBin = cleanCodex
-        vm.codexBinPath = cleanCodex
+        if vm.codexBinPath != cleanCodex { vm.performSync { vm.codexBinPath = cleanCodex } }
 
         let cleanCloudCode = MACPathUtils.expandPath(vm.cloudCodeBinPath)
         appState.config.cloudCodeBin = cleanCloudCode
-        vm.cloudCodeBinPath = cleanCloudCode
+        if vm.cloudCodeBinPath != cleanCloudCode { vm.performSync { vm.cloudCodeBinPath = cleanCloudCode } }
         appState.config.agentEngine = vm.agentEngine
         appState.config.deepseekApiKey = vm.deepseekApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         appState.config.openaiApiKey = vm.openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1956,8 +2185,10 @@ private struct GeneralTabView: View {
     }
 
     private func unblockUser(_ userId: String) {
+        vm.beginSectionSave(.telegram)
         appState.config.suspendedUsers.removeAll(where: { $0.userId == userId })
         appState.saveConfigToDisk(banner: "Unblocked Telegram user \(userId). Allowed 5 fresh attempts.")
+        vm.finishSectionSave(.telegram)
     }
 
     private func formatTimestamp(_ isoString: String) -> String {
@@ -2678,7 +2909,23 @@ private final class WorkspaceEditorFormVM: ObservableObject {
     @Published var showDeleteConfirm: Bool = false
     @Published var lastSelectedCiProvider: String = "jenkins"
     @Published var isDeleting: Bool = false
+    @Published var isSaving: Bool = false
     @Published var transientExpandedRepoCommands: Set<String> = []
+    var isBootstrappingDraft: Bool = false
+    private var resetSaveWorkItem: DispatchWorkItem?
+
+    func markSavingPulse() {
+        guard !isBootstrappingDraft && !isDeleting else { return }
+        resetSaveWorkItem?.cancel()
+        if !isSaving {
+            isSaving = true
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.isSaving = false
+        }
+        resetSaveWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
+    }
 }
 
 private struct WorkspaceEditorFormView: View {
@@ -2816,6 +3063,7 @@ private struct WorkspaceEditorFormView: View {
         .onChange(of: draft) { _, _ in
             guard !vm.isDeleting else { return }
             syncModelFields()
+            vm.markSavingPulse()
             onAutoSave()
         }
         .onChange(of: draft.engine) { _, newEngine in
@@ -2831,11 +3079,13 @@ private struct WorkspaceEditorFormView: View {
         .onChange(of: vm.selectedModelFamily) { _, _ in
             guard !vm.isDeleting else { return }
             syncModelFields()
+            vm.markSavingPulse()
             onAutoSave()
         }
         .onChange(of: vm.selectedModelLevel) { _, _ in
             guard !vm.isDeleting else { return }
             syncModelFields()
+            vm.markSavingPulse()
             onAutoSave()
         }
         .onDisappear {
@@ -3125,9 +3375,16 @@ private struct WorkspaceEditorFormView: View {
     @ViewBuilder
     private var environmentsAndCicdSection: some View {
         MACSectionCard(title: "Environments & CI/CD Deployment", systemImage: "shippingbox.fill") {
-                    Toggle("Git-only", isOn: isGitOnlyBinding)
-                        .toggleStyle(.checkbox)
-                        .font(.system(size: 12))
+                    HStack(spacing: 14) {
+                        Toggle("Auto-approve commits", isOn: $draft.autoApproveCommits)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 12))
+                            .help("Automatically commit & push changes, trigger the next queued message, or start CI/CD deployment automatically — stopping only on failure")
+
+                        Toggle("Git-only", isOn: isGitOnlyBinding)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 12))
+                    }
                 } content: {
                     if draft.ciProvider == "none" {
                         HStack(spacing: 8) {
@@ -3812,41 +4069,34 @@ private struct WorkspaceEditorFormView: View {
 
                     Spacer()
 
-                    HStack(spacing: 5) {
-                        let isLabelEmpty = draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let isPathEmpty = draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let isFolderError = MACValidationUtils.validateFolderPath(draft.path)?.severity == .error
-
+                    let isLabelEmpty = draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let isPathEmpty = draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let isFolderError = MACValidationUtils.validateFolderPath(draft.path)?.severity == .error
+                    let autoSaveState: MACAutoSaveSectionState = {
                         if isLabelEmpty || isPathEmpty {
-                            Image(systemName: "exclamationmark.circle")
-                                .foregroundColor(.secondary)
-                            Text(isNewWorkspace ? "Fill Label & Path to save" : "Incomplete Workspace")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundColor(.secondary)
+                            return .incomplete(isNewWorkspace ? "Fill Label & Path to save" : "Incomplete Workspace")
                         } else if isFolderError {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("Folder not found on disk")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundColor(.orange)
+                            return .warning("Folder not found on disk")
+                        } else if vm.isSaving {
+                            return .saving
                         } else {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Auto-saved")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundColor(.green)
+                            return .saved
                         }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.primary.opacity(0.04))
-                    .cornerRadius(6)
+                    }()
+
+                    MACAutoSaveStatusPill(state: autoSaveState)
                 }
                 .padding(.top, 2)
                 .padding(.bottom, 10)
             }
 
     private func loadFromDraft() {
+        vm.isBootstrappingDraft = true
+        defer {
+            DispatchQueue.main.async { [weak vm] in
+                vm?.isBootstrappingDraft = false
+            }
+        }
         draft.jenkinsJobs = MACPathUtils.sanitizeJobList(draft.jenkinsJobs)
         draft.prodJenkinsJobs = MACPathUtils.sanitizeJobList(draft.prodJenkinsJobs)
         let eng = draft.engine.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
