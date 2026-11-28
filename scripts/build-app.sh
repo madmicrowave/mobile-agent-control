@@ -3,12 +3,16 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_PATH="$PROJECT_ROOT/mac.app"
-CONTENTS_DIR="$APP_PATH/Contents"
+STAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mac-app-build.XXXXXX")"
+trap 'rm -rf "$STAGE_ROOT"' EXIT
+
+STAGE_APP="$STAGE_ROOT/mac.app"
+CONTENTS_DIR="$STAGE_APP/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 RUNTIME_DIR="$RESOURCES_DIR/runtime"
 
-rm -rf "$PROJECT_ROOT/MAC.app" "$APP_PATH" "$PROJECT_ROOT/.build"
+rm -rf "$PROJECT_ROOT/.build"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$RUNTIME_DIR/src"
 
 if [ -d "$PROJECT_ROOT/Resources" ]; then
@@ -65,12 +69,19 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSSupportsAutomaticTermination</key>
+  <false/>
+  <key>NSSupportsSuddenTermination</key>
+  <false/>
 ${PROJECT_ROOT_KEY}
 </dict>
 </plist>
 EOF
 
-xattr -cr "$APP_PATH" 2>/dev/null || true
-codesign --force --deep --sign - "$APP_PATH"
+xattr -cr "$STAGE_APP" 2>/dev/null || true
+codesign --force --deep --sign - "$STAGE_APP"
+
+rm -rf "$PROJECT_ROOT/MAC.app" "$APP_PATH"
+mv "$STAGE_APP" "$APP_PATH"
 
 echo "Built standalone native macOS menu bar app: $APP_PATH"

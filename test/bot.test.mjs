@@ -4184,4 +4184,191 @@ describe('Telegram Bot End-to-End Controller & Workflow', () => {
     await controller.waitForBackgroundTasks();
     await fsp.rm(testFile, { force: true });
   });
+
+  it('auto-starts workspace queued messages on app startup without clearing queue and preserves queues across errors/stops/shutdown', async () => {
+    const st = configStore.getWorkspaceState('payments');
+    st.phase = 'RUNNING_AGENT';
+    st.accumulatedCommits = [];
+    st.runningJenkins = null;
+    st.activeTurn = {
+      id: 'interrupted-turn',
+      createdAt: currentNow.toISOString(),
+      prompt: 'Interrupted before app restart'
+    };
+    st.messageQueue = [
+      {
+        id: 'q_boot_1',
+        queueNumber: 1,
+        text: 'Auto-run queued message 1 on boot',
+        user: '@alice',
+        photos: [],
+        chatId: CHAT_ID,
+        userMessageId: 9101,
+        queueMessageId: 9102,
+        queuedAt: currentNow.toISOString()
+      },
+      {
+        id: 'q_boot_2',
+        queueNumber: 2,
+        text: 'Auto-run queued message 2 after 1',
+        user: '@alice',
+        photos: [],
+        chatId: CHAT_ID,
+        userMessageId: 9103,
+        queueMessageId: 9104,
+        queuedAt: currentNow.toISOString()
+      }
+    ];
+    // Mark user unlocked prior to simulated app auto-restart
+    configStore.unlockUser(USER_ID, currentNow, '@alice');
+    await configStore.saveState();
+
+    const executedPrompts = [];
+    let holdFirstBootTurn;
+    const firstBootTurnGate = new Promise((resolve) => {
+      holdFirstBootTurn = resolve;
+    });
+
+    mockTg.clearSent();
+    const runner = await startBotRunner({
+      dataDir: path.join(tmpRoot, 'data'),
+      sessionPassword: 'run-secret-restored',
+      preserveUnlockedSessions: true,
+      pollTimeoutSec: 1,
+      nowProvider: () => currentNow,
+      agentRunner: (opts) => ({
+        promise: (async () => {
+          executedPrompts.push(opts.prompt);
+          if (opts.prompt === 'Auto-run queued message 1 on boot') {
+            await firstBootTurnGate;
+          }
+          return {
+            conversationId: 'conv-boot-queue',
+            response: `Done: ${opts.prompt}`
+          };
+        })(),
+        abort: () => {}
+      }),
+      logger: { log: () => {}, warn: () => {}, error: () => {} }
+    });
+
+    try {
+      // 1) Unlocked session is preserved across auto-restart (`preserveUnlockedSessions: true`)
+      assert.equal(runner.configStore.isUserUnlocked(USER_ID), true);
+
+      // 2) Queued message #1 auto-started immediately on app start, and #2 was NOT cleared!
+      const bootSt = runner.configStore.getWorkspaceState('payments');
+      assert.equal(bootSt.phase, 'RUNNING_AGENT');
+      assert.equal(bootSt.messageQueue.length, 1, 'Second queued item must remain in queue (no queue clear)');
+      assert.equal(bootSt.messageQueue[0].id, 'q_boot_2');
+      assert.ok(
+        mockTg.sentMessages.some((m) =>
+          /App started — automatically executing queued message \(#1\/1 waiting\)/i.test(m.text)
+        ),
+        'Expected startup auto-execution notice in Telegram'
+      );
+
+      // 3) Let #1 finish (no repo file changes) -> #2 automatically starts and finishes!
+      holdFirstBootTurn();
+      await runner.controller.waitForBackgroundTasks();
+
+      assert.deepEqual(executedPrompts, [
+        'Auto-run queued message 1 on boot',
+        'Auto-run queued message 2 after 1'
+      ]);
+      assert.equal(bootSt.messageQueue.length, 0);
+      assert.equal(bootSt.phase, 'IDLE');
+
+      // 4) Verify agent error does NOT clear remaining queued messages and continues to next queued message
+      let failAttempt = 0;
+      const customController = runner.controller;
+      bootSt.messageQueue = [
+        {
+          id: 'q_after_err_1',
+          queueNumber: 1,
+          text: 'Run after previous turn failed',
+          user: '@alice',
+          photos: [],
+          chatId: CHAT_ID,
+          queuedAt: currentNow.toISOString()
+        },
+        {
+          id: 'q_after_err_2',
+          queueNumber: 2,
+          text: 'Keep me in queue on stop',
+          user: '@alice',
+          photos: [],
+          chatId: CHAT_ID,
+          queuedAt: currentNow.toISOString()
+        }
+      ];
+      await runner.configStore.saveState();
+
+      let holdAfterErrGate;
+      const afterErrGate = new Promise((resolve) => {
+        holdAfterErrGate = resolve;
+      });
+      let notifySecondStarted;
+      const secondTurnStarted = new Promise((resolve) => {
+        notifySecondStarted = resolve;
+      });
+      let abortSecondFn = false;
+
+      customController.agentRunner = (opts) => {
+        failAttempt += 1;
+        if (failAttempt === 1) {
+          return {
+            promise: Promise.reject(new Error('Simulated CLI crash')),
+            abort: () => {}
+          };
+        }
+        return {
+          promise: (async () => {
+            executedPrompts.push(opts.prompt);
+            notifySecondStarted();
+            await afterErrGate;
+            throw new Error('Agent run stopped by user');
+          })(),
+          abort: () => {
+            abortSecondFn = true;
+            holdAfterErrGate();
+          }
+        };
+      };
+
+      await customController.startAgentTurn(CHAT_ID, customController.getWorkspace('payments'), 'Failing turn', {
+        user: '@alice'
+      });
+      await secondTurnStarted;
+
+      // `q_after_err_1` auto-started after failure, while `q_after_err_2` stayed preserved in queue!
+      assert.ok(executedPrompts.includes('Run after previous turn failed'));
+      assert.equal(bootSt.messageQueue.length, 1, 'Queue must NOT be cleared on agent failure');
+      assert.equal(bootSt.messageQueue[0].id, 'q_after_err_2');
+
+      // 5) Stopping active agent turn also preserves `q_after_err_2` in queue (no queue clear)
+      await customController.handleUpdate({
+        update_id: 999901,
+        callback_query: {
+          id: 'cb-stop-preserve-q',
+          from: { id: USER_ID, username: 'alice' },
+          message: { message_id: 9200, chat: { id: CHAT_ID } },
+          data: 'agent:stop:payments'
+        }
+      });
+      await customController.waitForBackgroundTasks();
+      assert.equal(abortSecondFn, true);
+      assert.equal(bootSt.messageQueue.length, 1, 'Queue must NOT be cleared when stopping current turn');
+      assert.equal(bootSt.messageQueue[0].id, 'q_after_err_2');
+
+      // Clean up queue for clean test teardown
+      bootSt.messageQueue = [];
+      bootSt.phase = 'IDLE';
+      await runner.configStore.saveState();
+    } finally {
+      holdFirstBootTurn?.();
+      await runner.controller.waitForBackgroundTasks().catch(() => {});
+      await runner.stop();
+    }
+  });
 });

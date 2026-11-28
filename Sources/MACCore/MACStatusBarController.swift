@@ -395,7 +395,7 @@ public final class MACStatusBarController: NSObject, NSMenuDelegate, NSWindowDel
     }
 
     @objc public func handleQuitClicked() {
-        appState.stopBot(silent: true)
+        appState.stopBotForAppTermination()
         NSApp.terminate(nil)
     }
 

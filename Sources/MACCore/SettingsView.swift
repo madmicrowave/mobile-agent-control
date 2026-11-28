@@ -323,7 +323,7 @@ private enum MACValidationUtils {
     }
 }
 
-// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Live Logs)
+// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Logbook)
 
 public struct MACSettingsRootView: View {
     @ObservedObject public var appState: MACAppState
@@ -393,7 +393,7 @@ public struct MACSettingsRootView: View {
             tabItemButton(.general, title: "General", icon: "gearshape.2.fill")
             tabItemButton(.workspaces, title: "Workspaces", icon: "folder.badge.gearshape")
             tabItemButton(.tutorial, title: "Tutorial", icon: "book.fill")
-            tabItemButton(.liveActivity, title: "Live Logs", icon: "terminal.fill")
+            tabItemButton(.liveActivity, title: "Logbook", icon: "terminal.fill")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
@@ -2096,7 +2096,7 @@ private struct WorkspaceSidebarEntry: Identifiable, Equatable {
 }
 
 public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
-    case settings = "Settings"
+    case general = "General"
     case aiEngineModel = "AI Engine & Model"
     case cicd = "CI/CD"
     case repositories = "Repositories"
@@ -2104,9 +2104,10 @@ public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
     public var title: String { rawValue }
+    public var showsDeleteWorkspaceButton: Bool { self == .general }
     public var systemImage: String {
         switch self {
-        case .settings: return "slider.horizontal.3"
+        case .general: return "slider.horizontal.3"
         case .aiEngineModel: return "cpu.fill"
         case .cicd: return "shippingbox.fill"
         case .repositories: return "point.3.connected.trianglepath.dotted"
@@ -2118,7 +2119,7 @@ public enum WorkspaceDetailTab: String, CaseIterable, Identifiable {
 private final class WorkspacesTabVM: ObservableObject {
     @Published var entries: [WorkspaceSidebarEntry] = []
     @Published var selectedUID: UUID?
-    @Published var selectedDetailTab: WorkspaceDetailTab = .settings
+    @Published var selectedDetailTab: WorkspaceDetailTab = .general
     private var didBootstrap: Bool = false
 
     func syncFromConfig(_ config: MACConfig, preferredWorkspaceId: String?) {
@@ -2607,7 +2608,7 @@ private final class WorkspaceEditorFormVM: ObservableObject {
 private struct WorkspaceEditorFormView: View {
     @Binding var draft: MACWorkspace
     let isNewWorkspace: Bool
-    var selectedTab: WorkspaceDetailTab = .settings
+    var selectedTab: WorkspaceDetailTab = .general
     let config: MACConfig
     let onAutoSave: () -> Void
     let onDelete: (() -> Void)?
@@ -2715,7 +2716,7 @@ private struct WorkspaceEditorFormView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 switch selectedTab {
-                case .settings:
+                case .general:
                     workspaceNameAndPathsSection
                     saveDeleteActionRow
                 case .aiEngineModel:
@@ -3693,16 +3694,32 @@ private struct WorkspaceEditorFormView: View {
     @ViewBuilder
     private var saveDeleteActionRow: some View {
         HStack {
-                    if let onDelete = onDelete {
+                    if selectedTab.showsDeleteWorkspaceButton, let onDelete = onDelete {
                         Button(role: .destructive) {
                             vm.showDeleteConfirm = true
                         } label: {
-                            Label("Delete", systemImage: "trash")
-                                .foregroundColor(.white)
+                            HStack(spacing: 6) {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                Text("Delete")
+                                    .font(.system(size: 12.5, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(Color.red)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                        .buttonStyle(.plain)
                         .fixedSize()
+                        .help("Delete this workspace")
                         .alert(
                             "Delete Workspace",
                             isPresented: $vm.showDeleteConfirm
@@ -4106,11 +4123,11 @@ private struct TutorialTabView: View {
                     bullets: [
                         "Click the 'MAC' menu bar icon and choose 'Start...' (or 'Open App' to open this window in the bottom Dock; clicking ✕ closes the window back to the menu bar with no Dock icon).",
                         "Enter a fresh session password for this run. Passwords live strictly in RAM (never written to disk) and stay valid until you click 'Restart...' or 'Stop'.",
-                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Live Logs' tab."
+                        "While running, mac.app automatically prevents your MacBook from sleeping and streams live events in the 'Logbook' tab."
                     ],
                     actionTitle: nil,
                     actionURL: nil,
-                    secondaryTitle: "Live Logs →",
+                    secondaryTitle: "Logbook →",
                     secondaryAction: { appState.selectedTab = .liveActivity }
                 )
 
@@ -4237,7 +4254,7 @@ private struct TutorialTabView: View {
     }
 }
 
-// MARK: - Tab 4: Live Logs (Real-Time Colored Telemetry, Process Loaders & Stages)
+// MARK: - Tab 4: Logbook (Real-Time Colored Telemetry, Process Loaders & Stages)
 
 private enum MACLogCategory: String, CaseIterable, Identifiable {
     case all = "All"
@@ -4600,7 +4617,7 @@ private struct LiveActivityTabView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.accentColor)
 
-            Text("Live Logs")
+            Text("Logbook")
                 .font(.system(size: 14.5, weight: .bold))
 
             Menu {

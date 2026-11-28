@@ -1,5 +1,65 @@
 import Foundation
 import Combine
+import IOKit
+
+public enum MACBotAutoStartStore {
+    public static let fileName = "bot-autostart.enc"
+
+    private static func machineKey() -> String {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        if service != 0 {
+            defer { IOObjectRelease(service) }
+            if let uuidCF = IORegistryEntryCreateCFProperty(service, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String,
+               !uuidCF.isEmpty {
+                return "com.domonk.mac.autostart::\(uuidCF)"
+            }
+        }
+        return "com.domonk.mac.autostart::\(FileManager.default.homeDirectoryForCurrentUser.path)"
+    }
+
+    public static func fileURL(dataDir: URL) -> URL {
+        dataDir.appendingPathComponent(fileName)
+    }
+
+    public static func savePassword(_ password: String, dataDir: URL) {
+        let cleaned = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dataDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let payload: [String: Any] = [
+            "enabled": true,
+            "sessionPassword": cleaned,
+            "updatedAt": ISO8601DateFormatter().string(from: Date())
+        ]
+        guard let raw = try? JSONSerialization.data(withJSONObject: payload),
+              let encrypted = try? MACConfigCrypto.encrypt(data: raw, password: machineKey()) else {
+            return
+        }
+        let url = fileURL(dataDir: dataDir)
+        try? encrypted.write(to: url, options: .atomic)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public static func loadPassword(dataDir: URL) -> String? {
+        let url = fileURL(dataDir: dataDir)
+        guard let encrypted = try? Data(contentsOf: url),
+              let decrypted = try? MACConfigCrypto.decrypt(data: encrypted, password: machineKey()),
+              let json = (try? JSONSerialization.jsonObject(with: decrypted)) as? [String: Any],
+              (json["enabled"] as? Bool ?? true) == true,
+              let pw = (json["sessionPassword"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !pw.isEmpty else {
+            return nil
+        }
+        return pw
+    }
+
+    public static func clear(dataDir: URL) {
+        let url = fileURL(dataDir: dataDir)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+}
 
 public enum MACBotRunStatus: Equatable {
     case stopped
@@ -38,7 +98,7 @@ public enum MACSettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case workspaces = "Workspaces"
     case tutorial = "Tutorial"
-    case liveActivity = "Live Logs"
+    case liveActivity = "Logbook"
 
     public var id: String { rawValue }
 }
@@ -100,6 +160,16 @@ public final class MACAppState: ObservableObject {
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var currentProcessToken = UUID()
+    private var activeSessionPassword: String?
+    private var autoRestartBotEnabled: Bool = false
+    private var hasFatalConfigStartupError: Bool = false
+    private var consecutiveCrashCount: Int = 0
+    private var pendingWatchdogWorkItem: DispatchWorkItem?
+    public var watchdogBaseDelaySeconds: TimeInterval = 2.0
+
+    public var hasSavedAutoStartSession: Bool {
+        MACBotAutoStartStore.loadPassword(dataDir: configStore.dataDir) != nil
+    }
 
     public init(
         dataDir: URL? = nil,
@@ -107,6 +177,7 @@ public final class MACAppState: ObservableObject {
         sleepPreventer: SleepPreventer = SleepPreventer(),
         launchAtLoginManager: LaunchAtLoginManager = LaunchAtLoginManager()
     ) {
+        ProcessInfo.processInfo.disableAutomaticTermination("AI MAC Menu Bar Controller")
         let resolved = Self.resolveRuntimeAndDataDirs(explicitDataDir: dataDir, explicitRuntimeRoot: runtimeRootURL)
         self.runtimeRootURL = resolved.runtimeRoot
         self.botScriptURL = resolved.botScript
@@ -340,7 +411,29 @@ public final class MACAppState: ObservableObject {
         }
     }
 
-    public func startBot(sessionPassword: String) {
+    @discardableResult
+    public func autoStartIfPreviouslyRunning() -> Bool {
+        guard !status.isRunningOrStarting else { return true }
+        guard let restoredPassword = MACBotAutoStartStore.loadPassword(dataDir: configStore.dataDir) else {
+            return false
+        }
+        reloadConfigFromDisk()
+        guard !config.telegramBotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        appendLog("[MAC] 🔄 Auto-starting Telegram Bot from previous active session...")
+        startBot(sessionPassword: restoredPassword, preserveUnlockedSessions: true)
+        return status.isRunningOrStarting
+    }
+
+    public func startBot(
+        sessionPassword: String,
+        preserveUnlockedSessions: Bool = false,
+        isWatchdogRestart: Bool = false
+    ) {
+        pendingWatchdogWorkItem?.cancel()
+        pendingWatchdogWorkItem = nil
+
         let cleanPassword = sessionPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanPassword.isEmpty else {
             status = .error("Session password cannot be empty.")
@@ -367,6 +460,14 @@ public final class MACAppState: ObservableObject {
             return
         }
 
+        activeSessionPassword = cleanPassword
+        autoRestartBotEnabled = true
+        hasFatalConfigStartupError = false
+        if !isWatchdogRestart {
+            consecutiveCrashCount = 0
+        }
+        MACBotAutoStartStore.savePassword(cleanPassword, dataDir: configStore.dataDir)
+
         terminateRunningProcessSync()
         stopExternalOrphanBotProcesses()
 
@@ -377,7 +478,11 @@ public final class MACAppState: ObservableObject {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: nodeBin)
-        proc.arguments = [botScriptURL.path, "--data-dir", configStore.dataDir.path]
+        var args = [botScriptURL.path, "--data-dir", configStore.dataDir.path]
+        if preserveUnlockedSessions {
+            args.append("--preserve-sessions")
+        }
+        proc.arguments = args
         proc.currentDirectoryURL = runtimeRootURL
 
         var childEnv = ProcessInfo.processInfo.environment
@@ -443,6 +548,25 @@ public final class MACAppState: ObservableObject {
                 if case .stopped = self.status {
                     return
                 }
+                if self.autoRestartBotEnabled,
+                   !self.hasFatalConfigStartupError,
+                   code != 2,
+                   let pw = self.activeSessionPassword,
+                   !pw.isEmpty {
+                    self.consecutiveCrashCount += 1
+                    let base = max(0.05, self.watchdogBaseDelaySeconds)
+                    let delay = min(15.0, base * Double(max(1, self.consecutiveCrashCount)))
+                    self.status = .starting
+                    let delayLabel = delay < 1.0 ? String(format: "%.2fs", delay) : "\(Int(delay.rounded()))s"
+                    self.appendLog("[MAC] ⚠️ Bot process exited (code \(code)) — auto-restarting in \(delayLabel)...")
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self = self, self.autoRestartBotEnabled else { return }
+                        self.startBot(sessionPassword: pw, preserveUnlockedSessions: true, isWatchdogRestart: true)
+                    }
+                    self.pendingWatchdogWorkItem = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+                    return
+                }
                 if code == 0 || code == 15 || code == 2 {
                     self.status = .stopped
                     self.appendLog("[MAC] ⚪ Bot stopped.")
@@ -476,11 +600,23 @@ public final class MACAppState: ObservableObject {
 
     public func restartBot(sessionPassword: String) {
         appendLog("[MAC] 🔄 Restarting bot with new session password...")
-        stopBot(silent: true)
+        stopBot(silent: true, preserveAutoStart: false)
         startBot(sessionPassword: sessionPassword)
     }
 
-    public func stopBot(silent: Bool = false) {
+    public func stopBotForAppTermination() {
+        stopBot(silent: true, preserveAutoStart: true)
+    }
+
+    public func stopBot(silent: Bool = false, preserveAutoStart: Bool = false) {
+        pendingWatchdogWorkItem?.cancel()
+        pendingWatchdogWorkItem = nil
+        autoRestartBotEnabled = false
+        if !preserveAutoStart {
+            activeSessionPassword = nil
+            consecutiveCrashCount = 0
+            MACBotAutoStartStore.clear(dataDir: configStore.dataDir)
+        }
         currentProcessToken = UUID()
         terminateRunningProcessSync()
         stopExternalOrphanBotProcesses()
@@ -547,8 +683,10 @@ public final class MACAppState: ObservableObject {
             if let range = rawLine.range(of: #"Telegram Bot\s*:\s*@([A-Za-z0-9_]+)"#, options: .regularExpression) {
                 let sub = String(rawLine[range])
                 let username = sub.components(separatedBy: "@").last?.trimmingCharacters(in: .whitespaces)
+                consecutiveCrashCount = 0
                 status = .running(botUsername: username)
             } else if rawLine.contains("Long-polling active") {
+                consecutiveCrashCount = 0
                 if case .running = status {
                     // keep username
                 } else {
@@ -560,6 +698,14 @@ public final class MACAppState: ObservableObject {
                 } else {
                     let marker = trimmed.hasPrefix("[bot] Fatal startup error:") ? "[bot] Fatal startup error:" : "Fatal startup error:"
                     let reason = trimmed.components(separatedBy: marker).last?.trimmingCharacters(in: .whitespaces) ?? "Startup failed"
+                    let lowerReason = reason.lowercased()
+                    if lowerReason.contains("unauthorized") ||
+                        lowerReason.contains("401") ||
+                        lowerReason.contains("invalid telegram bot token") ||
+                        lowerReason.contains("not configured") ||
+                        lowerReason.contains("session password") {
+                        hasFatalConfigStartupError = true
+                    }
                     status = .error(reason.isEmpty ? "Startup failed" : reason)
                 }
             }

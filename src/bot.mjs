@@ -397,6 +397,8 @@ export async function executeConsoleCommand(
 export async function startBotRunner({
   dataDir = path.join(PROJECT_ROOT, 'data'),
   sessionPassword = '',
+  preserveUnlockedSessions = false,
+  autoStartQueued = true,
   seedWorkspaces = undefined,
   agentRunner = undefined,
   jenkinsFactory = undefined,
@@ -408,7 +410,10 @@ export async function startBotRunner({
   loadProjectDotEnv(PROJECT_ROOT);
 
   const configStore = new ConfigStore(dataDir);
-  await configStore.init(seedWorkspaces ? { seedWorkspaces } : undefined);
+  await configStore.init({
+    ...(seedWorkspaces ? { seedWorkspaces } : {}),
+    preserveUnlockedSessions
+  });
 
   const token = String(configStore.config.telegramBotToken || '').trim();
   if (!token) {
@@ -419,7 +424,10 @@ export async function startBotRunner({
   if (!cleanSessionPassword) {
     throw new MissingSessionPasswordError();
   }
-  configStore.setRuntimePassword(cleanSessionPassword);
+  configStore.setRuntimePassword(cleanSessionPassword, { preserveUnlockedSessions });
+  if (preserveUnlockedSessions) {
+    await configStore.saveState().catch(() => {});
+  }
 
   // Best-effort refresh of available Gemini model families from `agy models`
   discoverGeminiModelFamilies(configStore.config.agyBin, { queryCli: true }).catch(() => {});
@@ -439,8 +447,31 @@ export async function startBotRunner({
     logger
   });
 
-  const botInfo = await telegram.getMe();
+  let botInfo;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      botInfo = await telegram.getMe();
+      break;
+    } catch (err) {
+      const code = Number(err?.errorCode || 0);
+      const isPermanentAuthError = code === 401 || code === 404;
+      if (isPermanentAuthError || attempt === 5) {
+        throw err;
+      }
+      const delayMs = Math.min(8000, attempt * 1500);
+      logger.warn?.(
+        `[bot] Transient error verifying Telegram connection (${err.message || err}); retrying in ${Math.round(delayMs / 1000)}s...`
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
   await telegram.setMyCommands(BOT_COMMANDS).catch(() => {});
+
+  if (autoStartQueued) {
+    await controller.resumeQueuedMessagesOnStartup().catch((err) => {
+      logger.warn?.(`[bot] Startup queue auto-start warning: ${err.message || err}`);
+    });
+  }
 
   const abortController = new AbortController();
   let stopped = false;
@@ -516,6 +547,7 @@ export async function startBotRunner({
   async function stop() {
     if (stopped) return;
     stopped = true;
+    controller.prepareShutdown();
     abortController.abort();
     await loopPromise;
   }
@@ -600,11 +632,14 @@ async function main() {
   try {
     const rawArgs = process.argv.slice(2);
     let customDataDir = process.env.MAC_DATA_DIR ? path.resolve(process.env.MAC_DATA_DIR) : '';
+    let preserveUnlockedSessions = false;
     const startupArgs = [];
     for (let i = 0; i < rawArgs.length; i++) {
       if (rawArgs[i] === '--data-dir' && rawArgs[i + 1]) {
         customDataDir = path.resolve(rawArgs[i + 1]);
         i += 1;
+      } else if (rawArgs[i] === '--preserve-sessions') {
+        preserveUnlockedSessions = true;
       } else {
         startupArgs.push(rawArgs[i]);
       }
@@ -658,7 +693,7 @@ async function main() {
     console.log('  Set a new password for this run (valid until app restart).');
     const sessionPassword = await promptStartupPassword();
 
-    const runner = await startBotRunner({ dataDir, sessionPassword });
+    const runner = await startBotRunner({ dataDir, sessionPassword, preserveUnlockedSessions });
     const { botInfo, configStore } = runner;
     const cfg = configStore.config;
     const ideNames =
@@ -710,6 +745,12 @@ async function main() {
     process.once('SIGINT', () => shutdown('SIGINT'));
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('exit', () => releaseLock?.());
+    process.on('uncaughtException', (err) => {
+      console.error(`[bot] Caught unexpected exception (keeping bot alive): ${err?.stack || err?.message || err}`);
+    });
+    process.on('unhandledRejection', (reason) => {
+      console.error(`[bot] Caught unhandled promise rejection (keeping bot alive): ${reason?.stack || reason?.message || reason}`);
+    });
 
     if (process.stdin.isTTY) {
       consoleRl = readlinePromises.createInterface({

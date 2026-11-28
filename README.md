@@ -138,7 +138,7 @@ The local model reasons, inspects files, applies changes, and returns a formatte
   </tr>
 </table>
 
-<img src="./assets/settings-tabs-preview.svg" alt="mac.app 4 Tabs Overview — General, Workspaces, Tutorial &amp; Live Logs" width="100%" />
+<img src="./assets/settings-tabs-preview.svg" alt="mac.app 4 Tabs Overview — General, Workspaces, Tutorial &amp; Logbook" width="100%" />
 
 ---
 
@@ -184,7 +184,7 @@ Clicking the **`<small>AI</small> MAC`** menu bar icon provides instant lifecycl
 
 | Menu Bar Item | What It Does |
 | :--- | :--- |
-| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Live Logs**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `<small>AI</small> MAC` running in the background. |
+| **`Open App`** | Opens the 4-tab `mac.app` window (**General**, **Workspaces**, **Tutorial**, **Logbook**), brings it to the front, and displays **`mac.app` in the bottom macOS Dock**. Clicking **`✕`** closes the window cleanly back to the menu bar (removing the Dock icon) while keeping `<small>AI</small> MAC` running in the background. |
 | **`Start...`** | Prompts for a fresh RAM-only session password, starts outbound Telegram long-polling, and **prevents your Mac from sleeping** (`IOKit` + `caffeinate`). |
 | **`Restart...`** | Prompts for a new session password, restarts the bot process, and requires Telegram sessions to re-authenticate. |
 | **`Stop`** | Stops the Telegram bot immediately and releases the macOS sleep assertion so your Mac sleeps normally again. |
@@ -200,10 +200,10 @@ Clicking the **`<small>AI</small> MAC`** menu bar icon provides instant lifecycl
    - **3. CI/CD Deployment**: Sub-tabs for **Jenkins** (server URL, user, API token, timeout), **GitHub** (PAT token, default owner/org), and **Google Cloud Build** (Project ID, key JSON/token, region) with live connection test buttons and status indicators.
 2. **`🗂 Workspaces`** — Manage all Workspaces and click **`+`** to create new ones inline. Supports selecting an independent **AI Execution Engine** (`AGY CLI`, `Cloud Code`, `Codex CLI`, `Direct API`, `Aider CLI`), multi-repository monorepos, extra `--add-dir` paths, per-Workspace AI models, and flexible **CI/CD Deployment** (**Git-only**, **Jenkins**, **GitHub**, or **Google Cloud**) across Single / Multi Staging → Production environments. Changes hot-reload into Telegram immediately.
 3. **`📖 Tutorial`** — Interactive onboarding guide with 1-click deep links to `@BotFather` and `@userinfobot`, dual-engine CLI/API setup walkthrough, Workspace & CI/CD guides, and command cheat sheets.
-4. **`🖥 Live Logs`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[AI MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
+4. **`🖥 Logbook`** — Real-time multi-colored log stream with dedicated source badges (`[TG]`, `[AGENT]`, `[TOOL]`, `[CI/CD]`, `[GIT]`, `[AI MAC]`, `[ERR]`), animated active stage loaders (`ProgressView`), category filter pills (`All`, `Telegram`, `AI Agent`, `CI/CD`, `Git`, `Errors`), instant search, live auto-scroll, and 1-click Copy & Clear controls:
 
 <div align="center">
-  <img src="./assets/macos-live-logs-tab.png" alt="mac.app Live Logs — Real-time Multi-Colored Telemetry &amp; Process Stage Loaders" width="85%" />
+  <img src="./assets/macos-live-logs-tab.png" alt="mac.app Logbook — Real-time Multi-Colored Telemetry &amp; Process Stage Loaders" width="85%" />
 </div>
 
 ---

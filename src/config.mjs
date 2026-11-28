@@ -262,13 +262,21 @@ export class ConfigStore {
     this.runtimePassword = '';
   }
 
-  setRuntimePassword(password) {
+  setRuntimePassword(password, { preserveUnlockedSessions = false } = {}) {
     const cleaned = String(password || '').trim();
     if (!cleaned) {
       throw new Error('Session password cannot be empty');
     }
     this.runtimePassword = cleaned;
-    this.runSessionId = crypto.randomUUID();
+    const nextRunSessionId = crypto.randomUUID();
+    if (preserveUnlockedSessions && this.state?.userSessions) {
+      for (const [, sess] of Object.entries(this.state.userSessions)) {
+        if (sess && typeof sess === 'object' && sess.unlockedRunId) {
+          sess.unlockedRunId = nextRunSessionId;
+        }
+      }
+    }
+    this.runSessionId = nextRunSessionId;
   }
 
   #normalizeConfigShape() {
@@ -545,7 +553,7 @@ export class ConfigStore {
     }
   }
 
-  async init({ seedWorkspaces = INITIAL_WORKSPACES_SEED } = {}) {
+  async init({ seedWorkspaces = INITIAL_WORKSPACES_SEED, preserveUnlockedSessions = false } = {}) {
     await fsp.mkdir(this.dataDir, { recursive: true, mode: 0o700 });
     await fsp.mkdir(this.uploadsDir, { recursive: true, mode: 0o700 });
 
@@ -678,10 +686,13 @@ export class ConfigStore {
     this.state.userSessions = this.state.userSessions || {};
     this.state.workspaces = this.state.workspaces || {};
 
-    // Every new application run requires re-authenticating with the new startup password
+    // Every new manual application run requires re-authenticating with the new startup password.
+    // On automatic background/crash recovery (`preserveUnlockedSessions: true`), retain unlocked sessions.
     for (const [, sess] of Object.entries(this.state.userSessions)) {
       if (sess && typeof sess === 'object') {
-        sess.unlockedRunId = null;
+        if (!preserveUnlockedSessions) {
+          sess.unlockedRunId = null;
+        }
         sess.inputMode = null;
         sess.inputTargetWsId = null;
         delete sess.unlockedDate;
@@ -690,6 +701,7 @@ export class ConfigStore {
     }
 
     // Recover any transient running states if bot restarted mid-operation
+    // without ever clearing workspace `messageQueue`,
     // and clear any Desktop IDE conversation IDs that were cached before the CLI brain dir fix.
     const cliBrainDir = resolveDefaultAgyBrainDir();
     const legacyDesktopBrainDir = resolveLegacyDesktopBrainDir();
@@ -697,6 +709,9 @@ export class ConfigStore {
       path.resolve(this.config.antigravityBrainDir) === path.resolve(cliBrainDir);
 
     for (const [, wsState] of Object.entries(this.state.workspaces)) {
+      if (!Array.isArray(wsState.messageQueue)) {
+        wsState.messageQueue = [];
+      }
       if (wsState.phase === 'RUNNING_AGENT') {
         wsState.phase = 'IDLE';
         wsState.activeTurn = null;
@@ -834,6 +849,7 @@ export class ConfigStore {
       this.state.userSessions[key] = {
         unlockedRunId: null,
         unlockedAt: null,
+        chatId: null,
         selectedWorkspaceId: null,
         inputMode: null,
         inputTargetWsId: null,

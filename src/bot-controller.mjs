@@ -234,6 +234,11 @@ export class BotController {
 
     this.agyUsageSummaryProvider = null;
     this.agyQuotaCache = { timestamp: 0, data: null };
+    this.isShuttingDown = false;
+  }
+
+  prepareShutdown() {
+    this.isShuttingDown = true;
   }
 
   #trackAsync(promise) {
@@ -691,8 +696,11 @@ export class BotController {
 
     if (this.configStore.getUserSession) {
       const sess = this.configStore.getUserSession(userId);
-      if (sess && senderName && senderName !== 'User') {
-        sess.username = senderName;
+      if (sess) {
+        sess.chatId = chatId;
+        if (senderName && senderName !== 'User') {
+          sess.username = senderName;
+        }
       }
     }
 
@@ -744,6 +752,7 @@ export class BotController {
           replyMarkup: MAIN_REPLY_KEYBOARD
         });
         await this.sendIdeSelectorMenu(chatId, userId);
+        await this.resumeQueuedMessagesOnStartup(chatId).catch(() => {});
         return;
       }
 
@@ -1423,6 +1432,10 @@ export class BotController {
       reasonHeader = `⏭️ <i>Executing queued message (${queueTag}) next…</i>`;
     } else if (reason === 'parallel_jenkins') {
       reasonHeader = `🚀 <b>Triggered Antigravity agent in parallel with Jenkins deployment (${queueTag})…</b>`;
+    } else if (reason === 'app_startup') {
+      reasonHeader = `▶️ <i>App started — automatically executing queued message (${queueTag})…</i>`;
+    } else if (reason === 'previous_failed') {
+      reasonHeader = `⏭️ <i>Executing next queued message (${queueTag})…</i>`;
     }
 
     const text =
@@ -1481,6 +1494,131 @@ export class BotController {
       }
     });
     return true;
+  }
+
+  #resolveStartupQueueChatId(ws, st) {
+    if (Array.isArray(st?.messageQueue)) {
+      for (const item of st.messageQueue) {
+        if (item?.chatId !== undefined && item?.chatId !== null && String(item.chatId).trim() !== '') {
+          return item.chatId;
+        }
+      }
+    }
+    if (st?.runningJenkins?.chatId) {
+      return st.runningJenkins.chatId;
+    }
+    const sessions = Object.values(this.configStore.state?.userSessions || {});
+    for (const sess of sessions) {
+      if (sess && sess.selectedWorkspaceId === ws.id) {
+        const candidate = sess.chatId || sess.lastWorkspaceMenuChatId || sess.lastSettingsMenuChatId;
+        if (candidate) return candidate;
+      }
+    }
+    for (const sess of sessions) {
+      if (sess) {
+        const candidate = sess.chatId || sess.lastWorkspaceMenuChatId || sess.lastSettingsMenuChatId;
+        if (candidate) return candidate;
+      }
+    }
+    const allowed = this.configStore.config?.allowedUserIds || [];
+    for (const rawId of allowed) {
+      const trimmed = String(rawId || '').trim();
+      if (/^-?\d+$/.test(trimmed)) {
+        const num = Number(trimmed);
+        return Number.isSafeInteger(num) ? num : trimmed;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Automatically starts queued messages for any workspace on app startup without ever clearing queues.
+   */
+  async resumeQueuedMessagesOnStartup(fallbackChatId = null) {
+    if (this.isShuttingDown) return [];
+    const workspaces = this.configStore.config?.workspaces || [];
+    const startedWorkspaceIds = [];
+
+    for (const ws of workspaces) {
+      if (!ws?.id) continue;
+      const st = this.configStore.getWorkspaceState(ws.id);
+
+      if (!Array.isArray(st.messageQueue) || st.messageQueue.length === 0) {
+        continue;
+      }
+
+      // Skip if an agent turn is already actively running in memory
+      if (this.runtime.get(ws.id)?.abortAgent || st.phase === 'RUNNING_AGENT') {
+        continue;
+      }
+
+      const targetChatId = this.#resolveStartupQueueChatId(ws, st) || fallbackChatId;
+      if (!targetChatId) {
+        // Keep queue intact (`no queue clear`) until a Telegram chat connects
+        this.log(
+          'agent',
+          `Workspace "${this.getWorkspaceLabel(ws)}" has ${st.messageQueue.length} queued message(s) waiting for an active chat ID.`,
+          this.getWorkspaceLabel(ws)
+        );
+        continue;
+      }
+
+      // If waiting on a commit decision with real uncommitted repo changes, keep queue intact and re-send commit prompt
+      if (
+        st.phase === 'AWAITING_COMMIT_CHOICE' ||
+        st.phase === 'AWAITING_CUSTOM_BRANCH' ||
+        st.phase === 'AWAITING_FIX_PROMPT'
+      ) {
+        const hasDiff = await this.hasWorkspaceUncommittedDiff(ws);
+        if (hasDiff && Array.isArray(st.pendingDeltas) && st.pendingDeltas.length > 0) {
+          await this.sendCurrentWorkspaceGatePrompt(
+            targetChatId,
+            ws,
+            `▶️ <b>App started</b> — <b>${escapeHtml(this.getWorkspaceLabel(ws))}</b> has ${st.messageQueue.length} queued message${st.messageQueue.length === 1 ? '' : 's'} ready to run right after this commit choice:`
+          ).catch(() => {});
+          continue;
+        }
+      }
+
+      // Preserve any committed turn records into `accumulatedCommits` so batch Jenkins deploy still covers them
+      if (Array.isArray(st.activeTurn?.commits) && st.activeTurn.commits.length > 0) {
+        st.accumulatedCommits = st.accumulatedCommits || [];
+        const existingShas = new Set(
+          st.accumulatedCommits.map((c) => c?.commitSha || c?.shortSha).filter(Boolean)
+        );
+        for (const c of st.activeTurn.commits) {
+          const key = c?.commitSha || c?.shortSha;
+          if (!key || !existingShas.has(key)) {
+            st.accumulatedCommits.push(c);
+            if (key) existingShas.add(key);
+          }
+        }
+      }
+
+      // Ensure conversation continuity (Same Chat) if workspace hasn't bound a conversationId yet
+      if (!st.conversationId && !st.continueLatest && ws.path) {
+        try {
+          const recent = await discoverRecentWorkspaceConversations(
+            this.configStore.config.antigravityBrainDir,
+            ws.path,
+            { maxResults: 1 }
+          );
+          if (recent.length > 0) {
+            st.conversationId = recent[0].conversationId;
+            st.continueLatest = false;
+          }
+        } catch {}
+      }
+
+      const started = await this.#executeNextQueuedMessage(targetChatId, ws, st, {
+        reason: 'app_startup'
+      });
+      if (started) {
+        startedWorkspaceIds.push(ws.id);
+      }
+    }
+
+    return startedWorkspaceIds;
   }
 
   #recordHistory(st, entry) {
@@ -1791,15 +1929,7 @@ export class BotController {
     const stopLabel = stopWs ? this.getWorkspaceLabel(stopWs) : wsId;
     const stopSt = this.configStore.getWorkspaceState(wsId);
 
-    const cancelledCount = stopSt.messageQueue?.length || 0;
-    if (stopSt.messageQueue && stopSt.messageQueue.length > 0) {
-      for (const item of stopSt.messageQueue) {
-        if (item.queueMessageId) {
-          await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
-        }
-      }
-    }
-    stopSt.messageQueue = [];
+    const queuedWaitingCount = stopSt.messageQueue?.length || 0;
     stopSt.accumulatedCommits = [];
 
     const rt = this.runtime.get(wsId);
@@ -1811,7 +1941,7 @@ export class BotController {
         chatId,
         text:
           `🛑 Stopping Antigravity agent in <b>${escapeHtml(stopLabel)}</b>...` +
-          (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '')
+          (queuedWaitingCount > 0 ? ` (${queuedWaitingCount} queued message${queuedWaitingCount === 1 ? '' : 's'} preserved)` : '')
       });
     } else {
       for (const repo of stopWs?.repos || []) {
@@ -1840,7 +1970,7 @@ export class BotController {
         text:
           `🛑 <b>Agent stopped in ${escapeHtml(stopLabel)}.</b>\n\n` +
           `Changes from the stopped request were discarded.` +
-          (cancelledCount > 0 ? ` (${cancelledCount} queued message${cancelledCount === 1 ? '' : 's'} cancelled)` : '') +
+          (queuedWaitingCount > 0 ? ` (${queuedWaitingCount} queued message${queuedWaitingCount === 1 ? '' : 's'} preserved in queue)` : '') +
           `\n\nReady for your new message.`,
         replyMarkup: MAIN_REPLY_KEYBOARD
       });
@@ -1884,6 +2014,9 @@ export class BotController {
 
     await this.telegram.answerCallbackQuery(cbId);
     const sess = this.configStore.getUserSession(userId);
+    if (sess) {
+      sess.chatId = chatId;
+    }
     if (data !== 'ide:menu' && !data.startsWith('ide:sel:')) {
       sess.currentView = 'WORKSPACE_ACTION';
       sess.lastWorkspaceMenuMessageId = null;
@@ -1922,6 +2055,7 @@ export class BotController {
         }
 
         await this.sendIdeSelectorMenu(chatId, userId);
+        await this.resumeQueuedMessagesOnStartup(chatId).catch(() => {});
         return;
       }
 
@@ -3849,26 +3983,31 @@ export class BotController {
       ? `📥 <b>Queued Request (${queueTag}):</b>\n<i>"${escapeHtml(queueInfo.promptText)}"</i>${anchorSnippet}\n\n`
       : '';
 
-    const statusMsg = await this.telegram.sendMessage({
-      chatId,
-      text: isAddFix
-        ? `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}…</b>\n\n` +
-          `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
-          `\n<i>Working on requested fixes in the same process…</i>`
-        : noticeHeader +
-          `🤖 Antigravity working…\n\n` +
-          `<b>${escapeHtml(wsLabel)}</b>\n\n` +
-          queueSnippet +
-          `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
-          (attachedPhotos.length > 0
-            ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
-            : '') +
-          (combinedNotice ? `\n\n${escapeHtml(combinedNotice)}` : ''),
-      replyMarkup: {
-        inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
-      },
-      replyToMessageId: replyToMessageId || undefined
-    });
+    const statusMsg = await this.telegram
+      .sendMessage({
+        chatId,
+        text: isAddFix
+          ? `🔧 <b>Applying fix in ${escapeHtml(wsLabel)}…</b>\n\n` +
+            `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
+            `\n<i>Working on requested fixes in the same process…</i>`
+          : noticeHeader +
+            `🤖 Antigravity working…\n\n` +
+            `<b>${escapeHtml(wsLabel)}</b>\n\n` +
+            queueSnippet +
+            `🧠 <code>${escapeHtml(modelInfo.displayLabel)}</code>` +
+            (attachedPhotos.length > 0
+              ? `\n📎 Attached ${attachedPhotos.length}/${MAX_FILES_PER_TURN} file(s)`
+              : '') +
+            (combinedNotice ? `\n\n${escapeHtml(combinedNotice)}` : ''),
+        replyMarkup: {
+          inline_keyboard: [[{ text: '🛑 Stop Agent', callback_data: `agent:stop:${ws.id}` }]]
+        },
+        replyToMessageId: replyToMessageId || undefined
+      })
+      .catch((err) => {
+        this.log('telegram', `Warning sending turn status card: ${err.message || err}`, wsLabel);
+        return null;
+      });
 
     if (st.activeTurn && statusMsg?.message_id) {
       st.activeTurn.statusMessageId = statusMsg.message_id;
@@ -4215,9 +4354,13 @@ export class BotController {
         });
         this.log('agent', `Turn execution finished in workspace "${wsLabel}".`, wsLabel);
       } else {
+        this.runtime.delete(ws.id);
+        if (this.isShuttingDown) {
+          // Bot is shutting down / restarting — preserve `messageQueue` and workspace state untouched!
+          return;
+        }
         this.log('agent', `Agent stopped/failed in workspace "${wsLabel}": ${agentErr.message}`, wsLabel);
         this.log('stage', 'Ready for Telegram requests');
-        this.runtime.delete(ws.id);
         if (statusMessageId) {
           await this.telegram.clearInlineButtons(chatId, statusMessageId);
         }
@@ -4255,15 +4398,7 @@ export class BotController {
             st.messages.pop();
           }
 
-          const droppedQueueCount = st.messageQueue?.length || 0;
-          if (st.messageQueue && st.messageQueue.length > 0) {
-            for (const item of st.messageQueue) {
-              if (item.queueMessageId) {
-                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
-              }
-            }
-          }
-          st.messageQueue = [];
+          const preservedQueueCount = st.messageQueue?.length || 0;
 
           await this.clearWorkspacePromptButtons(ws.id, chatId, statusMessageId);
           await this.configStore.saveState();
@@ -4273,7 +4408,7 @@ export class BotController {
             text:
               `🛑 <b>Agent stopped in ${escapeHtml(wsLabel)}.</b>\n\n` +
               `Changes from the stopped request were discarded.` +
-              (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
+              (preservedQueueCount > 0 ? ` (${preservedQueueCount} queued message${preservedQueueCount === 1 ? '' : 's'} preserved in queue)` : '') +
               `\n\nReady for your new message.`,
             replyMarkup: MAIN_REPLY_KEYBOARD
           });
@@ -4312,21 +4447,23 @@ export class BotController {
           for (const repo of ws.repos || []) {
             await discardUncommittedTurnChanges(repo, st.baselineSnapshots?.[repo.name]).catch(() => {});
           }
+          if (st.activeTurn) {
+            this.#recordHistory(st, {
+              id: st.activeTurn.id,
+              createdAt: st.activeTurn.createdAt,
+              finishedAt: this.nowProvider().toISOString(),
+              prompt: st.activeTurn.prompt,
+              user: st.activeTurn.user || 'User',
+              outcome: 'FAILED'
+            });
+          }
           st.phase = st.runningJenkins ? st.runningJenkins.phase : 'IDLE';
           st.activeTurn = st.deployingTurn || null;
           st.deployingTurn = null;
           st.baselineSnapshots = null;
           st.pendingDeltas = [];
           st.lastError = agentErr.message;
-          const droppedQueueCount = st.messageQueue?.length || 0;
-          if (st.messageQueue && st.messageQueue.length > 0) {
-            for (const item of st.messageQueue) {
-              if (item.queueMessageId) {
-                await this.telegram.clearInlineButtons(item.chatId || chatId, item.queueMessageId).catch(() => {});
-              }
-            }
-          }
-          st.messageQueue = [];
+          const remainingQueueCount = st.messageQueue?.length || 0;
           await this.configStore.saveState();
 
           await this.telegram.sendMessage({
@@ -4335,10 +4472,15 @@ export class BotController {
               `❌ <b>Agent stopped/failed in ${escapeHtml(wsLabel)}:</b>\n\n` +
               `${escapeHtml(agentErr.message)}\n\n` +
               `Uncommitted edits from this run were cleaned up.` +
-              (droppedQueueCount > 0 ? ` (${droppedQueueCount} queued message${droppedQueueCount === 1 ? '' : 's'} cancelled)` : '') +
-              ` Ready for your next message.`,
+              (remainingQueueCount > 0
+                ? ` Continuing with ${remainingQueueCount} queued message${remainingQueueCount === 1 ? '' : 's'}…`
+                : ` Ready for your next message.`),
             replyMarkup: MAIN_REPLY_KEYBOARD
           });
+
+          if (!st.runningJenkins && st.messageQueue && st.messageQueue.length > 0) {
+            await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'previous_failed' });
+          }
         } else {
           st.phase = 'AWAITING_COMMIT_CHOICE';
           st.lastError = agentErr.message;
@@ -5167,6 +5309,9 @@ export class BotController {
             `<b>${escapeHtml(wsLabel)}</b> is ready for your next message!`,
           replyMarkup: MAIN_REPLY_KEYBOARD
         });
+        if (st.messageQueue && st.messageQueue.length > 0) {
+          await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+        }
         return;
       }
 
@@ -6547,6 +6692,9 @@ export class BotController {
           text: `✅ Revert complete (no Jenkins job mapped).\n\nReady for your next message in <b>${escapeHtml(wsLabel)}</b>!`,
           replyMarkup: MAIN_REPLY_KEYBOARD
         });
+        if (st.messageQueue && st.messageQueue.length > 0) {
+          await this.#executeNextQueuedMessage(chatId, ws, st, { reason: 'confirmed' });
+        }
         return;
       }
 

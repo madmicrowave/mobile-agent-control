@@ -250,6 +250,8 @@ private func testSleepPreventerAndLaunchAgent() throws {
     let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
     expect(plist?["Label"] as? String == "com.domonk.mac", "LaunchAgent Label check")
     expect(plist?["RunAtLoad"] as? Bool == true, "LaunchAgent RunAtLoad check")
+    let keepAlive = plist?["KeepAlive"] as? [String: Any]
+    expect(keepAlive?["SuccessfulExit"] as? Bool == false, "LaunchAgent KeepAlive SuccessfulExit=false check")
     try manager.setEnabled(false)
     expect(!manager.isEnabled, "Launch agent removed when disabled")
     print("✓ SleepPreventer & LaunchAtLoginManager passed")
@@ -314,8 +316,8 @@ private func testMenuBarControllerAndBotLifecycle() throws {
         "General",
         "Workspaces",
         "Tutorial",
-        "Live Logs"
-    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Live Logs")
+        "Logbook"
+    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Logbook")
     expect(appState.selectedTab == .general, "Expected General as default first tab")
     expect(controller.openAppMenuItem.title == "Open App", "Menu has Open App")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")
@@ -586,16 +588,21 @@ private func testConfigExportImportAndCrypto() throws {
 }
 
 private func testWorkspaceDetailTabsAndTimelineHistory() throws {
-    // 1. Verify 5 tabs exist with Settings as default and Work History as latest tab
+    // 1. Verify 5 tabs exist with General as default and Work History as latest tab
     expect(
-        WorkspaceDetailTab.allCases.map(\.rawValue) == ["Settings", "AI Engine & Model", "CI/CD", "Repositories", "Work History"],
-        "Expected 5 tabs: Settings, AI Engine & Model, CI/CD, Repositories, Work History"
+        WorkspaceDetailTab.allCases.map(\.rawValue) == ["General", "AI Engine & Model", "CI/CD", "Repositories", "Work History"],
+        "Expected 5 tabs: General, AI Engine & Model, CI/CD, Repositories, Work History"
     )
-    expect(WorkspaceDetailTab.settings.rawValue == "Settings", "Settings tab title")
+    expect(WorkspaceDetailTab.general.rawValue == "General", "General tab title")
     expect(WorkspaceDetailTab.aiEngineModel.rawValue == "AI Engine & Model", "AI Engine & Model tab title")
     expect(WorkspaceDetailTab.cicd.rawValue == "CI/CD", "CI/CD tab title")
     expect(WorkspaceDetailTab.repositories.rawValue == "Repositories", "Repositories tab title")
     expect(WorkspaceDetailTab.history.rawValue == "Work History", "Work History tab title")
+    expect(WorkspaceDetailTab.general.showsDeleteWorkspaceButton == true, "Delete button visible in General tab")
+    expect(WorkspaceDetailTab.aiEngineModel.showsDeleteWorkspaceButton == false, "Delete button hidden in AI Engine & Model tab")
+    expect(WorkspaceDetailTab.cicd.showsDeleteWorkspaceButton == false, "Delete button hidden in CI/CD tab")
+    expect(WorkspaceDetailTab.repositories.showsDeleteWorkspaceButton == false, "Delete button hidden in Repositories tab")
+    expect(WorkspaceDetailTab.history.showsDeleteWorkspaceButton == false, "Delete button hidden in Work History tab")
 
     // 2. Test Timeline loader from sample state.json
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("mac-timeline-test-\(UUID().uuidString)", isDirectory: true)
@@ -844,6 +851,122 @@ private func testGitRemoteWebURLAndMultiJobMapping() throws {
     print("✓ Git remote web URL conversion & multi-job repo mapping passed")
 }
 
+@MainActor
+private func testAutoStartPersistenceAndBotWatchdogRecovery() throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("mac-watchdog-test-\(UUID().uuidString)", isDirectory: true)
+    let runtimeDir = tempDir.appendingPathComponent("runtime", isDirectory: true)
+    let srcDir = runtimeDir.appendingPathComponent("src", isDirectory: true)
+    let dataDir = tempDir.appendingPathComponent("data", isDirectory: true)
+    let launchDir = tempDir.appendingPathComponent("LaunchAgents", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+
+    let crashMarkerPath = dataDir.appendingPathComponent("crash-once.flag").path
+    let argsRecordPath = dataDir.appendingPathComponent("last-args.txt").path
+
+    let mockWatchdogScript = """
+    import fs from 'node:fs';
+    import readline from 'node:readline';
+    const rl = readline.createInterface({ input: process.stdin });
+    rl.once('line', (pw) => {
+      if (!pw || !pw.trim()) process.exit(2);
+      fs.writeFileSync(\( String(reflecting: argsRecordPath) ), process.argv.slice(2).join(' '), 'utf8');
+      console.log('  Telegram Bot    : @mac_watchdog_bot (https://t.me/mac_watchdog_bot)');
+      console.log('  Long-polling active. Open your bot in Telegram and send /start');
+      if (fs.existsSync(\( String(reflecting: crashMarkerPath) ))) {
+        fs.unlinkSync(\( String(reflecting: crashMarkerPath) ));
+        setTimeout(() => process.exit(1), 120);
+        return;
+      }
+      setInterval(() => {}, 1000);
+    });
+    process.on('SIGTERM', () => process.exit(0));
+    """
+    try mockWatchdogScript.write(to: srcDir.appendingPathComponent("bot.mjs"), atomically: true, encoding: .utf8)
+    try "1".write(toFile: crashMarkerPath, atomically: true, encoding: .utf8)
+
+    let store = MACConfigFileStore(dataDir: dataDir)
+    try store.save(MACConfig(telegramBotToken: "888888:WATCHDOG_TOKEN"))
+
+    let launchMgr = LaunchAtLoginManager(
+        launchAgentsDirectory: launchDir,
+        executablePathProvider: { "/Applications/MAC.app/Contents/MacOS/MAC" }
+    )
+    let appState = MACAppState(
+        dataDir: dataDir,
+        runtimeRootURL: runtimeDir,
+        sleepPreventer: SleepPreventer(),
+        launchAtLoginManager: launchMgr
+    )
+    appState.watchdogBaseDelaySeconds = 0.12
+
+    // 1. Start bot -> runs, then crashes once after 120ms -> watchdog auto-restarts it with --preserve-sessions!
+    appState.startBot(sessionPassword: "auto-secret-xyz")
+    expect(appState.hasSavedAutoStartSession == true, "Encrypted auto-start session saved on startBot")
+
+    let encBytes = try Data(contentsOf: MACBotAutoStartStore.fileURL(dataDir: dataDir))
+    let encRawStr = String(data: encBytes, encoding: .utf8) ?? ""
+    expect(!encRawStr.contains("auto-secret-xyz"), "Session password must be encrypted, never plaintext on disk")
+
+    // Wait for crash marker to be consumed AND watchdog to bring bot back to .running
+    let recoveryDeadline = Date().addingTimeInterval(5.0)
+    var sawWatchdogLog = false
+    while Date() < recoveryDeadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        if appState.logLines.contains(where: { $0.contains("auto-restarting") }) {
+            sawWatchdogLog = true
+        }
+        if sawWatchdogLog,
+           !FileManager.default.fileExists(atPath: crashMarkerPath),
+           appState.status == .running(botUsername: "mac_watchdog_bot") {
+            break
+        }
+    }
+    expect(sawWatchdogLog, "Expected watchdog auto-restart log after unexpected exit")
+    expect(appState.status == .running(botUsername: "mac_watchdog_bot"), "Expected bot back in .running after watchdog recovery, got \(appState.status)")
+    let recordedArgs = (try? String(contentsOfFile: argsRecordPath, encoding: .utf8)) ?? ""
+    expect(recordedArgs.contains("--preserve-sessions"), "Watchdog restart should pass --preserve-sessions")
+
+    // 2. Simulate app termination (relaunch / update / reboot) -> preserves auto-start state
+    appState.stopBotForAppTermination()
+    expect(appState.status == .stopped, "Bot process stopped for app termination")
+    expect(appState.hasSavedAutoStartSession == true, "Auto-start session preserved across app termination")
+
+    // 3. New MACAppState on relaunch auto-starts immediately without manual prompt
+    let relaunchedState = MACAppState(
+        dataDir: dataDir,
+        runtimeRootURL: runtimeDir,
+        sleepPreventer: SleepPreventer(),
+        launchAtLoginManager: launchMgr
+    )
+    let didAutoStart = relaunchedState.autoStartIfPreviouslyRunning()
+    expect(didAutoStart == true, "Expected autoStartIfPreviouslyRunning() to start bot on app relaunch")
+
+    let relaunchDeadline = Date().addingTimeInterval(4.0)
+    while Date() < relaunchDeadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        if relaunchedState.status == .running(botUsername: "mac_watchdog_bot") {
+            break
+        }
+    }
+    expect(relaunchedState.status == .running(botUsername: "mac_watchdog_bot"), "Relaunched appState must reach .running")
+
+    // 4. Explicit Stop clears auto-start session so subsequent launch stays stopped
+    relaunchedState.stopBot()
+    expect(relaunchedState.hasSavedAutoStartSession == false, "Explicit Stop must clear auto-start session")
+
+    let stoppedState = MACAppState(
+        dataDir: dataDir,
+        runtimeRootURL: runtimeDir,
+        sleepPreventer: SleepPreventer(),
+        launchAtLoginManager: launchMgr
+    )
+    expect(stoppedState.autoStartIfPreviouslyRunning() == false, "Should NOT auto-start after explicit user Stop")
+    print("✓ Auto-start persistence & watchdog crash recovery passed")
+}
+
 @main
 struct MACAppTests {
     static func main() {
@@ -862,6 +985,7 @@ struct MACAppTests {
             try MainActor.assumeIsolated {
                 try testConfigExportImportAndCrypto()
                 try testMenuBarControllerAndBotLifecycle()
+                try testAutoStartPersistenceAndBotWatchdogRecovery()
                 try testResourceMonitorAndMetrics()
             }
             print("✅ All MAC macOS native app tests passed!")

@@ -6,12 +6,18 @@ final class MACAppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: MACStatusBarController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ProcessInfo.processInfo.disableAutomaticTermination("AI MAC Menu Bar Controller")
+        ProcessInfo.processInfo.disableSuddenTermination()
+
         appState = MACAppState()
         statusBarController = MACStatusBarController(appState: appState)
 
-        // If Telegram Bot Token hasn't been configured yet on first run, open General tab
+        // If Telegram Bot Token hasn't been configured yet on first run, open General tab;
+        // otherwise automatically resume the bot if it was active prior to app restart.
         if appState.config.telegramBotToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             statusBarController.openApp(tab: .general)
+        } else {
+            _ = appState.autoStartIfPreviouslyRunning()
         }
     }
 
@@ -21,7 +27,7 @@ final class MACAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        appState?.stopBot(silent: true)
+        appState?.stopBotForAppTermination()
     }
 }
 

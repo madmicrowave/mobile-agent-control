@@ -53,7 +53,7 @@ public final class LaunchAtLoginManager {
                 "Label": Self.agentLabel,
                 "ProgramArguments": [execPath],
                 "RunAtLoad": true,
-                "KeepAlive": false,
+                "KeepAlive": ["SuccessfulExit": false],
                 "ProcessType": "Interactive"
             ]
             let data = try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
