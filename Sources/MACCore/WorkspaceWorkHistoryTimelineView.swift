@@ -951,24 +951,6 @@ private struct TimelineItemRow: View {
                     .padding(.vertical, 6)
                     .background(Color.primary.opacity(0.02))
                     .cornerRadius(6)
-                } else if item.attachments.isEmpty || item.isQueued {
-                    HStack(alignment: .center, spacing: 8) {
-                        if item.attachments.isEmpty {
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 9))
-                                Text("Files: None modified")
-                                    .font(.system(size: 10.5))
-                            }
-                            .foregroundColor(.secondary.opacity(0.7))
-                        }
-
-                        Spacer(minLength: 0)
-
-                        if item.isQueued {
-                            queuedBottomRightButtons
-                        }
-                    }
                 }
 
                 // Commits section (if present)
@@ -1000,7 +982,7 @@ private struct TimelineItemRow: View {
                     }
                 }
 
-                if !item.files.isEmpty && item.isQueued {
+                if item.isQueued {
                     HStack(spacing: 6) {
                         Spacer(minLength: 0)
                         queuedBottomRightButtons
