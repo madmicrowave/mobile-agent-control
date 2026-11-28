@@ -323,7 +323,7 @@ private enum MACValidationUtils {
     }
 }
 
-// MARK: - Root App Window View (4 Tabs: General, Workspaces, Tutorial, Logbook)
+// MARK: - Root App Window View (4 Tabs: Settings, Workspaces, Tutorial, Logbook)
 
 public struct MACSettingsRootView: View {
     @ObservedObject public var appState: MACAppState
@@ -393,7 +393,7 @@ public struct MACSettingsRootView: View {
 
     private var tabNavigationBar: some View {
         HStack(spacing: 6) {
-            tabItemButton(.general, title: "General", icon: "gearshape.2.fill")
+            tabItemButton(.general, title: "Settings", icon: "gearshape.2.fill")
             tabItemButton(.workspaces, title: "Workspaces", icon: "folder.badge.gearshape")
             tabItemButton(.tutorial, title: "Tutorial", icon: "book.fill")
             tabItemButton(.liveActivity, title: "Logbook", icon: "terminal.fill")
@@ -691,7 +691,7 @@ private struct GeneralTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // Section 1: Settings (Autostart, Sleep Prevention & Backup & Restore)
+                // Section 1: General (Autostart, Sleep Prevention & Backup & Restore)
                 settingsSectionCard
 
                 // Section 2: AI Engines & Models
@@ -1207,7 +1207,7 @@ private struct GeneralTabView: View {
     }
 
     private var settingsSectionCard: some View {
-        MACSectionCard(title: "Settings", systemImage: "gearshape.fill") {
+        MACSectionCard(title: "General", systemImage: "gearshape.fill") {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 16) {
                     Toggle(
@@ -1241,7 +1241,7 @@ private struct GeneralTabView: View {
                             .font(.system(size: 12.5, weight: .semibold))
                     }
 
-                    Text("Export or import all General settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
+                    Text("Export or import all application settings and Workspace configurations as a JSON file. Encrypted exports protect your tokens, passwords, and API keys with a password.")
                         .font(.system(size: 11.5))
                         .foregroundColor(.secondary)
 
@@ -2642,35 +2642,35 @@ private struct WorkspaceEditorFormView: View {
                 title: "AGY CLI",
                 value: "agy",
                 isEnabled: config.isAgyConfigured,
-                disabledReason: "Cannot select until AGY CLI is configured in General → AI Engines & Models"
+                disabledReason: "Cannot select until AGY CLI is configured in Settings → AI Engines & Models"
             ),
             MACSegmentedOption(
                 id: "cloudcode",
                 title: "Cloud Code",
                 value: "cloudcode",
                 isEnabled: config.isCloudCodeConfigured,
-                disabledReason: "Cannot select until Cloud Code is configured in General → AI Engines & Models"
+                disabledReason: "Cannot select until Cloud Code is configured in Settings → AI Engines & Models"
             ),
             MACSegmentedOption(
                 id: "codex",
                 title: "Codex CLI",
                 value: "codex",
                 isEnabled: config.isCodexConfigured,
-                disabledReason: "Cannot select until Codex CLI is configured in General → AI Engines & Models"
+                disabledReason: "Cannot select until Codex CLI is configured in Settings → AI Engines & Models"
             ),
             MACSegmentedOption(
                 id: "direct-api",
                 title: "Direct API",
                 value: "direct-api",
                 isEnabled: config.isDirectApiConfigured,
-                disabledReason: "Cannot select until Direct API keys are configured in General → AI Engines & Models"
+                disabledReason: "Cannot select until Direct API keys are configured in Settings → AI Engines & Models"
             ),
             MACSegmentedOption(
                 id: "aider",
                 title: "Aider CLI",
                 value: "aider",
                 isEnabled: config.isAiderConfigured,
-                disabledReason: "Cannot select until Aider CLI is configured in General → AI Engines & Models"
+                disabledReason: "Cannot select until Aider CLI is configured in Settings → AI Engines & Models"
             )
         ]
     }
@@ -4075,12 +4075,12 @@ private struct TutorialTabView: View {
                     bullets: [
                         "Open @BotFather in Telegram and send /newbot.",
                         "Pick any display name (e.g. My Mac Agent) and a username ending in 'bot' (e.g. my_mac_agent_bot).",
-                        "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into General → Telegram.",
+                        "Copy the HTTP API Token (looks like 123456789:ABC-DEF...) and paste it into Settings → Telegram.",
                         "Click 'Verify Token' (settings auto-save automatically)."
                     ],
                     actionTitle: "Open @BotFather",
                     actionURL: "https://t.me/BotFather",
-                    secondaryTitle: "General →",
+                    secondaryTitle: "Settings →",
                     secondaryAction: { appState.selectedTab = .general }
                 )
 
@@ -4091,7 +4091,7 @@ private struct TutorialTabView: View {
                     accent: .indigo,
                     bullets: [
                         "Open @userinfobot in Telegram and tap Start — it replies with your numeric Telegram User ID (e.g. 652545688).",
-                        "Paste your numeric ID into 'Allowed Telegram User IDs' inside General → Telegram (comma-separate multiple IDs if needed).",
+                        "Paste your numeric ID into 'Allowed Telegram User IDs' inside Settings → Telegram (comma-separate multiple IDs if needed).",
                         "Even if someone guesses your bot's @username, unauthorized User IDs are silently ignored."
                     ],
                     actionTitle: "Open @userinfobot",
@@ -4106,11 +4106,11 @@ private struct TutorialTabView: View {
                     icon: "folder.fill.badge.gearshape",
                     accent: .purple,
                     bullets: [
-                        "In General → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom / Local). Each tab displays a live configured indicator.",
+                        "In Settings → AI Engines & Models, switch between tabs: AGY CLI, Aider CLI, or Direct API (with subtabs for DeepSeek, OpenAI, Anthropic, Qwen, and Custom / Local). Each tab displays a live configured indicator.",
                         "Connect Personal Local Models: Under Direct API → Custom / Local, connect private local models (Ollama, LM Studio, vLLM, LocalAI, Jan) via http://localhost:11434/v1 — 100% offline and air-gapped with zero API keys required!",
                         "Open the 'Workspaces' tab, click '+' in the left sidebar to add a Workspace, enter a Label, and click 'Browse...' to select your project folder.",
                         "Select your Workspace's AI Engine (AGY CLI [default], Aider CLI, or Direct API), 1-click 'Scan Git Repos', and pick your AI Model (Gemini, Claude, DeepSeek, OpenAI, Qwen, or Local).",
-                        "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in General → Jenkins."
+                        "Optional CI/CD: Choose 'Single' or 'Multi (Staging → Production)' to promote verified Staging builds straight to Production from Telegram, with credentials in Settings → Jenkins."
                     ],
                     actionTitle: nil,
                     actionURL: nil,

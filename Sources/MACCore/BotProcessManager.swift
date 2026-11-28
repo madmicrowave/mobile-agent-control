@@ -95,7 +95,7 @@ public enum MACBotRunStatus: Equatable {
 }
 
 public enum MACSettingsTab: String, CaseIterable, Identifiable {
-    case general = "General"
+    case general = "Settings"
     case workspaces = "Workspaces"
     case tutorial = "Tutorial"
     case liveActivity = "Logbook"

@@ -313,12 +313,12 @@ private func testMenuBarControllerAndBotLifecycle() throws {
     }
 
     expect(MACSettingsTab.allCases.map(\.rawValue) == [
-        "General",
+        "Settings",
         "Workspaces",
         "Tutorial",
         "Logbook"
-    ], "Expected 4 tabs in exact order: General, Workspaces, Tutorial, Logbook")
-    expect(appState.selectedTab == .general, "Expected General as default first tab")
+    ], "Expected 4 tabs in exact order: Settings, Workspaces, Tutorial, Logbook")
+    expect(appState.selectedTab == .general, "Expected Settings as default first tab")
     expect(controller.openAppMenuItem.title == "Open App", "Menu has Open App")
     expect(controller.startMenuItem.title == "Start...", "Menu has Start...")
     expect(controller.restartMenuItem.title == "Restart...", "Menu has Restart...")
