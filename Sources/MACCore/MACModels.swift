@@ -958,7 +958,64 @@ public enum MACPathUtils {
         return String(content[capRange]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Scans `workspacePath` (and its immediate subdirectories) as well as `extraDirs` for `.git` repositories and matches Jenkins jobs.
+    private static let ignoredRepoScanDirs: Set<String> = [
+        "node_modules", "Pods", "Carthage", "DerivedData", "build", "dist", "target", "vendor", "venv", ".venv", "__pycache__"
+    ]
+
+    /// Checks whether `folderPath` contains a `.git` repository at the root (level 0),
+    /// in immediate subdirectories (level 1), or — if still not detected — in 2nd-level subdirectories (level 2).
+    public static func hasGitRepository(at folderPath: String, maxSubdirectoryLevels: Int = 2) -> Bool {
+        let rootPath = expandPath(folderPath)
+        guard !rootPath.isEmpty else { return false }
+        let fm = FileManager.default
+        var isRootDir: ObjCBool = false
+        guard fm.fileExists(atPath: rootPath, isDirectory: &isRootDir), isRootDir.boolValue else {
+            return false
+        }
+
+        let rootGit = (rootPath as NSString).appendingPathComponent(".git")
+        if fm.fileExists(atPath: rootGit) {
+            return true
+        }
+        guard maxSubdirectoryLevels >= 1 else { return false }
+
+        guard let level1Names = try? fm.contentsOfDirectory(atPath: rootPath).sorted() else {
+            return false
+        }
+        var level1Dirs: [String] = []
+        for child in level1Names where !child.hasPrefix(".") && !ignoredRepoScanDirs.contains(child) {
+            let childPath = (rootPath as NSString).appendingPathComponent(child)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
+                let childGit = (childPath as NSString).appendingPathComponent(".git")
+                if fm.fileExists(atPath: childGit) {
+                    return true
+                }
+                level1Dirs.append(childPath)
+            }
+        }
+
+        guard maxSubdirectoryLevels >= 2 else { return false }
+        for level1Path in level1Dirs {
+            guard let level2Names = try? fm.contentsOfDirectory(atPath: level1Path).sorted() else {
+                continue
+            }
+            for grandchild in level2Names where !grandchild.hasPrefix(".") && !ignoredRepoScanDirs.contains(grandchild) {
+                let grandchildPath = (level1Path as NSString).appendingPathComponent(grandchild)
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: grandchildPath, isDirectory: &isDir), isDir.boolValue {
+                    let grandchildGit = (grandchildPath as NSString).appendingPathComponent(".git")
+                    if fm.fileExists(atPath: grandchildGit) {
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
+    }
+
+    /// Scans `workspacePath` (root, immediate subdirectories, and 2nd-level subdirectories if none detected above) as well as `extraDirs` for `.git` repositories and matches Jenkins jobs.
     public static func discoverGitRepos(
         at workspacePath: String,
         extraDirs: [String] = [],
@@ -1034,35 +1091,48 @@ public enum MACPathUtils {
             )
         }
 
-        if !rootPath.isEmpty && fm.fileExists(atPath: rootPath) {
-            let rootName = URL(fileURLWithPath: rootPath).lastPathComponent
-            inspectDir(rootPath, repoName: rootName)
+        func scanDirectoryUpToTwoLevels(_ baseDir: String) {
+            guard !baseDir.isEmpty && fm.fileExists(atPath: baseDir) else { return }
+            let countBefore = discovered.count
+            let baseName = URL(fileURLWithPath: baseDir).lastPathComponent
+            inspectDir(baseDir, repoName: baseName)
 
-            if let children = try? fm.contentsOfDirectory(atPath: rootPath).sorted() {
-                for child in children where !child.hasPrefix(".") && child != "node_modules" {
-                    let childPath = (rootPath as NSString).appendingPathComponent(child)
+            var level1Subdirs: [(name: String, path: String)] = []
+            if let children = try? fm.contentsOfDirectory(atPath: baseDir).sorted() {
+                for child in children where !child.hasPrefix(".") && !ignoredRepoScanDirs.contains(child) {
+                    let childPath = (baseDir as NSString).appendingPathComponent(child)
                     var isDir: ObjCBool = false
                     if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
+                        let beforeChild = discovered.count
                         inspectDir(childPath, repoName: child)
+                        if discovered.count == beforeChild {
+                            level1Subdirs.append((name: child, path: childPath))
+                        }
+                    }
+                }
+            }
+
+            // If no .git repository was detected at root or level 1, check level 2 subdirectories
+            if discovered.count == countBefore {
+                for sub in level1Subdirs {
+                    guard let grandchildren = try? fm.contentsOfDirectory(atPath: sub.path).sorted() else { continue }
+                    for grandchild in grandchildren where !grandchild.hasPrefix(".") && !ignoredRepoScanDirs.contains(grandchild) {
+                        let grandchildPath = (sub.path as NSString).appendingPathComponent(grandchild)
+                        var isDir: ObjCBool = false
+                        if fm.fileExists(atPath: grandchildPath, isDirectory: &isDir), isDir.boolValue {
+                            let candidateName = discovered.contains(where: { $0.name == grandchild })
+                                ? "\(sub.name)/\(grandchild)"
+                                : grandchild
+                            inspectDir(grandchildPath, repoName: candidateName)
+                        }
                     }
                 }
             }
         }
 
+        scanDirectoryUpToTwoLevels(rootPath)
         for extraDir in cleanExtraDirs {
-            guard fm.fileExists(atPath: extraDir) else { continue }
-            let extraName = URL(fileURLWithPath: extraDir).lastPathComponent
-            inspectDir(extraDir, repoName: extraName)
-
-            if let children = try? fm.contentsOfDirectory(atPath: extraDir).sorted() {
-                for child in children where !child.hasPrefix(".") && child != "node_modules" {
-                    let childPath = (extraDir as NSString).appendingPathComponent(child)
-                    var isDir: ObjCBool = false
-                    if fm.fileExists(atPath: childPath, isDirectory: &isDir), isDir.boolValue {
-                        inspectDir(childPath, repoName: child)
-                    }
-                }
-            }
+            scanDirectoryUpToTwoLevels(extraDir)
         }
 
         return discovered

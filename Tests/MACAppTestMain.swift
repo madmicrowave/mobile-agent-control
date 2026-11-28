@@ -57,7 +57,32 @@ private func testJobParsingAndRepoDiscovery() throws {
     expect(jenkins?.path == (extraJenkinsRepo.path as NSString).standardizingPath, "Expected matching path for extraDirs repo")
     expect(jenkins?.jenkinsJob == "HS-1/crypto-fusion/jenkins", "Expected matched staging job for extraDirs repo")
 
-    print("✓ Job list parsing & Git repository auto-discovery (including extraDirs) passed")
+    // Verify hasGitRepository detects level-1 subdirectory repos without requiring .git at workspace root
+    expect(MACPathUtils.hasGitRepository(at: tempRoot.path, maxSubdirectoryLevels: 2) == true, "Expected level-1 subdirectory repos to pass hasGitRepository")
+
+    // Verify 2-level subdirectory discovery & validation when .git is not at root or level 1
+    let tempTwoLevel = FileManager.default.temporaryDirectory.appendingPathComponent("mac-ws-2lvl-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempTwoLevel) }
+    let nestedWebRepo = tempTwoLevel.appendingPathComponent("packages/web-portal", isDirectory: true)
+    let nestedApiRepo = tempTwoLevel.appendingPathComponent("services/api-core", isDirectory: true)
+    try FileManager.default.createDirectory(at: nestedWebRepo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: nestedApiRepo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+    expect(MACPathUtils.hasGitRepository(at: tempTwoLevel.path, maxSubdirectoryLevels: 1) == false, "No .git at root or level 1")
+    expect(MACPathUtils.hasGitRepository(at: tempTwoLevel.path, maxSubdirectoryLevels: 2) == true, "Must detect .git at 2nd subdirectory level")
+
+    let twoLevelRepos = MACPathUtils.discoverGitRepos(at: tempTwoLevel.path)
+    expect(twoLevelRepos.count == 2, "Expected 2 repos discovered at 2nd subdirectory level, got \(twoLevelRepos.count)")
+    expect(twoLevelRepos.contains(where: { $0.name == "web-portal" }), "Expected level-2 repo 'web-portal'")
+    expect(twoLevelRepos.contains(where: { $0.name == "api-core" }), "Expected level-2 repo 'api-core'")
+
+    // Empty folder with no .git up to 2 levels returns false
+    let emptyFolder = FileManager.default.temporaryDirectory.appendingPathComponent("mac-empty-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: emptyFolder) }
+    try FileManager.default.createDirectory(at: emptyFolder.appendingPathComponent("sub1/sub2"), withIntermediateDirectories: true)
+    expect(MACPathUtils.hasGitRepository(at: emptyFolder.path, maxSubdirectoryLevels: 2) == false, "Empty folder without .git must return false")
+
+    print("✓ Job list parsing & Git repository auto-discovery (1-level, 2-level & extraDirs) passed")
 }
 
 private func testConfigStoreRoundTrip() throws {

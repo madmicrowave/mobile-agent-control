@@ -8,6 +8,7 @@ import os from 'node:os';
 
 import {
   ConfigStore,
+  discoverWorkspaceRepos,
   expandUserPath,
   parseJenkinsfileJobName,
   resolveDefaultAgyBrainDir,
@@ -1020,6 +1021,24 @@ describe('Unit Helpers & Interactive Setup Wizard', () => {
       });
       assert.equal(resJnk.handled, true);
       assert.equal(resJnk.command, 'jenkins-test-access');
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers Git repositories in 1st-level and 2nd-level subdirectories when root has no .git', async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'two-level-repos-'));
+    try {
+      await fsp.mkdir(path.join(tmpDir, 'packages', 'web-frontend', '.git'), { recursive: true });
+      await fsp.mkdir(path.join(tmpDir, 'services', 'billing-api', '.git'), { recursive: true });
+      await fsp.mkdir(path.join(tmpDir, 'node_modules', 'ignored-pkg', '.git'), { recursive: true });
+
+      const discovered = await discoverWorkspaceRepos(tmpDir);
+      assert.equal(discovered.length, 2);
+      assert.deepEqual(
+        discovered.map((r) => r.name).sort(),
+        ['billing-api', 'web-frontend']
+      );
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true });
     }

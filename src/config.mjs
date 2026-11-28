@@ -153,38 +153,75 @@ export async function discoverWorkspaceRepos(
     });
   }
 
-  if (resolvedRoot) {
-    await inspectCandidate(resolvedRoot, path.basename(resolvedRoot));
+  const IGNORED_SCAN_DIRS = new Set([
+    'node_modules',
+    'Pods',
+    'Carthage',
+    'DerivedData',
+    'build',
+    'dist',
+    'target',
+    'vendor',
+    'venv',
+    '.venv',
+    '__pycache__'
+  ]);
 
+  async function scanDirUpToTwoLevels(baseDir) {
+    if (!baseDir) return;
+    const countBefore = repos.length;
+    await inspectCandidate(baseDir, path.basename(baseDir));
+
+    const level1Subdirs = [];
     try {
-      const entries = await fsp.readdir(resolvedRoot, { withFileTypes: true });
+      const entries = await fsp.readdir(baseDir, { withFileTypes: true });
       const sorted = entries
-        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !IGNORED_SCAN_DIRS.has(e.name))
         .sort((a, b) => a.name.localeCompare(b.name));
 
       for (const entry of sorted) {
-        await inspectCandidate(path.join(resolvedRoot, entry.name), entry.name);
+        const childPath = path.join(baseDir, entry.name);
+        const beforeChild = repos.length;
+        await inspectCandidate(childPath, entry.name);
+        if (repos.length === beforeChild) {
+          level1Subdirs.push({ name: entry.name, path: childPath });
+        }
       }
     } catch {
       // Ignore missing directory in synthetic tests
+      return;
     }
+
+    // If no .git repository was detected at root or level 1, verify 2nd-level subdirectories
+    if (repos.length === countBefore) {
+      for (const sub of level1Subdirs) {
+        try {
+          const subEntries = await fsp.readdir(sub.path, { withFileTypes: true });
+          const subSorted = subEntries
+            .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !IGNORED_SCAN_DIRS.has(e.name))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+          for (const grandchild of subSorted) {
+            const grandchildPath = path.join(sub.path, grandchild.name);
+            const candidateName = repos.some((r) => r.name === grandchild.name)
+              ? `${sub.name}/${grandchild.name}`
+              : grandchild.name;
+            await inspectCandidate(grandchildPath, candidateName);
+          }
+        } catch {}
+      }
+    }
+  }
+
+  if (resolvedRoot) {
+    await scanDirUpToTwoLevels(resolvedRoot);
   }
 
   if (Array.isArray(extraDirs)) {
     for (const extraDir of extraDirs) {
       const resolvedExtra = expandUserPath(extraDir);
       if (!resolvedExtra) continue;
-      await inspectCandidate(resolvedExtra, path.basename(resolvedExtra));
-      try {
-        const entries = await fsp.readdir(resolvedExtra, { withFileTypes: true });
-        const sorted = entries
-          .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-          .sort((a, b) => a.name.localeCompare(b.name));
-
-        for (const entry of sorted) {
-          await inspectCandidate(path.join(resolvedExtra, entry.name), entry.name);
-        }
-      } catch {}
+      await scanDirUpToTwoLevels(resolvedExtra);
     }
   }
 

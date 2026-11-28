@@ -387,8 +387,7 @@ private enum MACValidationUtils {
         guard isDir.boolValue else {
             return MACValidationStatus(message: "Path points to a file, not a directory", severity: .error)
         }
-        let gitDir = URL(fileURLWithPath: expanded).appendingPathComponent(".git").path
-        if FileManager.default.fileExists(atPath: gitDir) {
+        if MACPathUtils.hasGitRepository(at: expanded, maxSubdirectoryLevels: 2) {
             return nil
         } else {
             return MACValidationStatus(message: "Folder exists, but no .git repository detected", severity: .warning)
